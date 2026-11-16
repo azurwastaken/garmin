@@ -22,6 +22,9 @@ export const testConfig = Layer.unwrap(
           DATA_DIR: join(directory, 'data'),
           DATABASE_PATH: join(directory, 'garmin.db'),
           GARMIN_SESSION_PATH: join(directory, 'session', 'garmin.json'),
+          WITHINGS_SESSION_PATH: join(directory, 'session', 'withings.json'),
+          WITHINGS_CLIENT_ID: 'client',
+          WITHINGS_CLIENT_SECRET: 'secret',
         })
       )
     )

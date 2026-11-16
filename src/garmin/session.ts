@@ -1,4 +1,4 @@
-import { dirname, join, basename } from 'node:path'
+import { join } from 'node:path'
 
 import {
   Clock,
@@ -12,6 +12,8 @@ import {
   Semaphore,
 } from 'effect'
 import { HttpClient } from 'effect/http'
+
+import { writeAtomic } from '../files.ts'
 
 import { GarminError, NotLoggedIn, type RateLimited } from './errors.ts'
 import { expiresAt, expiresSoon, refresh, type Tokens, TokensJson } from './sso.ts'
@@ -78,14 +80,8 @@ export class GarminSession extends Context.Service<
             account,
             saved_at: new Date(yield* Clock.currentTimeMillis).toISOString(),
           }
-          const directory = dirname(path)
-          const partial = join(directory, `.${basename(path)}.partial`)
-          yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 })
-          yield* fs.chmod(directory, 0o700)
           // Created 0600, then moved over the previous one: never half written, never readable
-          yield* fs.writeFileString(partial, JSON.stringify(saved), { mode: 0o600 })
-          yield* fs.chmod(partial, 0o600)
-          yield* fs.rename(partial, path)
+          yield* writeAtomic(fs, path, JSON.stringify(saved), { mode: 0o600, dirMode: 0o700 })
           return saved
         }).pipe(
           Effect.mapError(

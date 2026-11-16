@@ -2,11 +2,28 @@ import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 
 import { api } from '#src/api/client.ts'
-import type { LoginAnswer } from '#src/api/web.ts'
+import type { LoginAnswer, WithingsView } from '#src/api/web.ts'
+import type { ConnectResult } from '#src/withings/sync.ts'
+
+// What the Withings callback came to: a fixed word, never Withings' text
+const CONNECTED: Record<ConnectResult, { readonly good: boolean; readonly text: string }> = {
+  connected: { good: true, text: 'Withings connecté : la première synchro démarre.' },
+  denied: { good: false, text: 'Withings : accès refusé ou annulé.' },
+  failed: {
+    good: false,
+    text: 'Withings : la connexion a échoué (voir les logs du serveur), réessaie.',
+  },
+  off: { good: false, text: "Withings n'est pas configuré sur le serveur." },
+}
+const isResult = (value: unknown): value is ConnectResult =>
+  typeof value === 'string' && Object.hasOwn(CONNECTED, value)
 
 // The Garmin account: is it connected, log it in (email, password, then the MFA code), sync now,
 // the last syncs, and how it works
 export const Route = createFileRoute('/garmin')({
+  // How the Withings connection went (its callback's redirect)
+  validateSearch: (search: Record<string, unknown>): { withings?: ConnectResult } =>
+    isResult(search['withings']) ? { withings: search['withings'] } : {},
   loader: () => api.web.garmin(),
   head: () => ({ meta: [{ title: 'Garmin · connexion' }] }),
   component: GarminPage,
@@ -141,6 +158,89 @@ function LoginForm({ onDone }: { onDone: () => void }) {
         Le mot de passe part directement à Garmin et n'est jamais enregistré.
       </p>
     </form>
+  )
+}
+
+function WithingsCard({ view, onChange }: { view: WithingsView; onChange: () => void }) {
+  const { withings: result } = Route.useSearch()
+  const connected = result === undefined ? undefined : CONNECTED[result]
+  const last = view.last
+  return (
+    <div className="card">
+      <h2>Withings</h2>
+      {connected ? (
+        <p className="note">
+          <span className={`status ${connected.good ? 'good' : 'bad'}`}>{connected.text}</span>
+        </p>
+      ) : null}
+      {view.configured ? (
+        <>
+          <p>
+            {view.user_id === null ? (
+              <span className="status bad">Non connecté</span>
+            ) : last?._tag === 'LoggedOut' ? (
+              <span className="status bad">Withings a refusé la session : reconnecte-toi</span>
+            ) : (
+              <span className="status good">Connecté : utilisateur {view.user_id}</span>
+            )}
+          </p>
+          <table>
+            <tbody>
+              {view.saved_at === null ? null : (
+                <tr>
+                  <td className="muted">Session enregistrée</td>
+                  <td>{when(view.saved_at)}</td>
+                </tr>
+              )}
+              <tr>
+                <td className="muted">Synchro</td>
+                <td>
+                  {last === null
+                    ? '–'
+                    : last._tag === 'Synced'
+                      ? `dernière le ${when(last.at)} (${last.files_written} mois)`
+                      : `échec le ${when(last.at)} : ${last.error.split('\n')[0] ?? ''}`}
+                </td>
+              </tr>
+              <tr>
+                <td className="muted">URL de callback</td>
+                <td>
+                  <code>{view.redirect_uri}</code>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div className="row" style={{ marginTop: 12 }}>
+            <form method="get" action="/withings/connect">
+              <button className="primary" type="submit">
+                {view.user_id === null ? 'Connecter Withings' : 'Reconnecter Withings'}
+              </button>
+            </form>
+            {view.user_id === null ? null : (
+              <button
+                className="secondary"
+                onClick={() => {
+                  if (window.confirm('Oublier la session Withings ?')) {
+                    void api.web.withingsLogout().then(onChange)
+                  }
+                }}
+              >
+                Déconnecter
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="note">
+          Pour récupérer les pesées de ta balance Withings, crée une application sur{' '}
+          <a href="https://developer.withings.com/dashboard/" target="_blank" rel="noreferrer">
+            developer.withings.com
+          </a>{' '}
+          avec l'URL de callback <code>{view.redirect_uri}</code>, puis donne au serveur{' '}
+          <code>WITHINGS_CLIENT_ID</code> et <code>WITHINGS_CLIENT_SECRET</code>.
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -313,6 +413,10 @@ function GarminPage() {
             </li>
           </ol>
         </div>
+      </div>
+
+      <div className="grid cols-2">
+        <WithingsCard view={view.withings} onChange={() => void refresh()} />
       </div>
 
       <section className="card">

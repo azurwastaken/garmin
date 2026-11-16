@@ -3,7 +3,7 @@ import process from 'node:process'
 
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import * as NodeServices from '@effect/platform-node/NodeServices'
-import { and, eq, getTableColumns, getTableName, gte, lte, sql } from 'drizzle-orm'
+import { and, eq, getTableColumns, getTableName, gte, isNull, lte, ne, or, sql } from 'drizzle-orm'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
 import { Config, Console, Context, Effect, FileSystem, Layer, Option, Schedule } from 'effect'
 import { Command, Flag } from 'effect/cli'
@@ -23,6 +23,7 @@ import {
 import { Database, type DatabaseError } from './db.ts'
 import { parseFit, type FitActivity } from './fit.ts'
 import { activities, body, daily, laps, plannedWorkouts, rawFiles, samples } from './schema.ts'
+import { SOURCE as WITHINGS, withingsBody } from './withings/measures.ts'
 
 // data/ → SQLite. The files are the source of truth (see README.md): each pass reads only those
 // whose size or mtime changed since the last, and --rebuild empties the tables and reads them all.
@@ -44,6 +45,7 @@ type Kind =
   | { readonly kind: 'summary'; readonly id: number; readonly exported: boolean }
   | { readonly kind: 'daily' }
   | { readonly kind: 'body' }
+  | { readonly kind: 'withings' }
   | { readonly kind: 'calendar' }
   | { readonly kind: 'workout'; readonly id: number }
   | { readonly kind: 'export' }
@@ -56,6 +58,7 @@ export const classify = (path: string): Kind | null => {
   if (match) return { kind: 'summary', id: Number(match[1]), exported: match[2] !== undefined }
   if (/^connect\/daily\/\d{4}\/\d{4}-\d{2}-\d{2}\.json$/u.test(path)) return { kind: 'daily' }
   if (/^connect\/body\/\d{4}-\d{2}\.json$/u.test(path)) return { kind: 'body' }
+  if (/^withings\/\d{4}-\d{2}\.json$/u.test(path)) return { kind: 'withings' }
   if (/^connect\/calendar\/\d{4}-\d{2}\.json$/u.test(path)) return { kind: 'calendar' }
   match = /^connect\/workouts\/(\d+)\.json$/u.exec(path)
   if (match) return { kind: 'workout', id: Number(match[1]) }
@@ -80,6 +83,14 @@ const coalesceAll = (table: SQLiteTable, key: string) =>
         column,
         sql.raw(`coalesce(excluded.${column}, ${getTableName(table)}.${column})`),
       ])
+  )
+
+// ON CONFLICT: every column but the key takes the new value
+const excludedAll = (table: SQLiteTable, key: string) =>
+  Object.fromEntries(
+    Object.keys(getTableColumns(table))
+      .filter((column) => column !== key)
+      .map((column) => [column, sql.raw(`excluded.${column}`)])
   )
 
 // The local wall time of an instant in Paris, for a FIT file without its own offset
@@ -255,7 +266,12 @@ export class Ingest extends Context.Service<
                 db
                   .insert(body)
                   .values([...rows])
-                  .onConflictDoUpdate({ target: body.time, set: coalesceAll(body, 'time') })
+                  .onConflictDoUpdate({
+                    target: body.time,
+                    set: coalesceAll(body, 'time'),
+                    // A Withings row stays: it wins a weigh-in both have, whatever the order
+                    setWhere: or(isNull(body.source), ne(body.source, WITHINGS)),
+                  })
                   .run()
               )
 
@@ -295,8 +311,15 @@ export class Ingest extends Context.Service<
           if (month !== null) {
             yield* use((db) =>
               db.transaction((tx) => {
+                // Garmin's rows only: Withings' have their own files
                 tx.delete(body)
-                  .where(and(gte(body.day, month.start), lte(body.day, month.end)))
+                  .where(
+                    and(
+                      gte(body.day, month.start),
+                      lte(body.day, month.end),
+                      or(isNull(body.source), ne(body.source, WITHINGS))
+                    )
+                  )
                   .run()
                 if (month.rows.length > 0)
                   tx.insert(body).values(month.rows).onConflictDoNothing().run()
@@ -305,6 +328,35 @@ export class Ingest extends Context.Service<
             weighIns += month.rows.length
           }
           yield* done(file, month === null ? 'not a body composition file' : null)
+        }
+
+        // Withings' months: their rows replace the month's Withings rows, and win over a Garmin
+        // row of the same instant (the same weigh-in, copied to Garmin by another app)
+        for (const file of changed.filter((f) => f.kind?.kind === 'withings')) {
+          const json = yield* readJson(file.path).pipe(Effect.option)
+          const month = Option.isSome(json) ? withingsBody(json.value) : null
+          if (month !== null) {
+            yield* use((db) =>
+              db.transaction((tx) => {
+                tx.delete(body)
+                  .where(
+                    and(
+                      gte(body.day, month.start),
+                      lte(body.day, month.end),
+                      eq(body.source, WITHINGS)
+                    )
+                  )
+                  .run()
+                if (month.rows.length > 0)
+                  tx.insert(body)
+                    .values([...month.rows])
+                    .onConflictDoUpdate({ target: body.time, set: excludedAll(body, 'time') })
+                    .run()
+              })
+            )
+            weighIns += month.rows.length
+          }
+          yield* done(file, month === null ? 'not a Withings month' : null)
         }
 
         // Activities: each one touched by a changed FIT file or summary, rebuilt from both

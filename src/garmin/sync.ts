@@ -17,7 +17,9 @@ import {
 } from 'effect'
 import yauzl from 'yauzl'
 
+import { addDays, monthEnd, monthOf, months } from '../days.ts'
 import { Database, type DatabaseError } from '../db.ts'
+import { writeAtomic } from '../files.ts'
 import { describe as describeIngest, Ingest } from '../ingest.ts'
 import { syncRuns } from '../schema.ts'
 import { parisToday } from '../tools.ts'
@@ -69,24 +71,8 @@ export interface SyncOutcome {
 
 export type SyncRun = typeof syncRuns.$inferSelect
 
-// Days as YYYY-MM-DD strings
-export const addDays = (day: string, days: number) =>
-  new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
 const daysBetween = (from: string, to: string) =>
   Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
-const monthOf = (day: string) => `${day.slice(0, 7)}-01`
-const nextMonth = (month: string) => {
-  const date = new Date(`${month}T00:00:00Z`)
-  date.setUTCMonth(date.getUTCMonth() + 1)
-  return date.toISOString().slice(0, 10)
-}
-export const monthEnd = (month: string) => addDays(nextMonth(month), -1)
-// The first day of each month from `from`'s to `to`'s
-export const months = (from: string, to: string) => {
-  const all: Array<string> = []
-  for (let month = monthOf(from); month <= to; month = nextMonth(month)) all.push(month)
-  return all
-}
 const min = (a: string, b: string) => (a < b ? a : b)
 
 // The first .fit file of an "original" download (a zip)
@@ -186,14 +172,11 @@ export class GarminSync extends Context.Service<
 
       // A file of data/, beside its target then renamed: the ingest never reads half a file
       const writeData = (path: string, data: unknown) =>
-        Effect.gen(function* () {
-          const target = join(dataDir, path)
-          const partial = join(target, '..', `.${target.split('/').at(-1)}.partial`)
-          yield* fs.makeDirectory(join(target, '..'), { recursive: true })
-          if (data instanceof Uint8Array) yield* fs.writeFile(partial, data)
-          else yield* fs.writeFileString(partial, JSON.stringify(data))
-          yield* fs.rename(partial, target)
-        }).pipe(
+        writeAtomic(
+          fs,
+          join(dataDir, path),
+          data instanceof Uint8Array ? data : JSON.stringify(data)
+        ).pipe(
           Effect.mapError((error) => new GarminError({ message: `${path}: ${error.message}` }))
         )
 

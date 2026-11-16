@@ -6,6 +6,7 @@ import { findExercises, WorkoutSchema } from '../garmin/workout-builder.ts'
 import { GarminWorkouts } from '../garmin/workouts.ts'
 import { MAX_ROWS, Reader } from '../reader.ts'
 import { Tools } from '../tools.ts'
+import { withingsStatus } from '../withings/sync.ts'
 
 import { Day, standard, tool } from './base.ts'
 
@@ -21,7 +22,7 @@ Tables and views:
 - samples: per second: activity_id, t (seconds from start), lat, lon, alt, hr, speed, cadence, power, distance (cumulative m). Large: always filter by activity_id.
 - daily: one row per day. Sleep is the night ending that morning: sleep_start, sleep_end, sleep_s, deep_s, light_s, rem_s, awake_s, nap_s, sleep_score; hrv (overnight average, ms), hrv_weekly, hrv_status (BALANCED, UNBALANCED, LOW…), hrv_baseline_low/high; resting_hr, min_hr, max_hr; body_battery_high/low/wake/charged/drained; steps, distance_m, active_kcal, total_kcal; stress_avg, stress_max; intensity_moderate_min, intensity_vigorous_min; respiration_avg, spo2_avg; readiness (the morning's training readiness 0-100), readiness_level, readiness_feedback, recovery_time_h, acute_load (Garmin's 7-day acute load); chronic_load, training_status; vo2max / vo2max_cycling (only on days measured); race_5k_s, race_10k_s, race_half_s, race_marathon_s (Garmin's predictions).
 - weekly (view): per ISO week (week = Monday) and sport: activities, distance_km, moving_h, ascent_m, training_load, longest_km, z4_z5_min.
-- body: weigh-ins: time, day, weight_kg, bmi, body_fat_pct, body_water_pct, muscle_mass_kg, bone_mass_kg, visceral_fat, source.
+- body: weigh-ins: time, day, weight_kg, bmi, body_fat_pct, body_water_pct, muscle_mass_kg, bone_mass_kg, visceral_fat, source ('WITHINGS' for the Withings scale, synced on its own every 3 hours; else Garmin's source type, e.g. INDEX_SCALE, MANUAL).
 - planned_workouts: the Garmin calendar's scheduled workouts: id (the calendar entry: unschedule_workout's schedule_id), day, workout_id (the library's workout: schedule_workout, delete_workout), name, sport, description, estimated_duration_s, estimated_distance_m, steps (one readable line per step: "interval 3:00 HR 165-172", "5× [...]").
 - raw_files: the source files ingested (path, error).
 - sync_runs: each sync with Garmin Connect: started_at, finished_at, ok, logged_out, account, since, files_written, warnings (JSON), error.`
@@ -199,7 +200,7 @@ const syncStatus = tool({
   name: 'sync_status',
   title: 'Sync status',
   description:
-    "Whether the data is fresh: the Garmin session (logged in, as whom, until when its token runs before a refresh), the sync's last runs (when, files written, warnings, error; logged_out: Garmin refused the session, the user must log in again at /garmin on the web app), when it last succeeded, the latest activity, night and weigh-in stored, the files that could not be read. Check it when data looks missing or stale.",
+    "Whether the data is fresh: the Garmin session (logged in, as whom, until when its token runs before a refresh), the sync's last runs (when, files written, warnings, error; logged_out: Garmin refused the session, the user must log in again at /garmin on the web app), when it last succeeded, the latest activity, night and weigh-in stored, the files that could not be read; withings: the Withings scale's connection (configured, user_id, saved_at) and its last sync since the app started (last: Synced, LoggedOut: the user must connect Withings again at /garmin, Failed). Check it when data looks missing or stale.",
   method: 'GET',
   path: '/sync-status',
   tags: ['sync'],
@@ -210,7 +211,7 @@ const syncStatus = tool({
     Effect.gen(function* () {
       const status = yield* Tools.use((tools) => tools.syncStatus)
       const session = yield* GarminLogin.use((login) => login.status)
-      return { garmin_session: session, ...status }
+      return { garmin_session: session, withings: yield* withingsStatus, ...status }
     })
   )
 )
