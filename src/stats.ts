@@ -405,7 +405,7 @@ export class Stats extends Context.Service<
     Stats,
     Effect.gen(function* () {
       const { use } = yield* Database
-      const all = <A>(query: SQL) => use((db) => db.all<A>(query))
+      const all = <A extends object>(query: SQL) => use((db) => db.all<A>(query))
 
       const period = (from: string, to: string) =>
         Effect.map(

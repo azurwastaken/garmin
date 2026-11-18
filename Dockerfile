@@ -8,7 +8,6 @@ RUN npm install --global pnpm@12.21.0
 WORKDIR /repo
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 
 COPY . .
@@ -23,7 +22,6 @@ RUN npm install --global pnpm@12.21.0
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY patches ./patches
 RUN pnpm install --frozen-lockfile --prod
 
 FROM node:26.13.1-slim

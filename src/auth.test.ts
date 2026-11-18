@@ -101,7 +101,7 @@ layer(Auth.layer.pipe(Layer.provideMerge(passwordDir)), { excludeTestServices: t
         expect(yield* auth.change('not it', 'a brand new password', 'e')).toBe('wrong')
         expect(yield* auth.change(PASSWORD, 'short', 'e')).toBe('short')
         const after = yield* auth.change(PASSWORD, 'a brand new password', 'e')
-        if (typeof after === 'string') throw new Error(after)
+        if (typeof after === 'string') throw new TypeError(after)
         expect(yield* auth.verifySession(before.value)).toBe(false)
         expect(yield* auth.verifySession(after.value)).toBe(true)
         expect(yield* auth.verifyBearer(PASSWORD, 'e')).toBe('wrong')

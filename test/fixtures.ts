@@ -45,7 +45,7 @@ export const put = (path: string, content: Uint8Array | string | object) =>
     )
   })
 
-export const rows = <A = Record<string, unknown>>(query: SQL) =>
+export const rows = <A extends object = Record<string, unknown>>(query: SQL) =>
   Effect.flatMap(Database, ({ use }) => use((db) => db.all<A>(query)))
 export { sql }
 

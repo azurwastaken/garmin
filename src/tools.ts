@@ -193,7 +193,7 @@ export class Tools extends Context.Service<
     Tools,
     Effect.gen(function* () {
       const { use } = yield* Database
-      const all = <A = Row>(query: SQL) => use((db) => db.all<A>(query))
+      const all = <A extends object = Row>(query: SQL) => use((db) => db.all<A>(query))
 
       const samplesOf = (id: number) =>
         all<SamplePoint>(
