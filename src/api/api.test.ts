@@ -1,25 +1,16 @@
-import * as NodeServices from '@effect/platform-node/NodeServices'
 import { createRouterClient, ORPCError } from '@orpc/server'
-import { Layer, ManagedRuntime } from 'effect'
+import { ManagedRuntime } from 'effect'
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { testConfig } from '../../test/fixtures.ts'
-import { Database } from '../db.ts'
-import { Reader } from '../reader.ts'
-import { Tools } from '../tools.ts'
+import { testLayer } from '../../test/fixtures.ts'
+import { Services } from '../app.ts'
 
-import type { Services } from './base.ts'
 import { makeHandlers, makeRun } from './handlers.ts'
 import { router } from './router.ts'
 
-// The API over a test database: the data procedures run for real, the Garmin ones are not called
-const runtime = ManagedRuntime.make(
-  Layer.mergeAll(Tools.layer, Reader.layer).pipe(
-    Layer.provideMerge(Database.layer),
-    Layer.provideMerge(NodeServices.layer),
-    Layer.provide(testConfig)
-  )
-) as unknown as ManagedRuntime.ManagedRuntime<Services, unknown>
+// The API over the app's services on a test database: the data procedures run for real, the Garmin
+// ones are not called (any HTTP request dies)
+const runtime = ManagedRuntime.make(testLayer(Services))
 afterAll(() => runtime.dispose())
 
 const run = makeRun(runtime)

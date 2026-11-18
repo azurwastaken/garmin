@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { expect, layer } from '@effect/vitest'
-import { Effect, Layer, Option } from 'effect'
+import { Effect, Option } from 'effect'
 import yazl from 'yazl'
 
 import {
@@ -13,15 +13,13 @@ import {
   fitRun,
   rows,
   sql,
-  testConfig,
+  testLayer,
 } from '../../test/fixtures.ts'
 import { fakeGarmin, inHours, json, jwt, type FakeRequest } from '../../test/garmin.ts'
+import { Garmin } from '../app.ts'
 import { addDays, monthEnd, months } from '../days.ts'
-import { Database } from '../db.ts'
-import { Ingest } from '../ingest.ts'
 import { parisToday } from '../tools.ts'
 
-import { GarminApi } from './api.ts'
 import { GarminSession } from './session.ts'
 import { ALL, fitOfZip, GarminSync } from './sync.ts'
 
@@ -119,14 +117,7 @@ const garminLayer = (handle: (request: FakeRequest) => Promise<Response>) => {
   const garmin = fakeGarmin(handle)
   return {
     log: garmin.log,
-    layer: GarminSync.layer.pipe(
-      Layer.provideMerge(GarminApi.layer),
-      Layer.provideMerge(GarminSession.layer),
-      Layer.provideMerge(Ingest.layer),
-      Layer.provideMerge(Database.layer),
-      Layer.provideMerge(Layer.merge(NodeServices.layer, garmin.layer)),
-      Layer.provide(testConfig)
-    ),
+    layer: testLayer(Garmin, garmin.layer),
   }
 }
 

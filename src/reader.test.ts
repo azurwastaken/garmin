@@ -4,14 +4,14 @@ import { dirname } from 'node:path'
 import { expect, layer } from '@effect/vitest'
 import { Effect, Fiber, Layer } from 'effect'
 
-import { rows, sql, testConfig } from '../test/fixtures.ts'
+import { rows, sql, testLayer } from '../test/fixtures.ts'
 
 import { capRows } from './api/garmin.ts'
 import { Database } from './db.ts'
 import { Reader } from './reader.ts'
 
 const withTimeout = (reader: typeof Reader.layer) =>
-  reader.pipe(Layer.provideMerge(Database.layer), Layer.provide(testConfig))
+  testLayer(reader.pipe(Layer.provideMerge(Database.layer)))
 
 // SQLite's message, as the MCP returns it
 const failure = (statement: string) =>

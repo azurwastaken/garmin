@@ -1,12 +1,10 @@
-import * as NodeServices from '@effect/platform-node/NodeServices'
 import { expect, layer } from '@effect/vitest'
 import { Effect, Layer } from 'effect'
 import { describe, it } from 'vitest'
 
-import { apiSummary, dailyFile, fitRun, put, testConfig } from '../test/fixtures.ts'
+import { apiSummary, dailyFile, fitRun, put, testLayer } from '../test/fixtures.ts'
 
-import { Database } from './db.ts'
-import { Ingest } from './ingest.ts'
+import { Ingest, Storage } from './ingest.ts'
 import {
   minutesFromNoon,
   minutesOf,
@@ -17,11 +15,7 @@ import {
 } from './stats.ts'
 import { parisToday } from './tools.ts'
 
-const TestLayer = Layer.mergeAll(Ingest.layer, Stats.layer).pipe(
-  Layer.provideMerge(Database.layer),
-  Layer.provideMerge(NodeServices.layer),
-  Layer.provide(testConfig)
-)
+const TestLayer = testLayer(Stats.layer.pipe(Layer.provideMerge(Storage)))
 
 const addDays = (day: string, days: number) =>
   new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)

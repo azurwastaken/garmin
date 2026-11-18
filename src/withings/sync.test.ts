@@ -1,13 +1,13 @@
 import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import * as NodeServices from '@effect/platform-node/NodeServices'
 import { expect, layer } from '@effect/vitest'
-import { Effect, Layer, Option } from 'effect'
+import { Effect, Option } from 'effect'
 import { TestClock } from 'effect/testing'
 
-import { dataDir, put, rows, sql, testConfig } from '../../test/fixtures.ts'
+import { dataDir, put, rows, sql, testLayer } from '../../test/fixtures.ts'
 import { fakeGarmin, json, type FakeRequest } from '../../test/garmin.ts'
+import { Withings } from '../app.ts'
 import { Database } from '../db.ts'
 import { Ingest } from '../ingest.ts'
 import { parisToday } from '../tools.ts'
@@ -69,13 +69,7 @@ const withingsLayer = (fake: Fake) => {
   const http = fakeGarmin(withings(fake))
   return {
     log: http.log,
-    layer: WithingsSync.layer.pipe(
-      Layer.provideMerge(WithingsSession.layer),
-      Layer.provideMerge(Ingest.layer),
-      Layer.provideMerge(Database.layer),
-      Layer.provideMerge(Layer.merge(NodeServices.layer, http.layer)),
-      Layer.provide(testConfig)
-    ),
+    layer: testLayer(Withings, http.layer),
   }
 }
 

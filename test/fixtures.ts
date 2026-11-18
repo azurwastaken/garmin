@@ -2,11 +2,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import * as NodeServices from '@effect/platform-node/NodeServices'
 import { Encoder, Profile } from '@garmin/fitsdk'
 import { sql, type SQL } from 'drizzle-orm'
 import { ConfigProvider, Effect, Layer } from 'effect'
+import { HttpClient } from 'effect/http'
 
 import { Database } from '../src/db.ts'
+import type { Platform } from '../src/main.ts'
 
 // Made-up data in Garmin's shapes: no real health data in the repository
 
@@ -25,11 +28,25 @@ export const testConfig = Layer.unwrap(
           WITHINGS_SESSION_PATH: join(directory, 'session', 'withings.json'),
           WITHINGS_CLIENT_ID: 'client',
           WITHINGS_CLIENT_SECRET: 'secret',
+          PASSWORD_PATH: join(directory, 'session', 'password'),
+          AUTH_DATABASE_PATH: join(directory, 'session', 'auth.db'),
         })
       )
     )
   )
 )
+
+// No HTTP unless a test fakes it (test/garmin.ts's fakeGarmin)
+const noHttp = Layer.succeed(
+  HttpClient.HttpClient,
+  HttpClient.make((request) => Effect.die(`unexpected request: ${request.method} ${request.url}`))
+)
+
+// A part of the app (see app.ts) on Node, with `http` for its HTTP client, over a fresh testConfig
+export const testLayer = <ROut, E>(
+  part: Layer.Layer<ROut, E, Layer.Success<typeof Platform>>,
+  http: Layer.Layer<HttpClient.HttpClient> = noHttp
+) => part.pipe(Layer.provideMerge(Layer.merge(NodeServices.layer, http)), Layer.provide(testConfig))
 
 export const dataDir = Effect.map(Database, ({ path }) => join(dirname(path), 'data'))
 

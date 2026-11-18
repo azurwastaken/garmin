@@ -2,9 +2,8 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { expect, layer } from '@effect/vitest'
+import { describe, expect, it, layer } from '@effect/vitest'
 import { Config, ConfigProvider, Effect, Layer } from 'effect'
-import { describe, it } from 'vitest'
 
 import { Auth, clientOf, failureLog, gate, safeNext, secureCookie, type Verdict } from './auth.ts'
 
@@ -112,12 +111,15 @@ layer(Auth.layer.pipe(Layer.provideMerge(passwordDir)), { excludeTestServices: t
 )
 
 describe('the password file', () => {
-  it('keeps only the hash, 0600 in a 0700 directory, read again after a restart', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'garmin-auth-'))
-    const path = join(directory, 'session', 'password')
-    // Each run builds the service again: a new process over the same file
-    const run = <A>(effect: Effect.Effect<A, never, Auth>) =>
-      Effect.runPromise(
+  it.live('keeps only the hash, 0600 in a 0700 directory, read again after a restart', () =>
+    Effect.gen(function* () {
+      const directory = yield* Effect.acquireRelease(
+        Effect.sync(() => mkdtempSync(join(tmpdir(), 'garmin-auth-'))),
+        (created) => Effect.sync(() => rmSync(created, { recursive: true, force: true }))
+      )
+      const path = join(directory, 'session', 'password')
+      // Each run builds the service again: a new process over the same file
+      const run = <A>(effect: Effect.Effect<A, never, Auth>) =>
         effect.pipe(
           Effect.provide(
             Auth.layer.pipe(
@@ -127,21 +129,17 @@ describe('the password file', () => {
             )
           )
         )
-      )
-    try {
-      await run(Auth.use((auth) => auth.setup(PASSWORD)))
+      yield* run(Auth.use((auth) => auth.setup(PASSWORD)))
       expect(statSync(path).mode & 0o777).toBe(0o600)
       expect(statSync(dirname(path)).mode & 0o777).toBe(0o700)
       const stored = readFileSync(path, 'utf8')
       expect(stored).toMatch(/^scrypt\$/u)
       expect(stored).not.toContain(PASSWORD)
-      expect(await run(Auth.use((auth) => auth.hasPassword))).toBe(true)
-      expect(await run(Auth.use((auth) => auth.setup('another password here')))).toBe('exists')
-      expect(await run(Auth.use((auth) => auth.verify(PASSWORD, 'a')))).toBe('ok')
-    } finally {
-      rmSync(directory, { recursive: true, force: true })
-    }
-  })
+      expect(yield* run(Auth.use((auth) => auth.hasPassword))).toBe(true)
+      expect(yield* run(Auth.use((auth) => auth.setup('another password here')))).toBe('exists')
+      expect(yield* run(Auth.use((auth) => auth.verify(PASSWORD, 'a')))).toBe('ok')
+    }).pipe(Effect.scoped)
+  )
 })
 
 describe('gate', () => {
