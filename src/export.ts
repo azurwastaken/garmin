@@ -11,7 +11,7 @@ import { Argument, Command } from 'effect/cli'
 import yauzl from 'yauzl'
 
 import { exportActivity, type ActivitySummary } from './connect.ts'
-import { fitFileType, fitStart } from './fit.ts'
+import { activityStart } from './fit.ts'
 import { describe as describeIngest, Ingest, Storage } from './ingest.ts'
 import { runMain } from './main.ts'
 
@@ -123,7 +123,7 @@ const isWellness = (name: string) =>
   /(?:^|\/)DI-Connect-(Wellness|Aggregator|Metrics)\/.*\.json$/u.test(name)
 
 // Activities by start second, to match FIT files: exact, else the nearest within a minute
-export const matcher = (summaries: ReadonlyArray<ActivitySummary>) => {
+const matcher = (summaries: ReadonlyArray<ActivitySummary>) => {
   const byStart = new Map(summaries.map((s) => [Math.round(Date.parse(s.start_time) / 1000), s]))
   return (start: string): ActivitySummary | undefined => {
     const second = Math.round(Date.parse(start) / 1000)
@@ -188,7 +188,7 @@ export const importExport = (zipPath: string, dataDir: string) =>
               continue
             }
             const bytes = await upload.read()
-            const start = fitFileType(bytes) === 'activity' ? fitStart(bytes) : null
+            const start = activityStart(bytes)
             if (start === null) {
               counts.fitSkipped += 1
               continue
@@ -223,7 +223,7 @@ export const importExport = (zipPath: string, dataDir: string) =>
       new ExportError({ message: error instanceof Error ? error.message : String(error) }),
   })
 
-export const describeExport = (summary: ExportSummary) =>
+const describeExport = (summary: ExportSummary) =>
   [
     `${summary.summaries} activity summaries`,
     `FIT files: ${summary.fitMatched} new, ${summary.fitKept} already synced, ${summary.fitUnmatched} unmatched (fit/unmatched/), ${summary.fitSkipped} skipped (not an activity)`,

@@ -135,17 +135,20 @@ export class GarminWorkouts extends Context.Service<
       const send = ({ method, path, body }: WriteRequest) =>
         api.write(method, path, body).pipe(Effect.mapError(failed))
 
-      // The calendar entries of a workout, as planned_workouts holds them
+      // A calendar entry's columns, as planned_workouts holds them
+      const entry = {
+        id: plannedWorkouts.id,
+        day: plannedWorkouts.day,
+        workout_id: plannedWorkouts.workout_id,
+        name: plannedWorkouts.name,
+        steps: plannedWorkouts.steps,
+      }
+
+      // The calendar entries of a workout
       const entriesOf = (workoutId: number) =>
         use((db) =>
           db
-            .select({
-              id: plannedWorkouts.id,
-              day: plannedWorkouts.day,
-              workout_id: plannedWorkouts.workout_id,
-              name: plannedWorkouts.name,
-              steps: plannedWorkouts.steps,
-            })
+            .select(entry)
             .from(plannedWorkouts)
             .where(eq(plannedWorkouts.workout_id, workoutId))
             .orderBy(asc(plannedWorkouts.day))
@@ -154,17 +157,7 @@ export class GarminWorkouts extends Context.Service<
 
       const entriesOn = (day: string) =>
         use((db) =>
-          db
-            .select({
-              id: plannedWorkouts.id,
-              day: plannedWorkouts.day,
-              workout_id: plannedWorkouts.workout_id,
-              name: plannedWorkouts.name,
-              steps: plannedWorkouts.steps,
-            })
-            .from(plannedWorkouts)
-            .where(eq(plannedWorkouts.day, day))
-            .all()
+          db.select(entry).from(plannedWorkouts).where(eq(plannedWorkouts.day, day)).all()
         ).pipe(Effect.mapError(failed))
 
       // The calendar months of these days fetched again, into planned_workouts

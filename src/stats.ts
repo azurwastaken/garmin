@@ -1,9 +1,11 @@
 import { sql, type SQL } from 'drizzle-orm'
 import { Context, Effect, Layer } from 'effect'
 
+import { addDays, daysBetween, earlierDay, parisToday } from './days.ts'
 import { Database, type DatabaseError } from './db.ts'
+import { mean, present, round } from './numbers.ts'
 import { decode, type Point } from './polyline.ts'
-import { decoupling, kmSplits, parisToday, type SamplePoint, type Split } from './tools.ts'
+import { decoupling, kmSplits, type SamplePoint, type Split } from './tools.ts'
 
 // The web pages' numbers (routes/): plain JSON, computed in SQLite
 
@@ -281,22 +283,9 @@ const PACE = `CASE WHEN distance_m > 0 AND moving_s > 0 THEN round(moving_s * 10
 const SPEED = `CASE WHEN distance_m > 0 AND moving_s > 0 THEN round(distance_m / moving_s * 3.6, 1)
   ELSE round(avg_speed * 3.6, 1) END`
 
-const addDays = (day: string, days: number) =>
-  new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
-
 // The Monday of the ISO week of `day`
-const daysFrom = (from: string, to: string) =>
-  Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
-const min = (a: string, b: string) => (a < b ? a : b)
 const mondayOf = (day: string) =>
   addDays(day, -((new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7))
-
-const mean = (values: ReadonlyArray<number>) =>
-  values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length
-const present = <A>(values: ReadonlyArray<A | null>) =>
-  values.filter((value): value is A => value !== null)
-const rounded = (value: number | null, digits = 0) =>
-  value === null ? null : Number(value.toFixed(digits))
 
 const parisClock = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/Paris',
@@ -327,24 +316,24 @@ export const sleepAverages = (nights: ReadonlyArray<SleepNight>): SleepAverages 
   )
   const share = (pick: (night: SleepNight) => number | null) =>
     stagedTotal > 0
-      ? rounded((staged.reduce((sum, night) => sum + (pick(night) ?? 0), 0) / stagedTotal) * 100)
+      ? round((staged.reduce((sum, night) => sum + (pick(night) ?? 0), 0) / stagedTotal) * 100)
       : null
   const beds = present(slept.map((night) => night.bed_min))
   const bed = mean(beds)
   return {
     nights: slept.length,
-    sleep_s: rounded(mean(present(slept.map((night) => night.sleep_s)))),
-    sleep_score: rounded(mean(present(nights.map((night) => night.sleep_score)))),
+    sleep_s: round(mean(present(slept.map((night) => night.sleep_s)))),
+    sleep_score: round(mean(present(nights.map((night) => night.sleep_score)))),
     deep_pct: share((night) => night.deep_s),
     rem_pct: share((night) => night.rem_s),
-    bed_min: rounded(bed),
-    wake_min: rounded(mean(present(slept.map((night) => night.wake_min)))),
+    bed_min: round(bed),
+    wake_min: round(mean(present(slept.map((night) => night.wake_min)))),
     bed_spread_min:
       bed === null || beds.length < 2
         ? null
-        : rounded(Math.sqrt(mean(beds.map((value) => (value - bed) ** 2)) ?? 0)),
-    hrv: rounded(mean(present(nights.map((night) => night.hrv)))),
-    resting_hr: rounded(mean(present(nights.map((night) => night.resting_hr)))),
+        : round(Math.sqrt(mean(beds.map((value) => (value - bed) ** 2)) ?? 0)),
+    hrv: round(mean(present(nights.map((night) => night.hrv)))),
+    resting_hr: round(mean(present(nights.map((night) => night.resting_hr)))),
   }
 }
 
@@ -380,11 +369,11 @@ export const minutesOf = (samples: ReadonlyArray<SamplePoint>): Array<Minute> =>
     const speed = mean(present(part.map((sample) => sample.speed)))
     return {
       minute,
-      hr: rounded(mean(present(part.map((sample) => sample.hr)))),
+      hr: round(mean(present(part.map((sample) => sample.hr)))),
       pace_s: speed !== null && speed > 0.5 ? Math.round(1000 / speed) : null,
-      speed_kmh: speed === null ? null : rounded(speed * 3.6, 1),
-      alt: rounded(mean(present(part.map((sample) => sample.alt))), 1),
-      cadence: rounded(mean(present(part.map((sample) => sample.cadence)))),
+      speed_kmh: speed === null ? null : round(speed * 3.6, 1),
+      alt: round(mean(present(part.map((sample) => sample.alt))), 1),
+      cadence: round(mean(present(part.map((sample) => sample.cadence)))),
     }
   })
 }
@@ -518,9 +507,9 @@ export class Stats extends Context.Service<
         // The whole history: from the first run's week (at least the last 26)
         const firstWeek =
           span === 'all'
-            ? min(mondayOf(first?.day ?? today), addDays(lastWeek, -7 * 25))
+            ? earlierDay(mondayOf(first?.day ?? today), addDays(lastWeek, -7 * 25))
             : addDays(lastWeek, -7 * (span - 1))
-        const weekCount = Math.round(daysFrom(firstWeek, lastWeek) / 7) + 1
+        const weekCount = Math.round(daysBetween(firstWeek, lastWeek) / 7) + 1
         const year = yield* runPeriod(`${today.slice(0, 4)}-01-01`, today)
         const last28 = yield* runPeriod(addDays(today, -27), today)
         const previous28 = yield* runPeriod(addDays(today, -55), addDays(today, -28))
@@ -663,7 +652,7 @@ export class Stats extends Context.Service<
         // The whole history: from the first night measured (ten years at most)
         const span =
           asked === 'all'
-            ? Math.max(30, Math.min(daysFrom(first?.day ?? today, today) + 1, 3660))
+            ? Math.max(30, Math.min(daysBetween(first?.day ?? today, today) + 1, 3660))
             : asked
         const from = addDays(today, -(span - 1))
         const rows = yield* nightsBetween(from, today)

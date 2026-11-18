@@ -3,7 +3,7 @@ import type { AuthorizeRequest, Authorization, Refusal } from './oauth.ts'
 
 // /authorize's page: who asks, what for, allow or deny (posted to /oauth/authorize)
 
-export const AUTHORIZE_FIELDS = [
+const AUTHORIZE_FIELDS = [
   'response_type',
   'client_id',
   'redirect_uri',

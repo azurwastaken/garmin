@@ -15,10 +15,10 @@ import {
 } from 'effect'
 import { HttpClient } from 'effect/http'
 
+import { parisToday } from '../days.ts'
 import type { DatabaseError } from '../db.ts'
 import { writeAtomic } from '../files.ts'
 import { describe as describeIngest, Ingest } from '../ingest.ts'
-import { parisToday } from '../tools.ts'
 
 import { MEASURE_URL, WithingsError, WithingsLoggedOut, withingsPost } from './client.ts'
 import { fetchRange, MEASURE_TYPES, monthFiles, syncMonths, TIME_ZONE } from './measures.ts'

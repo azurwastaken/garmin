@@ -17,12 +17,11 @@ import {
 } from 'effect'
 import yauzl from 'yauzl'
 
-import { addDays, monthEnd, monthOf, months } from '../days.ts'
+import { addDays, daysBetween, earlierDay, monthEnd, monthOf, months, parisToday } from '../days.ts'
 import { Database, type DatabaseError } from '../db.ts'
 import { writeAtomic } from '../files.ts'
 import { describe as describeIngest, Ingest } from '../ingest.ts'
 import { syncRuns } from '../schema.ts'
-import { parisToday } from '../tools.ts'
 
 import { type ApiFailure, GarminApi } from './api.ts'
 import { GarminError } from './errors.ts'
@@ -70,10 +69,6 @@ export interface SyncOutcome {
 }
 
 export type SyncRun = typeof syncRuns.$inferSelect
-
-const daysBetween = (from: string, to: string) =>
-  Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000)
-const min = (a: string, b: string) => (a < b ? a : b)
 
 // The first .fit file of an "original" download (a zip)
 const MAX_FIT_BYTES = 256 * 1024 * 1024
@@ -233,7 +228,7 @@ export class GarminSync extends Context.Service<
             for (const raw of list) {
               const day = Option.getOrUndefined(decodeActivity(raw))?.startTimeLocal.slice(0, 10)
               if (day !== undefined && /^\d{4}-\d{2}-\d{2}$/u.test(day)) {
-                oldest = oldest === undefined ? day : min(oldest, day)
+                oldest = oldest === undefined ? day : earlierDay(oldest, day)
               }
             }
             if (list.length < PAGE) break
@@ -265,7 +260,7 @@ export class GarminSync extends Context.Service<
             : (since ??
               Option.match(yield* newestDay, {
                 onNone: () => addDays(today, -DEFAULT_BACK_DAYS),
-                onSome: (day) => min(addDays(day, -(FRESH_DAYS - 1)), today),
+                onSome: (day) => earlierDay(addDays(day, -(FRESH_DAYS - 1)), today),
               }))
         // Gentle on Garmin over a long span
         const pause =
@@ -336,7 +331,7 @@ export class GarminSync extends Context.Service<
             `race predictions ${month.slice(0, 7)}`,
             api.json(`/metrics-service/metrics/racepredictions/daily/${name}`, {
               fromCalendarDate: month,
-              toCalendarDate: min(monthEnd(month), today),
+              toCalendarDate: earlierDay(monthEnd(month), today),
             })
           )
           for (const row of Array.isArray(rows) ? rows : []) {
@@ -396,7 +391,7 @@ export class GarminSync extends Context.Service<
             `body ${month.slice(0, 7)}`,
             api.json('/weight-service/weight/dateRange', {
               startDate: month,
-              endDate: min(monthEnd(month), today),
+              endDate: earlierDay(monthEnd(month), today),
             })
           )
           if (weighIns !== null) yield* write(path, weighIns)

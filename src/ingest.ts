@@ -50,7 +50,7 @@ type Kind =
   | { readonly kind: 'export' }
 
 // What a path of data/ holds, from its place (null: not ours, e.g. the sync's partial file)
-export const classify = (path: string): Kind | null => {
+const classify = (path: string): Kind | null => {
   let match = /^fit\/\d{4}\/(\d+)\.fit$/u.exec(path)
   if (match) return { kind: 'fit', id: Number(match[1]) }
   match = /^connect\/activities\/\d{4}\/(\d+)(\.export)?\.json$/u.exec(path)
@@ -109,7 +109,7 @@ const definedOnly = (row: Record<string, unknown>) =>
 
 // One activity from its FIT file and Connect summary: the FIT file's measures, Connect's name,
 // type, load, training effect, moving time and gear (computed by Garmin Connect, or edited there)
-export const activityRow = (
+const activityRow = (
   id: number,
   fit: FitActivity | null,
   summary: ActivitySummary | null,

@@ -1,9 +1,11 @@
 import { sql, type SQL } from 'drizzle-orm'
-import { Context, DateTime, Effect, Layer, Option } from 'effect'
+import { Context, Effect, Layer } from 'effect'
 
+import { addDays, parisToday } from './days.ts'
 import { Database, type DatabaseError } from './db.ts'
+import { clock, mean, present, round } from './numbers.ts'
 
-// The typed MCP tools' answers (see mcp.ts): plain rows, in the units Garmin Connect shows
+// The typed MCP tools' answers (see api/garmin.ts): plain rows, in the units Garmin Connect shows
 
 type Row = Record<string, unknown>
 
@@ -29,21 +31,6 @@ export interface SamplePoint {
   readonly distance: number | null
   readonly power: number | null
 }
-
-export const clock = (seconds: number) => {
-  const whole = Math.round(seconds)
-  const h = Math.floor(whole / 3600)
-  const m = Math.floor((whole % 3600) / 60)
-  const s = String(whole % 60).padStart(2, '0')
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`
-}
-
-const mean = (values: ReadonlyArray<number>) =>
-  values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length
-const round = (value: number | null, digits = 0) =>
-  value === null ? null : Number(value.toFixed(digits))
-const numbers = (values: ReadonlyArray<number | null>) =>
-  values.filter((value): value is number => value !== null)
 
 // Samples further apart than this, the timer was paused between them: 10 s for a watch that
 // records every second, 30 s with smart recording (a sample every few seconds, gaps up to ~20 s
@@ -81,7 +68,7 @@ export const kmSplits = (samples: ReadonlyArray<SamplePoint>): Array<Split> => {
       if (delta > 0) ascent += delta
       else descent -= delta
     }
-    const hrs = numbers(part.map((s) => s.hr))
+    const hrs = present(part.map((s) => s.hr))
     splits.push({
       km,
       distance_km: round(distance / 1000, 2) ?? 0,
@@ -89,7 +76,7 @@ export const kmSplits = (samples: ReadonlyArray<SamplePoint>): Array<Split> => {
       pace: clock(seconds / (distance / 1000)),
       avg_hr: round(mean(hrs)),
       max_hr: hrs.length === 0 ? null : Math.max(...hrs),
-      cadence: round(mean(numbers(part.map((s) => s.cadence)).filter((c) => c > 0))),
+      cadence: round(mean(present(part.map((s) => s.cadence)).filter((c) => c > 0))),
       ascent_m: Math.round(ascent),
       descent_m: Math.round(descent),
     })
@@ -120,14 +107,14 @@ export const decoupling = (samples: ReadonlyArray<SamplePoint>) => {
   if (moving.length < 600) return null
   const half = Math.floor(moving.length / 2)
   const ratio = (part: ReadonlyArray<SamplePoint>) =>
-    (mean(numbers(part.map((s) => s.speed))) ?? 0) / (mean(numbers(part.map((s) => s.hr))) ?? 1)
+    (mean(present(part.map((s) => s.speed))) ?? 0) / (mean(present(part.map((s) => s.hr))) ?? 1)
   const first = ratio(moving.slice(0, half))
   const second = ratio(moving.slice(half))
   return first === 0 ? null : round(((first - second) / first) * 100, 1)
 }
 
 // A minute's average: what a chart of the activity needs, a 60th of the rows
-export const perMinute = (samples: ReadonlyArray<SamplePoint>) => {
+const perMinute = (samples: ReadonlyArray<SamplePoint>) => {
   const minutes = new Map<number, Array<SamplePoint>>()
   for (const sample of samples) {
     const minute = Math.floor(sample.t / 60)
@@ -135,28 +122,17 @@ export const perMinute = (samples: ReadonlyArray<SamplePoint>) => {
   }
   return [...minutes].map(([minute, part]) => ({
     minute,
-    hr: round(mean(numbers(part.map((s) => s.hr)))),
+    hr: round(mean(present(part.map((s) => s.hr)))),
     pace:
-      (mean(numbers(part.map((s) => s.speed))) ?? 0) > 0.3
-        ? clock(1000 / (mean(numbers(part.map((s) => s.speed))) ?? 1))
+      (mean(present(part.map((s) => s.speed))) ?? 0) > 0.3
+        ? clock(1000 / (mean(present(part.map((s) => s.speed))) ?? 1))
         : null,
-    cadence: round(mean(numbers(part.map((s) => s.cadence)))),
-    alt: round(mean(numbers(part.map((s) => s.alt))), 1),
-    power: round(mean(numbers(part.map((s) => s.power)))),
+    cadence: round(mean(present(part.map((s) => s.cadence)))),
+    alt: round(mean(present(part.map((s) => s.alt))), 1),
+    power: round(mean(present(part.map((s) => s.power)))),
     distance_km: round((part.at(-1)?.distance ?? 0) / 1000, 2),
   }))
 }
-
-// Today in Paris time, the user's days
-export const parisToday = Effect.map(DateTime.now, (now) =>
-  DateTime.makeZoned(now, { timeZone: 'Europe/Paris' }).pipe(
-    Option.map(DateTime.formatIsoDate),
-    Option.getOrElse(() => DateTime.formatIsoDate(now))
-  )
-)
-
-const addDays = (day: string, days: number) =>
-  new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
 
 export class Tools extends Context.Service<
   Tools,

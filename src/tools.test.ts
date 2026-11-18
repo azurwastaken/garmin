@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { clock, decoupling, kmSplits, type SamplePoint } from './tools.ts'
+import { clock } from './numbers.ts'
+import { decoupling, kmSplits, type SamplePoint } from './tools.ts'
 
 const steady = (seconds: number, speed: (t: number) => number, hr: (t: number) => number) => {
   const samples: Array<SamplePoint> = []

@@ -13,10 +13,10 @@ export class DatabaseError extends Schema.TaggedError<DatabaseError>()('Database
   cause: Schema.Defect(),
 }) {}
 
-// A connection to the app's file, beside the others: WAL lets readers work during a write, and a
-// writer waits up to `timeout` ms for another's lock (blocking its thread meanwhile)
-export const openDatabase = (path: string, timeout = 5000) => {
-  const client = new DatabaseSync(path, { timeout })
+// A connection to the app's file, beside the others: WAL lets readers work during a write. It never
+// waits for another connection's lock (see connect)
+const openDatabase = (path: string) => {
+  const client = new DatabaseSync(path, { timeout: 0 })
   client.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL')
   return client
 }
@@ -47,7 +47,7 @@ export const connect = Effect.fn('Database.connect')(function* (
 ) {
   const client = yield* Effect.acquireRelease(
     Effect.try({
-      try: () => openDatabase(path, 0),
+      try: () => openDatabase(path),
       catch: (cause) => new DatabaseError({ cause }),
     }),
     (opened) => Effect.sync(() => opened.close())

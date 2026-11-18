@@ -17,8 +17,7 @@ import {
 } from '../../test/fixtures.ts'
 import { fakeGarmin, inHours, json, jwt, type FakeRequest } from '../../test/garmin.ts'
 import { Garmin } from '../app.ts'
-import { addDays, monthEnd, months } from '../days.ts'
-import { parisToday } from '../tools.ts'
+import { addDays, monthEnd, months, parisToday } from '../days.ts'
 
 import { GarminSession } from './session.ts'
 import { ALL, fitOfZip, GarminSync } from './sync.ts'

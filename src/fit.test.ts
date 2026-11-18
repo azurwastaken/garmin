@@ -3,7 +3,7 @@ import { Effect } from 'effect'
 
 import { fitRun } from '../test/fixtures.ts'
 
-import { fitFileType, fitStart, parseFit } from './fit.ts'
+import { activityStart, parseFit } from './fit.ts'
 
 it.effect('reads an activity: summary, zones, laps, a sample a second', () =>
   Effect.gen(function* () {
@@ -44,11 +44,11 @@ it.effect('reads an activity: summary, zones, laps, a sample a second', () =>
 it.effect('refuses what is not an activity, says what it is', () =>
   Effect.gen(function* () {
     const settings = fitRun({ type: 'settings' })
-    expect(fitFileType(settings)).toBe('settings')
+    expect(activityStart(settings)).toBeNull()
     expect((yield* Effect.flip(parseFit(settings))).message).toBe(
       'a FIT file of type settings, not an activity'
     )
     expect((yield* Effect.flip(parseFit(new Uint8Array([1, 2, 3])))).message).toBe('not a FIT file')
-    expect(fitStart(fitRun())).toBe('2026-10-31T06:12:40.000Z')
+    expect(activityStart(fitRun())).toBe('2026-10-31T06:12:40.000Z')
   })
 )

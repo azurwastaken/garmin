@@ -142,7 +142,6 @@ const transport =
   (error: { readonly message: string }): GarminError =>
     new GarminError({ message: `${what}: ${error.message}` })
 
-// The SSO's JSON answer: a rate limit, a challenge or a page that is not JSON fail here
 // A request's answer within 30 seconds: a stalled one would hold the sync's lock for good
 const inTime = (what: string) =>
   Effect.timeoutOrElse({
@@ -150,6 +149,7 @@ const inTime = (what: string) =>
     orElse: () => Effect.fail(new GarminError({ message: `${what}: no answer in 30 s` })),
   })
 
+// The SSO's JSON answer: a rate limit, a challenge or a page that is not JSON fail here
 const ssoJson = Effect.fnUntraced(function* (
   what: string,
   response: HttpClientResponse.HttpClientResponse
@@ -205,39 +205,53 @@ const post = Effect.fnUntraced(function* (
         HttpClientRequest.bodyJsonUnsafe(body)
       )
     )
-    .pipe(
-      Effect.mapError(transport(what)),
-      Effect.timeoutOrElse({
-        duration: '30 seconds',
-        orElse: () => Effect.fail(new GarminError({ message: `${what}: no answer in 30 s` })),
-      })
-    )
+    .pipe(Effect.mapError(transport(what)), inTime(what))
   return yield* ssoJson(what, response)
 })
 
-// Trades a CAS service ticket for the DI tokens
-export const exchangeTicket = Effect.fnUntraced(function* (ticket: string, flow: Flow) {
+// A POST to the DI token endpoint as one of its clients
+const diToken = Effect.fnUntraced(function* ({
+  what,
+  clientId,
+  accept,
+  params,
+}: {
+  readonly what: string
+  readonly clientId: string
+  readonly accept: string
+  readonly params: Readonly<Record<string, string>>
+}) {
   const client = yield* HttpClient.HttpClient
-  for (const clientId of DI_CLIENT_IDS) {
-    const response = yield* client
-      .execute(
-        HttpClientRequest.post(DI_TOKEN_URL).pipe(
-          HttpClientRequest.setHeaders(
-            nativeHeaders({
-              authorization: `Basic ${Buffer.from(`${clientId}:`).toString('base64')}`,
-              accept: 'application/json,text/html;q=0.9,*/*;q=0.8',
-              'cache-control': 'no-cache',
-            })
-          ),
-          HttpClientRequest.bodyUrlParams({
-            client_id: clientId,
-            service_ticket: ticket,
-            grant_type: DI_GRANT_TYPE,
-            service_url: FLOWS[flow].service,
+  return yield* client
+    .execute(
+      HttpClientRequest.post(DI_TOKEN_URL).pipe(
+        HttpClientRequest.setHeaders(
+          nativeHeaders({
+            authorization: `Basic ${Buffer.from(`${clientId}:`).toString('base64')}`,
+            accept,
+            'cache-control': 'no-cache',
           })
-        )
+        ),
+        HttpClientRequest.bodyUrlParams(params)
       )
-      .pipe(Effect.mapError(transport('token exchange')), inTime('token exchange'))
+    )
+    .pipe(Effect.mapError(transport(what)), inTime(what))
+})
+
+// Trades a CAS service ticket for the DI tokens
+const exchangeTicket = Effect.fnUntraced(function* (ticket: string, flow: Flow) {
+  for (const clientId of DI_CLIENT_IDS) {
+    const response = yield* diToken({
+      what: 'token exchange',
+      clientId,
+      accept: 'application/json,text/html;q=0.9,*/*;q=0.8',
+      params: {
+        client_id: clientId,
+        service_ticket: ticket,
+        grant_type: DI_GRANT_TYPE,
+        service_url: FLOWS[flow].service,
+      },
+    })
     if (response.status === 429) {
       return yield* new RateLimited({ message: 'token exchange: Garmin is rate limiting' })
     }
@@ -412,25 +426,16 @@ export const refresh = Effect.fn('Garmin.refresh')(function* (tokens: Tokens) {
   if (tokens.di_refresh_token === null) {
     return yield* new NotLoggedIn({ message: 'the session has no refresh token' })
   }
-  const client = yield* HttpClient.HttpClient
-  const response = yield* client
-    .execute(
-      HttpClientRequest.post(DI_TOKEN_URL).pipe(
-        HttpClientRequest.setHeaders(
-          nativeHeaders({
-            authorization: `Basic ${Buffer.from(`${tokens.di_client_id}:`).toString('base64')}`,
-            accept: 'application/json',
-            'cache-control': 'no-cache',
-          })
-        ),
-        HttpClientRequest.bodyUrlParams({
-          grant_type: 'refresh_token',
-          client_id: tokens.di_client_id,
-          refresh_token: tokens.di_refresh_token,
-        })
-      )
-    )
-    .pipe(Effect.mapError(transport('token refresh')), inTime('token refresh'))
+  const response = yield* diToken({
+    what: 'token refresh',
+    clientId: tokens.di_client_id,
+    accept: 'application/json',
+    params: {
+      grant_type: 'refresh_token',
+      client_id: tokens.di_client_id,
+      refresh_token: tokens.di_refresh_token,
+    },
+  })
   if (response.status === 429) {
     return yield* new RateLimited({ message: 'token refresh: Garmin is rate limiting' })
   }

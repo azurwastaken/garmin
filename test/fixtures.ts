@@ -14,7 +14,7 @@ import type { Platform } from '../src/main.ts'
 // Made-up data in Garmin's shapes: no real health data in the repository
 
 // A fresh data/ and SQLite file, removed with the layer; the directory is in DATA_DIR
-export const testConfig = Layer.unwrap(
+const testConfig = Layer.unwrap(
   Effect.acquireRelease(
     Effect.sync(() => mkdtempSync(join(tmpdir(), 'garmin-'))),
     (directory) => Effect.sync(() => rmSync(directory, { recursive: true, force: true }))
