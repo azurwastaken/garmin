@@ -75,10 +75,12 @@ const decode =
   (value: unknown) =>
     Option.getOrUndefined(Schema.decodeUnknownOption(schema)(value))
 
-// A real day, YYYY-MM-DD
-export const isDay = (value: string) =>
-  /^\d{4}-\d{2}-\d{2}$/u.test(value) &&
-  new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value
+// A real day, YYYY-MM-DD: not 2026-02-30 (another day once parsed) nor 2026-13-01 (no date)
+export const isDay = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) return false
+  const date = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
 
 const failed = (error: ApiFailure | DatabaseError) =>
   new WorkoutError({

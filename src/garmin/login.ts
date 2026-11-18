@@ -67,7 +67,9 @@ export class GarminLogin extends Context.Service<
             }).pipe(Effect.ignore)
           )
         )
-        yield* session.save(tokens, account)
+        // The profile call may have refreshed the tokens: the account goes with the saved ones
+        const current = Option.getOrElse(yield* session.load, () => tokens)
+        yield* session.save(current, account)
         yield* Effect.logInfo(`Garmin: logged in as ${account.full_name ?? account.display_name}`)
         yield* sync.trigger
         return account

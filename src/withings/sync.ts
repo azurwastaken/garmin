@@ -1,7 +1,6 @@
 import { join } from 'node:path'
 
 import {
-  Cause,
   Clock,
   Config,
   Context,
@@ -184,6 +183,11 @@ export class WithingsSync extends Context.Service<
         return files.length
       })
 
+      const failed = (error: string) =>
+        Effect.map(now, (at): WithingsOutcome => ({ _tag: 'Failed', at, error }))
+
+      // Withings' own failures say why (sync_status and /garmin show it); anything else (SQLite,
+      // a bug) is logged and shown without its detail
       const outcomeOf = (
         result: Effect.Effect<number, WithingsLoggedOut | WithingsError | DatabaseError>
       ) =>
@@ -198,12 +202,12 @@ export class WithingsSync extends Context.Service<
               error: error.message,
             }))
           ),
+          Effect.catchTag('WithingsError', (error) => failed(error.message)),
           Effect.catchCause((cause) =>
-            Effect.map(now, (at): WithingsOutcome => ({
-              _tag: 'Failed',
-              at,
-              error: Cause.pretty(cause),
-            }))
+            Effect.andThen(
+              Effect.logError('Withings sync crashed', cause),
+              failed('the sync failed: see the logs')
+            )
           )
         )
 
@@ -211,11 +215,7 @@ export class WithingsSync extends Context.Service<
         Effect.gen(function* () {
           const outcome = yield* Option.match(session.app, {
             onNone: () =>
-              Effect.map(now, (at): WithingsOutcome => ({
-                _tag: 'Failed',
-                at,
-                error: 'Withings is off: set WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET',
-              })),
+              failed('Withings is off: set WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET'),
             onSome: (app) => outcomeOf(sync(app)),
           })
           yield* Ref.set(last, outcome)

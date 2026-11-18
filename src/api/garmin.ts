@@ -121,7 +121,7 @@ const compareRuns = tool({
 })
   .input(
     standard(
-      Schema.Struct({ ids: Schema.Array(Id).annotate({ description: 'Activity ids, 2 to 10' }) })
+      Schema.Struct({ ids: Schema.Array(Id).annotate({ description: 'Activity ids, 1 to 10' }) })
     )
   )
   .handler(({ input, context }) => {

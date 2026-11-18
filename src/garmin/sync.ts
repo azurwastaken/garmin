@@ -478,11 +478,12 @@ export class GarminSync extends Context.Service<
               error: failure === null ? null : failure.message,
             }
             if (row !== undefined) {
+              const finishedAt = yield* now
               yield* use((db) =>
                 db
                   .update(syncRuns)
                   .set({
-                    finished_at: new Date().toISOString(),
+                    finished_at: finishedAt,
                     ok: outcome.ok,
                     logged_out: outcome.logged_out,
                     account: outcome.account,

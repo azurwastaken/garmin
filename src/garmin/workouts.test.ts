@@ -140,6 +140,9 @@ layer(TestLayer, { excludeTestServices: true })('GarminWorkouts', (it) => {
       expect(
         yield* failure(workouts.create(EASY, { schedule: ['2027-02-30'], dry_run: true }))
       ).toBe('Not dates (YYYY-MM-DD): 2027-02-30')
+      expect(
+        yield* failure(workouts.create(EASY, { schedule: ['2027-13-01'], dry_run: true }))
+      ).toBe('Not dates (YYYY-MM-DD): 2027-13-01')
     })
   )
 
