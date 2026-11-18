@@ -1,13 +1,10 @@
 import process from 'node:process'
 
-import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
-import * as NodeServices from '@effect/platform-node/NodeServices'
-import { Console, Effect, Layer, Option, Redacted } from 'effect'
+import { Console, Effect, Option, Redacted } from 'effect'
 import { Command, Flag, Prompt } from 'effect/cli'
-import { FetchHttpClient } from 'effect/http'
 
-import { Database } from '../db.ts'
-import { Ingest } from '../ingest.ts'
+import { Garmin } from '../app.ts'
+import { runMain } from '../main.ts'
 
 import { GarminApi } from './api.ts'
 import { explain, GarminLogin } from './login.ts'
@@ -115,18 +112,5 @@ const garmin = Command.make('garmin').pipe(
 )
 
 if (import.meta.main) {
-  garmin.pipe(
-    Command.run({ version: '1.0.0' }),
-    Effect.provide(
-      GarminLogin.layer.pipe(
-        Layer.provideMerge(GarminSync.layer),
-        Layer.provideMerge(GarminApi.layer),
-        Layer.provideMerge(GarminSession.layer),
-        Layer.provideMerge(Ingest.layer),
-        Layer.provideMerge(Database.layer),
-        Layer.provideMerge(Layer.merge(NodeServices.layer, FetchHttpClient.layer))
-      )
-    ),
-    NodeRuntime.runMain
-  )
+  runMain(garmin.pipe(Command.run({ version: '1.0.0' })), Garmin)
 }

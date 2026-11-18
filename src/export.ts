@@ -6,16 +6,14 @@ import process from 'node:process'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 
-import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
-import * as NodeServices from '@effect/platform-node/NodeServices'
-import { Config, Console, Effect, Layer, Predicate, Schema } from 'effect'
+import { Config, Console, Effect, Predicate, Schema } from 'effect'
 import { Argument, Command } from 'effect/cli'
 import yauzl from 'yauzl'
 
 import { exportActivity, type ActivitySummary } from './connect.ts'
-import { Database } from './db.ts'
 import { fitFileType, fitStart } from './fit.ts'
-import { describe as describeIngest, Ingest } from './ingest.ts'
+import { describe as describeIngest, Ingest, Storage } from './ingest.ts'
+import { runMain } from './main.ts'
 
 // Garmin's "Export your data" zip (account settings → data management) → data/, then ingested:
 //   node src/export.ts <export.zip>
@@ -255,11 +253,5 @@ const backfill = Command.make(
 )
 
 if (import.meta.main) {
-  backfill.pipe(
-    Command.run({ version: '1.0.0' }),
-    Effect.provide(
-      Ingest.layer.pipe(Layer.provideMerge(Database.layer), Layer.provideMerge(NodeServices.layer))
-    ),
-    NodeRuntime.runMain
-  )
+  runMain(backfill.pipe(Command.run({ version: '1.0.0' })), Storage)
 }

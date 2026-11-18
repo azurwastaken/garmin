@@ -1,12 +1,10 @@
 import { ManagedRuntime, type Layer } from 'effect'
 
-import { Services } from '../app.ts'
-
-export const layer = Services
+import { App } from '../app.ts'
 
 declare global {
   var garminRuntime:
-    | ManagedRuntime.ManagedRuntime<Layer.Success<typeof layer>, Layer.Error<typeof layer>>
+    | ManagedRuntime.ManagedRuntime<Layer.Success<typeof App>, Layer.Error<typeof App>>
     | undefined
 }
 
@@ -14,5 +12,5 @@ declare global {
 // (see start.ts): the whole process shares one SQLite connection, the only writer. On globalThis,
 // so `vite dev` re-evaluations reuse it, and for the Nitro plugin (bundled apart from the routes)
 // to close it on shutdown.
-globalThis.garminRuntime ??= ManagedRuntime.make(layer)
+globalThis.garminRuntime ??= ManagedRuntime.make(App)
 export const runtime = globalThis.garminRuntime

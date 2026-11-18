@@ -1,8 +1,6 @@
 import { join } from 'node:path'
 import process from 'node:process'
 
-import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
-import * as NodeServices from '@effect/platform-node/NodeServices'
 import { and, eq, getTableColumns, getTableName, gte, isNull, lte, ne, or, sql } from 'drizzle-orm'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
 import { Config, Console, Context, Effect, FileSystem, Layer, Option, Schedule } from 'effect'
@@ -22,6 +20,7 @@ import {
 } from './connect.ts'
 import { Database, type DatabaseError } from './db.ts'
 import { parseFit, type FitActivity } from './fit.ts'
+import { runMain } from './main.ts'
 import { activities, body, daily, laps, plannedWorkouts, rawFiles, samples } from './schema.ts'
 import { SOURCE as WITHINGS, withingsBody } from './withings/measures.ts'
 
@@ -500,6 +499,10 @@ export class Ingest extends Context.Service<
   )
 }
 
+// SQLite (DATABASE_PATH, migrated) and the ingest of data/ (DATA_DIR) into it: what the CLIs that
+// write data/ need, and what the rest of the app (app.ts) sits on
+export const Storage = Ingest.layer.pipe(Layer.provideMerge(Database.layer))
+
 export const describe = (summary: IngestSummary) =>
   `${summary.files} file(s): ${summary.activities} activities, ${summary.days} days, ${summary.weighIns} weigh-ins, ${summary.plannedWorkouts} planned workouts${summary.errors.length === 0 ? '' : `, ${summary.errors.length} error(s)`}`
 
@@ -520,11 +523,5 @@ const ingest = Command.make(
 ).pipe(Command.withDescription('Ingest the files of DATA_DIR into DATABASE_PATH'))
 
 if (import.meta.main) {
-  ingest.pipe(
-    Command.run({ version: '1.0.0' }),
-    Effect.provide(
-      Ingest.layer.pipe(Layer.provideMerge(Database.layer), Layer.provideMerge(NodeServices.layer))
-    ),
-    NodeRuntime.runMain
-  )
+  runMain(ingest.pipe(Command.run({ version: '1.0.0' })), Storage)
 }
