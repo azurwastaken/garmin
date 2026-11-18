@@ -4,6 +4,8 @@ import { explain, GarminLogin } from '../garmin/login.ts'
 import { GarminSync } from '../garmin/sync.ts'
 import { type GrantView, OAuth } from '../oauth/oauth.ts'
 import { Stats } from '../stats.ts'
+import { WithingsSession } from '../withings/session.ts'
+import { type WithingsStatus, withingsStatus, WithingsSync } from '../withings/sync.ts'
 
 import { base, standard } from './base.ts'
 import { RUNS_SPANS, SLEEP_PERIODS } from './periods.ts'
@@ -34,6 +36,11 @@ export interface GarminView {
   // The whole history asked and not fetched yet (see sync.ts)
   readonly backfilling: boolean
   readonly runs: ReadonlyArray<SyncRunView>
+}
+
+export interface WithingsView extends WithingsStatus {
+  // The callback to register in the Withings developer app, exactly
+  readonly redirect_uri: string
 }
 
 export type LoginAnswer =
@@ -68,6 +75,12 @@ const garminView = Effect.gen(function* () {
   } satisfies GarminView
 })
 
+const withingsView = (origin: string) =>
+  Effect.map(withingsStatus, (status): WithingsView => ({
+    ...status,
+    redirect_uri: `${origin}/withings/callback`,
+  }))
+
 const Text = (max: number) => Schema.String.check(Schema.isMaxLength(max))
 
 export const web = {
@@ -80,7 +93,17 @@ export const web = {
     )
   ),
 
-  garmin: base.handler(({ context }) => context.run(garminView)),
+  garmin: base.handler(({ context }) =>
+    context.run(
+      Effect.all({ garmin: garminView, withings: withingsView(context.origin) }).pipe(
+        Effect.map(({ garmin, withings }) => ({ ...garmin, withings }))
+      )
+    )
+  ),
+
+  withingsLogout: base.handler(({ context }) =>
+    context.run(WithingsSession.use((session) => session.clear))
+  ),
 
   garminLogin: base
     .input(standard(Schema.Struct({ email: Text(512), password: Text(512) })))
@@ -122,7 +145,14 @@ export const web = {
     context.run(GarminLogin.use((login) => login.logout))
   ),
 
-  syncNow: base.handler(({ context }) => context.run(GarminSync.use((sync) => sync.trigger))),
+  syncNow: base.handler(({ context }) =>
+    context.run(
+      Effect.all(
+        [GarminSync.use((sync) => sync.trigger), WithingsSync.use((sync) => sync.trigger)],
+        { discard: true }
+      )
+    )
+  ),
 
   // The whole history, from the oldest activity: in the background, resumed until it completes
   backfill: base.handler(({ context }) => context.run(GarminSync.use((sync) => sync.backfill))),

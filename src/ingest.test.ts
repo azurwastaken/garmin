@@ -133,4 +133,90 @@ layer(TestLayer, { excludeTestServices: true })('Ingest', (it) => {
       ).toHaveLength(2)
     })
   )
+
+  it.effect('keeps Garmin and Withings weigh-ins apart, Withings winning an instant', () =>
+    Effect.gen(function* () {
+      const garminMonth = (weights: ReadonlyArray<readonly [string, number]>) => ({
+        startDate: '2024-03-01',
+        endDate: '2024-03-31',
+        dateWeightList: weights.map(([at, grams]) => ({
+          calendarDate: at.slice(0, 10),
+          timestampGMT: Date.parse(at),
+          weight: grams,
+          sourceType: 'INDEX_SCALE',
+        })),
+      })
+      const withingsMonth = (weights: ReadonlyArray<readonly [string, number]>) => ({
+        month: '2024-03',
+        timezone: 'Europe/Paris',
+        measuregrps: weights.map(([at, kg]) => ({
+          date: Date.parse(at) / 1000,
+          category: 1,
+          attrib: 0,
+          measures: [{ type: 1, value: kg * 100, unit: -2 }],
+        })),
+      })
+      const weighIns = rows(
+        sql`SELECT time, weight_kg, source FROM body WHERE day LIKE '2024-03-%' ORDER BY time`
+      )
+      // The same weigh-in at 07:00 in both, copied to Garmin by another app
+      yield* put('withings/2024-03.json', withingsMonth([['2024-03-02T07:00:00Z', 70.1]]))
+      yield* put(
+        'connect/body/2024-03.json',
+        garminMonth([
+          ['2024-03-02T07:00:00Z', 70_000],
+          ['2024-03-03T07:00:00Z', 69_800],
+        ])
+      )
+      yield* run()
+      const both = [
+        { time: '2024-03-02T07:00:00.000Z', weight_kg: 70.1, source: 'WITHINGS' },
+        { time: '2024-03-03T07:00:00.000Z', weight_kg: 69.8, source: 'INDEX_SCALE' },
+      ]
+      expect(yield* weighIns).toEqual(both)
+
+      // Garmin's month again: the Withings rows stay
+      const root = yield* dataDir
+      utimesSync(join(root, 'connect/body/2024-03.json'), new Date(), new Date(Date.now() + 5000))
+      yield* run()
+      expect(yield* weighIns).toEqual(both)
+
+      // Withings' month again, a weigh-in more: it wins its instant whatever the order
+      yield* put(
+        'withings/2024-03.json',
+        withingsMonth([
+          ['2024-03-02T07:00:00Z', 70.1],
+          ['2024-03-03T07:00:00Z', 69.9],
+        ])
+      )
+      utimesSync(join(root, 'withings/2024-03.json'), new Date(), new Date(Date.now() + 10_000))
+      yield* run()
+      expect(yield* weighIns).toEqual([
+        both[0],
+        { time: '2024-03-03T07:00:00.000Z', weight_kg: 69.9, source: 'WITHINGS' },
+      ])
+
+      // An export landing after them, with Garmin's copy of the same weigh-in: Withings' stays
+      const withingsRows = [
+        both[0],
+        { time: '2024-03-03T07:00:00.000Z', weight_kg: 69.9, source: 'WITHINGS' },
+      ]
+      yield* put('export/zip/biometrics.json', {
+        weights: [
+          {
+            timestampGMT: Date.parse('2024-03-02T07:00:00Z'),
+            calendarDate: '2024-03-02',
+            weight: 70_000,
+            sourceType: 'INDEX_SCALE',
+          },
+        ],
+      })
+      yield* run()
+      expect(yield* weighIns).toEqual(withingsRows)
+
+      // Rebuilt from the files: the same rows
+      yield* run({ rebuild: true })
+      expect(yield* weighIns).toEqual(withingsRows)
+    })
+  )
 })

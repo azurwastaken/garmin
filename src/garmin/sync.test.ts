@@ -16,13 +16,14 @@ import {
   testConfig,
 } from '../../test/fixtures.ts'
 import { fakeGarmin, inHours, json, jwt, type FakeRequest } from '../../test/garmin.ts'
+import { addDays, monthEnd, months } from '../days.ts'
 import { Database } from '../db.ts'
 import { Ingest } from '../ingest.ts'
 import { parisToday } from '../tools.ts'
 
 import { GarminApi } from './api.ts'
 import { GarminSession } from './session.ts'
-import { addDays, ALL, fitOfZip, monthEnd, months, GarminSync } from './sync.ts'
+import { ALL, fitOfZip, GarminSync } from './sync.ts'
 
 const zipOf = (name: string, bytes: Uint8Array) =>
   new Promise<Uint8Array>((resolve, reject) => {

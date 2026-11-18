@@ -25,7 +25,7 @@ const Instant = Schema.optional(Schema.NullOr(Schema.Union([Schema.Number, Schem
 const nullable = <A>(value: A | null | undefined): A | null => value ?? null
 const positive = (value: number | null | undefined) =>
   value === null || value === undefined || value <= 0 ? null : value
-const round = (value: number | null | undefined, digits = 0) =>
+export const round = (value: number | null | undefined, digits = 0) =>
   value === null || value === undefined ? null : Number(value.toFixed(digits))
 
 // A UTC instant as ISO 8601 (Garmin's strings without a zone are UTC when they say GMT)

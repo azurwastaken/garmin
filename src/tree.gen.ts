@@ -33,6 +33,8 @@ import { Route as OauthRegisterRouteImport } from './routes/oauth/register.ts'
 import { Route as OauthRevokeRouteImport } from './routes/oauth/revoke.ts'
 import { Route as OauthTokenRouteImport } from './routes/oauth/token.ts'
 import { Route as RpcSplatRouteImport } from './routes/rpc.$.ts'
+import { Route as WithingsCallbackRouteImport } from './routes/withings/callback.ts'
+import { Route as WithingsConnectRouteImport } from './routes/withings/connect.ts'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -154,6 +156,16 @@ const RpcSplatRoute = RpcSplatRouteImport.update({
   path: '/rpc/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WithingsCallbackRoute = WithingsCallbackRouteImport.update({
+  id: '/withings/callback',
+  path: '/withings/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WithingsConnectRoute = WithingsConnectRouteImport.update({
+  id: '/withings/connect',
+  path: '/withings/connect',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -179,6 +191,8 @@ export interface FileRoutesByFullPath {
   '/oauth/revoke': typeof OauthRevokeRoute
   '/oauth/token': typeof OauthTokenRoute
   '/rpc/$': typeof RpcSplatRoute
+  '/withings/callback': typeof WithingsCallbackRoute
+  '/withings/connect': typeof WithingsConnectRoute
   '/activities/': typeof ActivitiesIndexRoute
 }
 export interface FileRoutesByTo {
@@ -205,6 +219,8 @@ export interface FileRoutesByTo {
   '/oauth/revoke': typeof OauthRevokeRoute
   '/oauth/token': typeof OauthTokenRoute
   '/rpc/$': typeof RpcSplatRoute
+  '/withings/callback': typeof WithingsCallbackRoute
+  '/withings/connect': typeof WithingsConnectRoute
   '/activities': typeof ActivitiesIndexRoute
 }
 export interface FileRoutesById {
@@ -232,6 +248,8 @@ export interface FileRoutesById {
   '/oauth/revoke': typeof OauthRevokeRoute
   '/oauth/token': typeof OauthTokenRoute
   '/rpc/$': typeof RpcSplatRoute
+  '/withings/callback': typeof WithingsCallbackRoute
+  '/withings/connect': typeof WithingsConnectRoute
   '/activities/': typeof ActivitiesIndexRoute
 }
 export interface FileRouteTypes {
@@ -260,6 +278,8 @@ export interface FileRouteTypes {
     | '/oauth/revoke'
     | '/oauth/token'
     | '/rpc/$'
+    | '/withings/callback'
+    | '/withings/connect'
     | '/activities/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -286,6 +306,8 @@ export interface FileRouteTypes {
     | '/oauth/revoke'
     | '/oauth/token'
     | '/rpc/$'
+    | '/withings/callback'
+    | '/withings/connect'
     | '/activities'
   id:
     | '__root__'
@@ -312,6 +334,8 @@ export interface FileRouteTypes {
     | '/oauth/revoke'
     | '/oauth/token'
     | '/rpc/$'
+    | '/withings/callback'
+    | '/withings/connect'
     | '/activities/'
   fileRoutesById: FileRoutesById
 }
@@ -339,6 +363,8 @@ export interface RootRouteChildren {
   OauthRevokeRoute: typeof OauthRevokeRoute
   OauthTokenRoute: typeof OauthTokenRoute
   RpcSplatRoute: typeof RpcSplatRoute
+  WithingsCallbackRoute: typeof WithingsCallbackRoute
+  WithingsConnectRoute: typeof WithingsConnectRoute
   ActivitiesIndexRoute: typeof ActivitiesIndexRoute
 }
 
@@ -512,6 +538,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RpcSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/withings/callback': {
+      id: '/withings/callback'
+      path: '/withings/callback'
+      fullPath: '/withings/callback'
+      preLoaderRoute: typeof WithingsCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/withings/connect': {
+      id: '/withings/connect'
+      path: '/withings/connect'
+      fullPath: '/withings/connect'
+      preLoaderRoute: typeof WithingsConnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -539,6 +579,8 @@ const rootRouteChildren: RootRouteChildren = {
   OauthRevokeRoute: OauthRevokeRoute,
   OauthTokenRoute: OauthTokenRoute,
   RpcSplatRoute: RpcSplatRoute,
+  WithingsCallbackRoute: WithingsCallbackRoute,
+  WithingsConnectRoute: WithingsConnectRoute,
   ActivitiesIndexRoute: ActivitiesIndexRoute,
 }
 export const routeTree = rootRouteImport

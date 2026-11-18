@@ -22,6 +22,7 @@ it and write workouts to your watch.
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 🔄  | **Syncs Garmin Connect by itself.** Logs in like the mobile app (SSO + MFA), keeps only its tokens, and pulls activities, sleep, HRV, readiness, weigh-ins and the calendar every 3 hours. The whole history on demand. |
 | 📊  | **A web app to look at it.** Stats, runs, every activity with its route and its curves, sleep night by night. Plain SVG charts, light and dark.                                                                         |
+| ⚖️  | **Withings weigh-ins too.** Connect a Withings scale once (OAuth): its weight, fat, muscle, water, bone mass and visceral fat land in the same `body` table every 3 hours, on a loop of their own.                      |
 | 🤖  | **An MCP for Claude.** 15 tools: list and compare runs, a morning readiness check, training load, the planned workouts, and read-only SQL on everything.                                                                |
 | 🏃  | **Workouts on the watch.** Claude creates, schedules, moves and deletes structured workouts: paces like `"6'05/km"`, HR in bpm, repeat groups, strength circuits from Garmin's catalog. Every write has a dry run.      |
 | 🧩  | **One API, three faces.** One [oRPC](https://orpc.dev) router serves the MCP (`/mcp`), OpenAPI (`/api`) and a typed RPC client (`/rpc`).                                                                                |
@@ -84,6 +85,20 @@ garmin:
      `docker exec <container> node src/export.ts /data/import/<export>.zip`.
 
 Every push to `main` that passes CI pushes `:latest` and `:<sha>`.
+
+## ⚖️ Connect Withings (optional)
+
+1. **Create a developer app** on [developer.withings.com](https://developer.withings.com/dashboard/)
+   (the free public API). Its callback is the app's `/withings/callback`, exactly as `/garmin`
+   shows it (`https://garmin.example.com/withings/callback`).
+2. **Give the server its id and secret:** `WITHINGS_CLIENT_ID` and `WITHINGS_CLIENT_SECRET`.
+   Without them, Withings stays off.
+3. **Connect** on `/garmin` ("Connecter Withings"), and allow it on Withings' page. The whole
+   history comes at the first sync, then the recent months every 3 hours.
+
+Only the tokens are kept, in their own file (`WITHINGS_SESSION_PATH`, 0600). Each weigh-in is a
+`body` row with `source = 'WITHINGS'`; a weigh-in the scale could not attribute (someone else on
+it) is left out.
 
 ## 🤖 Connect Claude
 
@@ -194,6 +209,9 @@ pnpm check              # format, lint, types
 - **The Garmin session.** Only its OAuth2 tokens are kept, in their own file
   (`GARMIN_SESSION_PATH`, 0600 in a 0700 directory). They are never stored in SQLite (which the
   MCP's SQL reads) or in `data/`, and never logged. The Garmin password is never stored.
+- **The Withings session.** The same: its tokens only, in `WITHINGS_SESSION_PATH` (0600 in a
+  0700 directory), each rotated refresh token saved before its access token is used. The
+  developer app's secret comes from the environment, never from a file the app writes.
 - **One password** guards the app.
   - It is chosen on `/setup` (12 characters at least) and changed on `/password`.
   - Only its scrypt hash is kept (`PASSWORD_PATH`).
@@ -224,6 +242,7 @@ pnpm check              # format, lint, types
 | `connect/activities/YYYY/<id>.export.json` | the export's summary of the activity, used when the API's is missing     | export       |
 | `connect/daily/YYYY/<date>.json`           | one day: stats, sleep, HRV, training readiness, max metrics              | sync         |
 | `connect/body/YYYY-MM.json`                | a month of weigh-ins and body composition                                | sync         |
+| `withings/YYYY-MM.json`                    | a month of Withings measure groups, as getmeas returned them             | sync         |
 | `connect/calendar/YYYY-MM.json`            | a month of the Garmin calendar (scheduled workouts)                      | sync         |
 | `connect/workouts/<workoutId>.json`        | a workout's steps                                                        | sync         |
 | `export/<zip>/…`                           | the export's wellness JSON files, as extracted                           | export       |
@@ -255,7 +274,8 @@ Tables and views:
     battery.
   - Activity: steps, stress, intensity minutes.
   - Garmin's verdicts: training readiness, VO2max, race predictions.
-- `body`: weigh-ins with body composition.
+- `body`: weigh-ins with body composition, Garmin's and Withings' (`source = 'WITHINGS'`, which
+  wins a weigh-in both have).
 - `planned_workouts`: the Garmin calendar, with each entry's id, its workout's id and its steps.
 - `raw_files`, `sync_runs`: what was ingested, and each sync with Garmin Connect.
 - Views: `activity_summary` (paces, minutes, zones in minutes), `weekly` (per ISO week and sport).

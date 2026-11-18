@@ -37,6 +37,8 @@ ENV DATA_DIR=/data
 ENV DATABASE_PATH=/data/garmin.db
 # The Garmin session's tokens: a volume of their own, never under /data
 ENV GARMIN_SESSION_PATH=/session/garmin.json
+# The Withings session's tokens, beside it
+ENV WITHINGS_SESSION_PATH=/session/withings.json
 # The app's password's hash, chosen on the first visit (/setup): beside it, never under /data
 ENV PASSWORD_PATH=/session/password
 
