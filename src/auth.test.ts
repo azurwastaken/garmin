@@ -138,7 +138,7 @@ describe('the password file', () => {
       expect(yield* run(Auth.use((auth) => auth.hasPassword))).toBe(true)
       expect(yield* run(Auth.use((auth) => auth.setup('another password here')))).toBe('exists')
       expect(yield* run(Auth.use((auth) => auth.verify(PASSWORD, 'a')))).toBe('ok')
-    }).pipe(Effect.scoped)
+    })
   )
 })
 

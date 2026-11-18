@@ -112,5 +112,5 @@ const garmin = Command.make('garmin').pipe(
 )
 
 if (import.meta.main) {
-  runMain(garmin.pipe(Command.run({ version: '1.0.0' })), Garmin)
+  garmin.pipe(Command.run({ version: '1.0.0' }), Effect.provide(Garmin), runMain)
 }

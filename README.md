@@ -196,8 +196,8 @@ pnpm check              # format, lint, types
 | `pnpm db:generate <name>`                    | the next migration of `src/schema.ts` (into `drizzle/`)            |
 | `pnpm db:generate:auth <name>`               | the next migration of `src/oauth/schema.ts` (into `drizzle-auth/`) |
 
-A one-off script runs over the smallest part of `src/app.ts` it needs, with `runMain` from
-`src/main.ts` (it builds the layer on Node, logs a failure and exits 1):
+A one-off script provides the smallest part of `src/app.ts` it needs, then runs on Node with
+`runMain` from `src/main.ts` (a failure is logged and exits 1):
 
 ```ts
 import { Console, Effect } from 'effect'
@@ -206,9 +206,10 @@ import { Garmin } from './src/app.ts'
 import { GarminWorkouts } from './src/garmin/workouts.ts'
 import { runMain } from './src/main.ts'
 
-runMain(
-  GarminWorkouts.use((workouts) => workouts.library({ limit: 10 })).pipe(Effect.tap(Console.log)),
-  Garmin
+GarminWorkouts.use((workouts) => workouts.library({ limit: 10 })).pipe(
+  Effect.tap(Console.log),
+  Effect.provide(Garmin),
+  runMain
 )
 ```
 

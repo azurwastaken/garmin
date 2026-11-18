@@ -17,10 +17,10 @@ import { WithingsSync } from './withings/sync.ts'
 
 // The app's layers, composed once: the server, the CLIs, scripts and tests pick the part they need.
 // Each part leaves the platform (files, child processes, HTTP) and the config open, so a test gives
-// it a stubbed HTTP client and a temporary directory; `App` and `runMain` (main.ts) give it Node's.
+// it a stubbed HTTP client and a temporary directory; `App` and main.ts's `runMain` give it Node's.
 
-// SQLite and the ingest of data/ into it (see ingest.ts)
-export { Storage }
+// SQLite and the ingest of data/ into it, defined beside the ingest's CLI (see ingest.ts)
+export { Storage } from './ingest.ts'
 
 // The Garmin account: its session (a file of its own), the API, the sync into data/ and SQLite,
 // the login (web and CLI), the workouts written to its calendar (the MCP's)

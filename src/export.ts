@@ -253,5 +253,5 @@ const backfill = Command.make(
 )
 
 if (import.meta.main) {
-  runMain(backfill.pipe(Command.run({ version: '1.0.0' })), Storage)
+  backfill.pipe(Command.run({ version: '1.0.0' }), Effect.provide(Storage), runMain)
 }

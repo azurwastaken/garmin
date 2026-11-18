@@ -523,5 +523,5 @@ const ingest = Command.make(
 ).pipe(Command.withDescription('Ingest the files of DATA_DIR into DATABASE_PATH'))
 
 if (import.meta.main) {
-  runMain(ingest.pipe(Command.run({ version: '1.0.0' })), Storage)
+  ingest.pipe(Command.run({ version: '1.0.0' }), Effect.provide(Storage), runMain)
 }
