@@ -196,6 +196,22 @@ pnpm check              # format, lint, types
 | `pnpm db:generate <name>`                    | the next migration of `src/schema.ts` (into `drizzle/`)            |
 | `pnpm db:generate:auth <name>`               | the next migration of `src/oauth/schema.ts` (into `drizzle-auth/`) |
 
+A one-off script runs over the smallest part of `src/app.ts` it needs, with `runMain` from
+`src/main.ts` (it builds the layer on Node, logs a failure and exits 1):
+
+```ts
+import { Console, Effect } from 'effect'
+
+import { Garmin } from './src/app.ts'
+import { GarminWorkouts } from './src/garmin/workouts.ts'
+import { runMain } from './src/main.ts'
+
+runMain(
+  GarminWorkouts.use((workouts) => workouts.library({ limit: 10 })).pipe(Effect.tap(Console.log)),
+  Garmin
+)
+```
+
 > Garmin rate-limits logins per address: from a laptop the SSO may answer 429 (or a Cloudflare
 > 403). Log in from the server's web app.
 
@@ -299,6 +315,8 @@ src/
   api/                  oRPC: garmin.ts (public procedures = MCP tools), web.ts (the pages'),
                         handlers.ts (/mcp, /api, /rpc), client.ts (the pages' typed client)
   oauth/                the MCP's OAuth server: schema, service, consent page, metadata
+  app.ts                the app's layers, composed once: Storage, Garmin, Withings, Services, App
+  main.ts               the Node platform and runMain, for the CLIs and one-off scripts
   schema.ts, db.ts      drizzle schema and the SQLite connection, migrated at startup
   fit.ts, connect.ts    FIT files and Garmin Connect's JSON → rows
   ingest.ts, export.ts  data/ → SQLite; the GDPR export zip → data/
