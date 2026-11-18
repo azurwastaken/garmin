@@ -1,9 +1,9 @@
 # The app: the web pages, the MCP at /mcp, the Garmin sync into /data and its ingest, plus the CLIs
 # (`node src/garmin/cli.ts login`, `node src/ingest.ts`, `node src/export.ts <zip>`) run from source
 # with their production dependencies
-FROM node:26.13.0-slim AS builder
+FROM node:26.13.1-slim AS builder
 
-RUN npm install --global pnpm@12.16.1
+RUN npm install --global pnpm@12.21.0
 
 WORKDIR /repo
 
@@ -16,9 +16,9 @@ COPY . .
 RUN pnpm build
 
 # The CLIs' and the MCP's read-only query script's dependencies, without the build's
-FROM node:26.13.0-slim AS dependencies
+FROM node:26.13.1-slim AS dependencies
 
-RUN npm install --global pnpm@12.16.1
+RUN npm install --global pnpm@12.21.0
 
 WORKDIR /app
 
@@ -26,7 +26,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
 RUN pnpm install --frozen-lockfile --prod
 
-FROM node:26.13.0-slim
+FROM node:26.13.1-slim
 
 ENV NODE_ENV=production
 # SQLite's localtime (bedtimes in daily_readiness): the user's days, in Paris time
