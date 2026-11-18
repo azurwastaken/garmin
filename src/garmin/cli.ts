@@ -18,59 +18,59 @@ import { GarminSync } from './sync.ts'
 //   node src/garmin/cli.ts sync [--since YYYY-MM-DD|all]   all: the whole history, paced
 // (`pnpm garmin <command>`; in the container: docker exec -it <container> node src/garmin/cli.ts login)
 
-const fail = (message: string) =>
-  Effect.gen(function* () {
-    yield* Console.error(message)
-    process.exitCode = 1
-  })
+const fail = Effect.fnUntraced(function* (message: string) {
+  yield* Console.error(message)
+  process.exitCode = 1
+})
 
 const login = Command.make(
   'login',
   {},
-  Effect.fn(function* () {
-    const garmin = yield* GarminLogin
-    const email = yield* Prompt.run(Prompt.String({ message: 'Garmin email' }))
-    const password = yield* Prompt.run(Prompt.Password({ message: 'Garmin password' }))
-    const started = yield* garmin
-      .start({ email, password: Redacted.value(password) })
-      .pipe(Effect.result)
-    if (started._tag === 'Failure') return yield* fail(explain(started.failure))
-    let account = started.success._tag === 'LoggedIn' ? started.success.account : null
-    if (started.success._tag === 'NeedsMfa') {
-      const code = yield* Prompt.run(
-        Prompt.String({
-          message: `MFA code (Garmin's ${started.success.method === 'email' ? 'email' : 'app'})`,
-        })
-      )
-      const verified = yield* garmin.mfa(started.success.id, code).pipe(Effect.result)
-      if (verified._tag === 'Failure') {
-        return yield* fail(explain(verified.failure))
+  Effect.fn(
+    function* () {
+      const garmin = yield* GarminLogin
+      const email = yield* Prompt.run(Prompt.String({ message: 'Garmin email' }))
+      const password = yield* Prompt.run(Prompt.Password({ message: 'Garmin password' }))
+      const started = yield* garmin.start({ email, password: Redacted.value(password) })
+      let account = started._tag === 'LoggedIn' ? started.account : null
+      if (started._tag === 'NeedsMfa') {
+        const code = yield* Prompt.run(
+          Prompt.String({
+            message: `MFA code (Garmin's ${started.method === 'email' ? 'email' : 'app'})`,
+          })
+        )
+        account = yield* garmin.mfa(started.id, code)
       }
-      account = verified.success
-    }
-    const session = yield* GarminSession
-    yield* Console.log(
-      `Logged in as ${account?.full_name ?? account?.display_name ?? '?'}; session saved in ${session.path}.`
+      const session = yield* GarminSession
+      yield* Console.log(
+        `Logged in as ${account?.full_name ?? account?.display_name ?? '?'}; session saved in ${session.path}.`
+      )
+      yield* Console.log('The app syncs within a minute (or run `pnpm garmin sync` now).')
+    },
+    Effect.catchTag(['LoginRefused', 'RateLimited', 'NotLoggedIn', 'GarminError'], (error) =>
+      fail(explain(error))
     )
-    yield* Console.log('The app syncs within a minute (or run `pnpm garmin sync` now).')
-  })
+  )
 ).pipe(Command.withDescription('Log the Garmin account in and save its session'))
 
 const status = Command.make(
   'status',
   {},
-  Effect.fn(function* () {
-    const garmin = yield* GarminLogin
-    const current = yield* garmin.status
-    if (!current.logged_in) return yield* fail('Not logged in: `pnpm garmin login`.')
-    // Asks Garmin, so a revoked session shows
-    const account = yield* GarminApi.use((api) => api.profile).pipe(Effect.result)
-    if (account._tag === 'Failure')
-      return yield* fail(`Session refused: ${account.failure.message}`)
-    yield* Console.log(
-      `Logged in as ${account.success.full_name ?? account.success.display_name}; token valid until ${current.expires_at ?? '?'} (refreshed before).`
+  Effect.fn(
+    function* () {
+      const garmin = yield* GarminLogin
+      const current = yield* garmin.status
+      if (!current.logged_in) return yield* fail('Not logged in: `pnpm garmin login`.')
+      // Asks Garmin, so a revoked session shows
+      const account = yield* GarminApi.use((api) => api.profile)
+      yield* Console.log(
+        `Logged in as ${account.full_name ?? account.display_name}; token valid until ${current.expires_at ?? '?'} (refreshed before).`
+      )
+    },
+    Effect.catchTag(['NotLoggedIn', 'RateLimited', 'GarminError'], (error) =>
+      fail(`Session refused: ${error.message}`)
     )
-  })
+  )
 ).pipe(Command.withDescription('Which Garmin account is logged in, is its session valid'))
 
 const logout = Command.make(

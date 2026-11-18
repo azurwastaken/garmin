@@ -211,215 +211,211 @@ export class GarminSync extends Context.Service<
           }
         })
 
-      const sync = (since: string | undefined, warnings: Array<string>, written: Ref.Ref<number>) =>
-        Effect.gen(function* () {
-          const exists = (path: string) =>
-            fs.exists(join(dataDir, path)).pipe(Effect.orElseSucceed(() => false))
-          const write = (path: string, data: unknown) =>
-            writeData(path, data).pipe(Effect.andThen(Ref.update(written, (n) => n + 1)))
-          // The day of the account's oldest activity (the activity list, to its end), else the
-          // default span
-          const oldestActivityDay = (today: string) =>
-            Effect.gen(function* () {
-              let oldest: string | undefined
-              for (let offset = 0; offset < MAX_OFFSET; offset += PAGE) {
-                const items = yield* api.json(
-                  '/activitylist-service/activities/search/activities',
-                  {
-                    start: offset,
-                    limit: PAGE,
-                  }
-                )
-                const list = Array.isArray(items) ? items : []
-                for (const raw of list) {
-                  const day = Option.getOrUndefined(decodeActivity(raw))?.startTimeLocal.slice(
-                    0,
-                    10
-                  )
-                  if (day !== undefined && /^\d{4}-\d{2}-\d{2}$/u.test(day)) {
-                    oldest = oldest === undefined ? day : min(oldest, day)
-                  }
-                }
-                if (list.length < PAGE) break
-              }
-              return oldest ?? addDays(today, -DEFAULT_BACK_DAYS)
-            })
-          // One call: null and a warning when it fails, so one endpoint never stops the run
-          const call = <A>(what: string, effect: Effect.Effect<A, ApiFailure>) =>
-            effect.pipe(
-              Effect.catchTag('GarminError', (error) =>
-                Effect.gen(function* () {
-                  // A 404 is a day or an activity without that data
-                  if (error.status !== 404) {
-                    warnings.push(`${what}: ${error.message}`)
-                    yield* Effect.logWarning(`${what} failed: ${error.message}`)
-                  }
-                  return null
-                })
-              )
-            )
-
-          const account = yield* api.profile
-          // In the API's paths: escaped
-          const name = encodeURIComponent(account.display_name)
-          const today = yield* parisToday
-          const start =
-            since === ALL
-              ? yield* oldestActivityDay(today)
-              : (since ??
-                Option.match(yield* newestDay, {
-                  onNone: () => addDays(today, -DEFAULT_BACK_DAYS),
-                  onSome: (day) => min(addDays(day, -(FRESH_DAYS - 1)), today),
-                }))
-          // Gentle on Garmin over a long span
-          const pause =
-            daysBetween(start, today) > BACKFILL_DAYS ? Effect.sleep(BACKFILL_PAUSE) : Effect.void
-          yield* Effect.logInfo(`syncing ${accountName(account)} from ${start}`)
-
-          // Activities, newest first, until one starts before `start`
+      const sync = Effect.fnUntraced(function* (
+        since: string | undefined,
+        warnings: Array<string>,
+        written: Ref.Ref<number>
+      ) {
+        const exists = (path: string) =>
+          fs.exists(join(dataDir, path)).pipe(Effect.orElseSucceed(() => false))
+        const write = (path: string, data: unknown) =>
+          writeData(path, data).pipe(Effect.andThen(Ref.update(written, (n) => n + 1)))
+        // The day of the account's oldest activity (the activity list, to its end), else the
+        // default span
+        const oldestActivityDay = Effect.fnUntraced(function* (today: string) {
+          let oldest: string | undefined
           for (let offset = 0; offset < MAX_OFFSET; offset += PAGE) {
-            const page = yield* call(
-              'activities',
-              api.json('/activitylist-service/activities/search/activities', {
-                start: offset,
-                limit: PAGE,
+            const items = yield* api.json('/activitylist-service/activities/search/activities', {
+              start: offset,
+              limit: PAGE,
+            })
+            const list = Array.isArray(items) ? items : []
+            for (const raw of list) {
+              const day = Option.getOrUndefined(decodeActivity(raw))?.startTimeLocal.slice(0, 10)
+              if (day !== undefined && /^\d{4}-\d{2}-\d{2}$/u.test(day)) {
+                oldest = oldest === undefined ? day : min(oldest, day)
+              }
+            }
+            if (list.length < PAGE) break
+          }
+          return oldest ?? addDays(today, -DEFAULT_BACK_DAYS)
+        })
+        // One call: null and a warning when it fails, so one endpoint never stops the run
+        const call = <A>(what: string, effect: Effect.Effect<A, ApiFailure>) =>
+          effect.pipe(
+            Effect.catchTag('GarminError', (error) =>
+              Effect.gen(function* () {
+                // A 404 is a day or an activity without that data
+                if (error.status !== 404) {
+                  warnings.push(`${what}: ${error.message}`)
+                  yield* Effect.logWarning(`${what} failed: ${error.message}`)
+                }
+                return null
               })
             )
-            const items = Array.isArray(page) ? page : []
-            let past = false
-            for (const raw of items) {
-              const item = decodeActivity(raw)
-              if (Option.isNone(item)) continue
-              const { activityId: id, startTimeLocal } = item.value
-              const day = startTimeLocal.slice(0, 10)
-              // The day names the files: a date or nothing
-              if (!/^\d{4}-\d{2}-\d{2}$/u.test(day) || !Number.isSafeInteger(id)) continue
-              if (day < start) {
-                past = true
-                break
-              }
-              const year = day.slice(0, 4)
-              const fit = `fit/${year}/${id}.fit`
-              const summary = `connect/activities/${year}/${id}.json`
-              if (!(yield* exists(fit))) {
-                const zip = yield* call(
-                  `FIT of ${id}`,
-                  api.bytes(`/download-service/files/activity/${id}`)
+          )
+
+        const account = yield* api.profile
+        // In the API's paths: escaped
+        const name = encodeURIComponent(account.display_name)
+        const today = yield* parisToday
+        const start =
+          since === ALL
+            ? yield* oldestActivityDay(today)
+            : (since ??
+              Option.match(yield* newestDay, {
+                onNone: () => addDays(today, -DEFAULT_BACK_DAYS),
+                onSome: (day) => min(addDays(day, -(FRESH_DAYS - 1)), today),
+              }))
+        // Gentle on Garmin over a long span
+        const pause =
+          daysBetween(start, today) > BACKFILL_DAYS ? Effect.sleep(BACKFILL_PAUSE) : Effect.void
+        yield* Effect.logInfo(`syncing ${accountName(account)} from ${start}`)
+
+        // Activities, newest first, until one starts before `start`
+        for (let offset = 0; offset < MAX_OFFSET; offset += PAGE) {
+          const page = yield* call(
+            'activities',
+            api.json('/activitylist-service/activities/search/activities', {
+              start: offset,
+              limit: PAGE,
+            })
+          )
+          const items = Array.isArray(page) ? page : []
+          let past = false
+          for (const raw of items) {
+            const item = decodeActivity(raw)
+            if (Option.isNone(item)) continue
+            const { activityId: id, startTimeLocal } = item.value
+            const day = startTimeLocal.slice(0, 10)
+            // The day names the files: a date or nothing
+            if (!/^\d{4}-\d{2}-\d{2}$/u.test(day) || !Number.isSafeInteger(id)) continue
+            if (day < start) {
+              past = true
+              break
+            }
+            const year = day.slice(0, 4)
+            const fit = `fit/${year}/${id}.fit`
+            const summary = `connect/activities/${year}/${id}.json`
+            if (!(yield* exists(fit))) {
+              const zip = yield* call(
+                `FIT of ${id}`,
+                api.bytes(`/download-service/files/activity/${id}`)
+              )
+              yield* pause
+              if (zip !== null) {
+                const bytes = yield* fitOfZip(zip).pipe(
+                  Effect.catchTag('GarminError', (error) => {
+                    warnings.push(`FIT of ${id}: ${error.message}`)
+                    return Effect.succeed(null)
+                  })
                 )
-                yield* pause
-                if (zip !== null) {
-                  const bytes = yield* fitOfZip(zip).pipe(
-                    Effect.catchTag('GarminError', (error) => {
-                      warnings.push(`FIT of ${id}: ${error.message}`)
-                      return Effect.succeed(null)
-                    })
-                  )
-                  if (bytes === null) {
-                    yield* Effect.logInfo(`activity ${id} has no FIT file`)
-                  } else {
-                    yield* write(fit, bytes)
-                  }
+                if (bytes === null) {
+                  yield* Effect.logInfo(`activity ${id} has no FIT file`)
+                } else {
+                  yield* write(fit, bytes)
                 }
               }
-              if (!(yield* exists(summary)) || daysBetween(day, today) <= ACTIVITY_FRESH_DAYS) {
-                const gear = yield* call(
-                  `gear of ${id}`,
-                  api.json('/gear-service/gear/filterGear', { activityId: id })
-                )
-                yield* pause
-                yield* write(summary, { ...record(raw), gear: gear ?? [] })
-              }
             }
-            if (past || items.length < PAGE) break
+            if (!(yield* exists(summary)) || daysBetween(day, today) <= ACTIVITY_FRESH_DAYS) {
+              const gear = yield* call(
+                `gear of ${id}`,
+                api.json('/gear-service/gear/filterGear', { activityId: id })
+              )
+              yield* pause
+              yield* write(summary, { ...record(raw), gear: gear ?? [] })
+            }
           }
+          if (past || items.length < PAGE) break
+        }
 
-          // Days: the race predictions by month, then each day's endpoints
-          const predictions = new Map<string, unknown>()
-          for (const month of months(start, today)) {
-            const rows = yield* call(
-              `race predictions ${month.slice(0, 7)}`,
-              api.json(`/metrics-service/metrics/racepredictions/daily/${name}`, {
-                fromCalendarDate: month,
-                toCalendarDate: min(monthEnd(month), today),
-              })
-            )
-            for (const row of Array.isArray(rows) ? rows : []) {
-              const date = record(row)['calendarDate']
-              if (typeof date === 'string') predictions.set(date, row)
-            }
-          }
-          for (let day = start; day <= today; day = addDays(day, 1)) {
-            const path = `connect/daily/${day.slice(0, 4)}/${day}.json`
-            if ((yield* exists(path)) && daysBetween(day, today) >= FRESH_DAYS) continue
-            const failedBefore = warnings.length
-            const fetched = yield* Effect.all(
-              {
-                stats: call(
-                  `stats ${day}`,
-                  api.json(`/usersummary-service/usersummary/daily/${name}`, { calendarDate: day })
-                ),
-                sleep: call(
-                  `sleep ${day}`,
-                  api.json(`/wellness-service/wellness/dailySleepData/${name}`, {
-                    date: day,
-                    nonSleepBufferMinutes: 60,
-                  })
-                ),
-                hrv: call(`hrv ${day}`, api.json(`/hrv-service/hrv/${day}`)),
-                training_readiness: call(
-                  `readiness ${day}`,
-                  api.json(`/metrics-service/metrics/trainingreadiness/${day}`)
-                ),
-                training_status: call(
-                  `training status ${day}`,
-                  api.json(`/metrics-service/metrics/trainingstatus/aggregated/${day}`)
-                ),
-                max_metrics: call(
-                  `max metrics ${day}`,
-                  api.json(`/metrics-service/metrics/maxmet/daily/${day}/${day}`)
-                ),
-              },
-              { concurrency: 3 }
-            )
-            yield* pause
-            // A call failed: not written, so the next run (or backfill) fetches the day again
-            if (warnings.length > failedBefore) continue
-            yield* write(path, {
-              date: day,
-              fetched_at: yield* now,
-              ...fetched,
-              race_predictions: predictions.get(day) ?? null,
+        // Days: the race predictions by month, then each day's endpoints
+        const predictions = new Map<string, unknown>()
+        for (const month of months(start, today)) {
+          const rows = yield* call(
+            `race predictions ${month.slice(0, 7)}`,
+            api.json(`/metrics-service/metrics/racepredictions/daily/${name}`, {
+              fromCalendarDate: month,
+              toCalendarDate: min(monthEnd(month), today),
             })
+          )
+          for (const row of Array.isArray(rows) ? rows : []) {
+            const date = record(row)['calendarDate']
+            if (typeof date === 'string') predictions.set(date, row)
           }
+        }
+        for (let day = start; day <= today; day = addDays(day, 1)) {
+          const path = `connect/daily/${day.slice(0, 4)}/${day}.json`
+          if ((yield* exists(path)) && daysBetween(day, today) >= FRESH_DAYS) continue
+          const failedBefore = warnings.length
+          const fetched = yield* Effect.all(
+            {
+              stats: call(
+                `stats ${day}`,
+                api.json(`/usersummary-service/usersummary/daily/${name}`, { calendarDate: day })
+              ),
+              sleep: call(
+                `sleep ${day}`,
+                api.json(`/wellness-service/wellness/dailySleepData/${name}`, {
+                  date: day,
+                  nonSleepBufferMinutes: 60,
+                })
+              ),
+              hrv: call(`hrv ${day}`, api.json(`/hrv-service/hrv/${day}`)),
+              training_readiness: call(
+                `readiness ${day}`,
+                api.json(`/metrics-service/metrics/trainingreadiness/${day}`)
+              ),
+              training_status: call(
+                `training status ${day}`,
+                api.json(`/metrics-service/metrics/trainingstatus/aggregated/${day}`)
+              ),
+              max_metrics: call(
+                `max metrics ${day}`,
+                api.json(`/metrics-service/metrics/maxmet/daily/${day}/${day}`)
+              ),
+            },
+            { concurrency: 3 }
+          )
+          yield* pause
+          // A call failed: not written, so the next run (or backfill) fetches the day again
+          if (warnings.length > failedBefore) continue
+          yield* write(path, {
+            date: day,
+            fetched_at: yield* now,
+            ...fetched,
+            race_predictions: predictions.get(day) ?? null,
+          })
+        }
 
-          // Weigh-ins, by month
-          for (const month of months(start, today)) {
-            const path = `connect/body/${month.slice(0, 7)}.json`
-            if ((yield* exists(path)) && monthEnd(month) < addDays(today, -FRESH_DAYS)) continue
-            const weighIns = yield* call(
-              `body ${month.slice(0, 7)}`,
-              api.json('/weight-service/weight/dateRange', {
-                startDate: month,
-                endDate: min(monthEnd(month), today),
-              })
-            )
-            if (weighIns !== null) yield* write(path, weighIns)
-          }
+        // Weigh-ins, by month
+        for (const month of months(start, today)) {
+          const path = `connect/body/${month.slice(0, 7)}.json`
+          if ((yield* exists(path)) && monthEnd(month) < addDays(today, -FRESH_DAYS)) continue
+          const weighIns = yield* call(
+            `body ${month.slice(0, 7)}`,
+            api.json('/weight-service/weight/dateRange', {
+              startDate: month,
+              endDate: min(monthEnd(month), today),
+            })
+          )
+          if (weighIns !== null) yield* write(path, weighIns)
+        }
 
-          // The calendar, last month (what was done) to two months ahead (the plan), and each
-          // workout once (the months overlap, a routine is scheduled under one id)
-          const workouts = new Set<number>()
-          const calendarFrom = monthOf(addDays(monthOf(today), -1))
-          for (const month of months(calendarFrom, addDays(monthOf(today), 62))) {
-            yield* calendarMonth(
-              month.slice(0, 7),
-              workouts,
-              (what, path) => call(what, api.json(path)),
-              write
-            )
-          }
-          return { account, since: start }
-        })
+        // The calendar, last month (what was done) to two months ahead (the plan), and each
+        // workout once (the months overlap, a routine is scheduled under one id)
+        const workouts = new Set<number>()
+        const calendarFrom = monthOf(addDays(monthOf(today), -1))
+        for (const month of months(calendarFrom, addDays(monthOf(today), 62))) {
+          yield* calendarMonth(
+            month.slice(0, 7),
+            workouts,
+            (what, path) => call(what, api.json(path)),
+            write
+          )
+        }
+        return { account, since: start }
+      })
 
       // The newest day in data/connect/daily/
       const newestDay = Effect.gen(function* () {

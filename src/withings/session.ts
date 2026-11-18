@@ -98,20 +98,20 @@ export class WithingsSession extends Context.Service<
         Effect.orElseSucceed(() => Option.none<Saved>())
       )
 
-      const save = (tokens: WithingsTokens) =>
-        Effect.gen(function* () {
+      const save = Effect.fn('WithingsSession.save')(
+        function* (tokens: WithingsTokens) {
           const saved: Saved = {
             ...tokens,
             saved_at: new Date(yield* Clock.currentTimeMillis).toISOString(),
           }
           yield* writeAtomic(fs, path, JSON.stringify(saved), { mode: 0o600, dirMode: 0o700 })
           return saved
-        }).pipe(
-          Effect.mapError(
-            (error) =>
-              new WithingsError({ message: `saving the session: ${error.message}`, refused: false })
-          )
+        },
+        Effect.mapError(
+          (error) =>
+            new WithingsError({ message: `saving the session: ${error.message}`, refused: false })
         )
+      )
 
       const clear = fs.remove(path, { force: true }).pipe(
         Effect.mapError(
@@ -148,20 +148,19 @@ export class WithingsSession extends Context.Service<
             )
           )
 
-        const authorize = (redirectUri: string) =>
-          Effect.gen(function* () {
-            const state = randomUUID()
-            const now = yield* Clock.currentTimeMillis
-            yield* Ref.update(
-              pending,
-              (map) =>
-                new Map([
-                  ...[...map].filter(([, entry]) => entry.until > now),
-                  [state, { redirectUri, until: now + PENDING_FOR_MS }],
-                ])
-            )
-            return authorizeUrl({ clientId, redirectUri, state })
-          })
+        const authorize = Effect.fn('WithingsSession.authorize')(function* (redirectUri: string) {
+          const state = randomUUID()
+          const now = yield* Clock.currentTimeMillis
+          yield* Ref.update(
+            pending,
+            (map) =>
+              new Map([
+                ...[...map].filter(([, entry]) => entry.until > now),
+                [state, { redirectUri, until: now + PENDING_FOR_MS }],
+              ])
+          )
+          return authorizeUrl({ clientId, redirectUri, state })
+        })
 
         const connect = Effect.fn('WithingsSession.connect')(function* (callback: {
           readonly code: string

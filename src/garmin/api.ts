@@ -88,16 +88,15 @@ export class GarminApi extends Context.Service<
           )
 
       // The answer, once more with a refreshed token after a 401 (refused: not done, a write too)
-      const request = (call: Call) =>
-        Effect.gen(function* () {
-          const token = yield* session.accessToken()
-          let response = yield* send(call, token)
-          if (response.status === 401) {
-            const fresh = yield* session.accessToken({ rejected: token })
-            response = yield* send(call, fresh)
-          }
-          return yield* checked(call.path, response)
-        })
+      const request = Effect.fnUntraced(function* (call: Call) {
+        const token = yield* session.accessToken()
+        let response = yield* send(call, token)
+        if (response.status === 401) {
+          const fresh = yield* session.accessToken({ rejected: token })
+          response = yield* send(call, fresh)
+        }
+        return yield* checked(call.path, response)
+      })
 
       // The answer's JSON, null for an empty one
       const parsed = (path: string, response: HttpClientResponse.HttpClientResponse) =>
@@ -112,27 +111,29 @@ export class GarminApi extends Context.Service<
               )
             )
 
-      const checked = (path: string, response: HttpClientResponse.HttpClientResponse) =>
-        Effect.gen(function* () {
-          if (response.status === 401 || response.status === 403) {
-            return yield* new NotLoggedIn({
-              message: `Garmin refused the session (HTTP ${response.status} on ${path}): ${LOGIN_HINT}`,
-            })
-          }
-          if (response.status === 429) {
-            return yield* new RateLimited({
-              message: `${path}: Garmin is rate limiting (HTTP 429)`,
-            })
-          }
-          if (response.status >= 400) {
-            const detail = yield* text(path, response).pipe(Effect.orElseSucceed(() => ''))
-            return yield* new GarminError({
-              message: `${path}: HTTP ${response.status}${detail.length > 0 && detail.length < 300 ? ` ${detail}` : ''}`,
-              status: response.status,
-            })
-          }
-          return response
-        })
+      const checked = Effect.fnUntraced(function* (
+        path: string,
+        response: HttpClientResponse.HttpClientResponse
+      ) {
+        if (response.status === 401 || response.status === 403) {
+          return yield* new NotLoggedIn({
+            message: `Garmin refused the session (HTTP ${response.status} on ${path}): ${LOGIN_HINT}`,
+          })
+        }
+        if (response.status === 429) {
+          return yield* new RateLimited({
+            message: `${path}: Garmin is rate limiting (HTTP 429)`,
+          })
+        }
+        if (response.status >= 400) {
+          const detail = yield* text(path, response).pipe(Effect.orElseSucceed(() => ''))
+          return yield* new GarminError({
+            message: `${path}: HTTP ${response.status}${detail.length > 0 && detail.length < 300 ? ` ${detail}` : ''}`,
+            status: response.status,
+          })
+        }
+        return response
+      })
 
       const json = (path: string, params: Params = {}) =>
         request({ method: 'GET', path, params, accept: 'application/json' }).pipe(

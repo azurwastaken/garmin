@@ -150,103 +150,103 @@ const inTime = (what: string) =>
     orElse: () => Effect.fail(new GarminError({ message: `${what}: no answer in 30 s` })),
   })
 
-const ssoJson = (what: string, response: HttpClientResponse.HttpClientResponse) =>
-  Effect.gen(function* () {
-    if (response.status === 429) {
-      return yield* new RateLimited({ message: `${what}: Garmin is rate limiting (HTTP 429)` })
-    }
-    if (response.status === 403) {
-      return yield* new GarminError({
-        message: `${what}: blocked by Cloudflare (HTTP 403)`,
-        status: 403,
-      })
-    }
-    const json = yield* Body.json(what, response).pipe(
-      Effect.mapError(
-        () =>
-          new GarminError({
-            message: `${what}: not JSON (HTTP ${response.status})`,
-            status: response.status,
-          })
-      )
+const ssoJson = Effect.fnUntraced(function* (
+  what: string,
+  response: HttpClientResponse.HttpClientResponse
+) {
+  if (response.status === 429) {
+    return yield* new RateLimited({ message: `${what}: Garmin is rate limiting (HTTP 429)` })
+  }
+  if (response.status === 403) {
+    return yield* new GarminError({
+      message: `${what}: blocked by Cloudflare (HTTP 403)`,
+      status: 403,
+    })
+  }
+  const json = yield* Body.json(what, response).pipe(
+    Effect.mapError(
+      () =>
+        new GarminError({
+          message: `${what}: not JSON (HTTP ${response.status})`,
+          status: response.status,
+        })
     )
-    const answer = decodeAnswer(json)
-    if (answer._tag === 'None') {
-      return yield* new GarminError({
-        message: `${what}: unexpected answer (HTTP ${response.status})`,
-      })
-    }
-    if (answer.value.error?.['status-code'] === '429') {
-      return yield* new RateLimited({ message: `${what}: Garmin is rate limiting` })
-    }
-    return answer.value
-  })
+  )
+  const answer = decodeAnswer(json)
+  if (answer._tag === 'None') {
+    return yield* new GarminError({
+      message: `${what}: unexpected answer (HTTP ${response.status})`,
+    })
+  }
+  if (answer.value.error?.['status-code'] === '429') {
+    return yield* new RateLimited({ message: `${what}: Garmin is rate limiting` })
+  }
+  return answer.value
+})
 
 const withCookies = (cookies: Ref.Ref<ReadonlyArray<Cookies.Cookie>>) =>
   Effect.map(HttpClient.HttpClient, (client) =>
     client.pipe(HttpClient.followRedirects(5), HttpClient.withCookiesRef(cookies))
   )
 
-const post = (
+const post = Effect.fnUntraced(function* (
   cookies: Ref.Ref<ReadonlyArray<Cookies.Cookie>>,
   what: string,
   url: string,
   flow: Flow,
   body: unknown
-) =>
-  Effect.gen(function* () {
-    const client = yield* withCookies(cookies)
-    const response = yield* client
-      .execute(
-        HttpClientRequest.post(url).pipe(
-          HttpClientRequest.setUrlParams(params(flow)),
-          HttpClientRequest.setHeaders(postHeaders(flow)),
-          HttpClientRequest.bodyJsonUnsafe(body)
-        )
+) {
+  const client = yield* withCookies(cookies)
+  const response = yield* client
+    .execute(
+      HttpClientRequest.post(url).pipe(
+        HttpClientRequest.setUrlParams(params(flow)),
+        HttpClientRequest.setHeaders(postHeaders(flow)),
+        HttpClientRequest.bodyJsonUnsafe(body)
       )
-      .pipe(
-        Effect.mapError(transport(what)),
-        Effect.timeoutOrElse({
-          duration: '30 seconds',
-          orElse: () => Effect.fail(new GarminError({ message: `${what}: no answer in 30 s` })),
-        })
-      )
-    return yield* ssoJson(what, response)
-  })
+    )
+    .pipe(
+      Effect.mapError(transport(what)),
+      Effect.timeoutOrElse({
+        duration: '30 seconds',
+        orElse: () => Effect.fail(new GarminError({ message: `${what}: no answer in 30 s` })),
+      })
+    )
+  return yield* ssoJson(what, response)
+})
 
 // Trades a CAS service ticket for the DI tokens
-export const exchangeTicket = (ticket: string, flow: Flow) =>
-  Effect.gen(function* () {
-    const client = yield* HttpClient.HttpClient
-    for (const clientId of DI_CLIENT_IDS) {
-      const response = yield* client
-        .execute(
-          HttpClientRequest.post(DI_TOKEN_URL).pipe(
-            HttpClientRequest.setHeaders(
-              nativeHeaders({
-                authorization: `Basic ${Buffer.from(`${clientId}:`).toString('base64')}`,
-                accept: 'application/json,text/html;q=0.9,*/*;q=0.8',
-                'cache-control': 'no-cache',
-              })
-            ),
-            HttpClientRequest.bodyUrlParams({
-              client_id: clientId,
-              service_ticket: ticket,
-              grant_type: DI_GRANT_TYPE,
-              service_url: FLOWS[flow].service,
+export const exchangeTicket = Effect.fnUntraced(function* (ticket: string, flow: Flow) {
+  const client = yield* HttpClient.HttpClient
+  for (const clientId of DI_CLIENT_IDS) {
+    const response = yield* client
+      .execute(
+        HttpClientRequest.post(DI_TOKEN_URL).pipe(
+          HttpClientRequest.setHeaders(
+            nativeHeaders({
+              authorization: `Basic ${Buffer.from(`${clientId}:`).toString('base64')}`,
+              accept: 'application/json,text/html;q=0.9,*/*;q=0.8',
+              'cache-control': 'no-cache',
             })
-          )
+          ),
+          HttpClientRequest.bodyUrlParams({
+            client_id: clientId,
+            service_ticket: ticket,
+            grant_type: DI_GRANT_TYPE,
+            service_url: FLOWS[flow].service,
+          })
         )
-        .pipe(Effect.mapError(transport('token exchange')), inTime('token exchange'))
-      if (response.status === 429) {
-        return yield* new RateLimited({ message: 'token exchange: Garmin is rate limiting' })
-      }
-      if (response.status < 200 || response.status >= 300) continue
-      const tokens = yield* tokensOf(response, clientId, null).pipe(Effect.option)
-      if (tokens._tag === 'Some') return tokens.value
+      )
+      .pipe(Effect.mapError(transport('token exchange')), inTime('token exchange'))
+    if (response.status === 429) {
+      return yield* new RateLimited({ message: 'token exchange: Garmin is rate limiting' })
     }
-    return yield* new GarminError({ message: 'token exchange: refused for every DI client id' })
-  })
+    if (response.status < 200 || response.status >= 300) continue
+    const tokens = yield* tokensOf(response, clientId, null).pipe(Effect.option)
+    if (tokens._tag === 'Some') return tokens.value
+  }
+  return yield* new GarminError({ message: 'token exchange: refused for every DI client id' })
+})
 
 const TokenAnswer = Schema.Struct({
   access_token: Schema.String,
@@ -269,29 +269,28 @@ const tokensOf = (
   )
 
 // The answer to the email and password, or to the MFA code
-const outcome = (what: string, flow: Flow, answer: SsoAnswer) =>
-  Effect.gen(function* () {
-    const type = answer.responseStatus?.type
-    if (type === 'SUCCESSFUL' && typeof answer.serviceTicketId === 'string') {
-      return { _tag: 'Ticket' as const, ticket: answer.serviceTicketId }
+const outcome = Effect.fnUntraced(function* (what: string, flow: Flow, answer: SsoAnswer) {
+  const type = answer.responseStatus?.type
+  if (type === 'SUCCESSFUL' && typeof answer.serviceTicketId === 'string') {
+    return { _tag: 'Ticket' as const, ticket: answer.serviceTicketId }
+  }
+  if (type === 'MFA_REQUIRED') {
+    return {
+      _tag: 'Mfa' as const,
+      method: answer.customerMfaInfo?.mfaLastMethodUsed ?? 'email',
     }
-    if (type === 'MFA_REQUIRED') {
-      return {
-        _tag: 'Mfa' as const,
-        method: answer.customerMfaInfo?.mfaLastMethodUsed ?? 'email',
-      }
-    }
-    if (type === 'INVALID_USERNAME_PASSWORD') {
-      return yield* new LoginRefused({ message: 'Garmin refused the email or the password' })
-    }
-    if (type === 'CAPTCHA_REQUIRED') {
-      return yield* new GarminError({ message: `${what} (${flow}): Garmin asks for a captcha` })
-    }
-    if (type === 'ACCOUNT_LOCKED') {
-      return yield* new LoginRefused({ message: 'Garmin says the account is locked' })
-    }
-    return yield* new GarminError({ message: `${what} (${flow}): unexpected answer ${type ?? ''}` })
-  })
+  }
+  if (type === 'INVALID_USERNAME_PASSWORD') {
+    return yield* new LoginRefused({ message: 'Garmin refused the email or the password' })
+  }
+  if (type === 'CAPTCHA_REQUIRED') {
+    return yield* new GarminError({ message: `${what} (${flow}): Garmin asks for a captcha` })
+  }
+  if (type === 'ACCOUNT_LOCKED') {
+    return yield* new LoginRefused({ message: 'Garmin says the account is locked' })
+  }
+  return yield* new GarminError({ message: `${what} (${flow}): unexpected answer ${type ?? ''}` })
+})
 
 const credentials = (email: string, password: string) => ({
   username: email,
@@ -300,49 +299,53 @@ const credentials = (email: string, password: string) => ({
   captchaToken: '',
 })
 
-const loginWith = (flow: Flow, email: string, password: string, portalDelay: Duration.Input) =>
-  Effect.gen(function* () {
-    const cookies = yield* Ref.make<ReadonlyArray<Cookies.Cookie>>([])
-    if (flow === 'portal') {
-      // The sign-in page, for its cookies, then a person's pause before the POST
-      const client = yield* withCookies(cookies)
-      const page = yield* client
-        .execute(
-          HttpClientRequest.get(signInUrl).pipe(
-            HttpClientRequest.setUrlParams({
-              clientId: FLOWS.portal.clientId,
-              service: FLOWS.portal.service,
-            }),
-            HttpClientRequest.setHeaders({
-              'user-agent': DESKTOP_USER_AGENT,
-              accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-              'accept-language': 'en-US,en;q=0.9',
-            })
-          )
+const loginWith = Effect.fnUntraced(function* (
+  flow: Flow,
+  email: string,
+  password: string,
+  portalDelay: Duration.Input
+) {
+  const cookies = yield* Ref.make<ReadonlyArray<Cookies.Cookie>>([])
+  if (flow === 'portal') {
+    // The sign-in page, for its cookies, then a person's pause before the POST
+    const client = yield* withCookies(cookies)
+    const page = yield* client
+      .execute(
+        HttpClientRequest.get(signInUrl).pipe(
+          HttpClientRequest.setUrlParams({
+            clientId: FLOWS.portal.clientId,
+            service: FLOWS.portal.service,
+          }),
+          HttpClientRequest.setHeaders({
+            'user-agent': DESKTOP_USER_AGENT,
+            accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'accept-language': 'en-US,en;q=0.9',
+          })
         )
-        .pipe(Effect.mapError(transport('sign-in page')), inTime('sign-in page'))
-      if (page.status === 429) {
-        return yield* new RateLimited({ message: 'sign-in page: Garmin is rate limiting' })
-      }
-      const jitter = yield* Random.next
-      yield* Effect.sleep(Duration.times(Duration.fromInputUnsafe(portalDelay), 1 + jitter))
+      )
+      .pipe(Effect.mapError(transport('sign-in page')), inTime('sign-in page'))
+    if (page.status === 429) {
+      return yield* new RateLimited({ message: 'sign-in page: Garmin is rate limiting' })
     }
-    const answer = yield* post(
-      cookies,
-      'login',
-      `${SSO}/${flow}/api/login`,
-      flow,
-      credentials(email, password)
-    )
-    const next = yield* outcome('login', flow, answer)
-    if (next._tag === 'Mfa') {
-      const step: LoginStep = { _tag: 'NeedsMfa', mfa: { flow, method: next.method, cookies } }
-      return step
-    }
-    const tokens = yield* exchangeTicket(next.ticket, flow)
-    const step: LoginStep = { _tag: 'LoggedIn', tokens }
+    const jitter = yield* Random.next
+    yield* Effect.sleep(Duration.times(Duration.fromInputUnsafe(portalDelay), 1 + jitter))
+  }
+  const answer = yield* post(
+    cookies,
+    'login',
+    `${SSO}/${flow}/api/login`,
+    flow,
+    credentials(email, password)
+  )
+  const next = yield* outcome('login', flow, answer)
+  if (next._tag === 'Mfa') {
+    const step: LoginStep = { _tag: 'NeedsMfa', mfa: { flow, method: next.method, cookies } }
     return step
-  })
+  }
+  const tokens = yield* exchangeTicket(next.ticket, flow)
+  const step: LoginStep = { _tag: 'LoggedIn', tokens }
+  return step
+})
 
 // The email and password: tokens, or the MFA code to ask for (verifyMfa). portalDelay: the
 // pause of the portal's flow, doubled at most (10 s by default; tests set 0)
@@ -375,74 +378,72 @@ export const login = (
 
 // The MFA code (Garmin's email or app): its flow's endpoint, then the other's (both share the
 // SSO's cookies, and may not share a rate limit)
-export const verifyMfa = (mfa: PendingMfa, code: string) =>
-  Effect.gen(function* () {
-    const other: Flow = mfa.flow === 'mobile' ? 'portal' : 'mobile'
-    const failures: Array<RateLimited | GarminError> = []
-    for (const flow of [mfa.flow, other]) {
-      const answer = yield* post(mfa.cookies, 'MFA', `${SSO}/${flow}/api/mfa/verifyCode`, flow, {
-        mfaMethod: mfa.method,
-        mfaVerificationCode: code.trim(),
-        rememberMyBrowser: true,
-        reconsentList: [],
-        mfaSetup: false,
-      }).pipe(Effect.result)
-      if (answer._tag === 'Failure') {
-        failures.push(answer.failure)
-        continue
-      }
-      if (answer.success.responseStatus?.type === 'SUCCESSFUL' && answer.success.serviceTicketId) {
-        // The ticket is for the service of the flow that logged in
-        return yield* exchangeTicket(answer.success.serviceTicketId, mfa.flow)
-      }
-      return yield* new LoginRefused({ message: 'Garmin refused the MFA code' })
+export const verifyMfa = Effect.fn('Garmin.verifyMfa')(function* (mfa: PendingMfa, code: string) {
+  const other: Flow = mfa.flow === 'mobile' ? 'portal' : 'mobile'
+  const failures: Array<RateLimited | GarminError> = []
+  for (const flow of [mfa.flow, other]) {
+    const answer = yield* post(mfa.cookies, 'MFA', `${SSO}/${flow}/api/mfa/verifyCode`, flow, {
+      mfaMethod: mfa.method,
+      mfaVerificationCode: code.trim(),
+      rememberMyBrowser: true,
+      reconsentList: [],
+      mfaSetup: false,
+    }).pipe(Effect.result)
+    if (answer._tag === 'Failure') {
+      failures.push(answer.failure)
+      continue
     }
-    if (failures.every((failure) => failure._tag === 'RateLimited')) {
-      return yield* new RateLimited({ message: 'MFA: Garmin is rate limiting' })
+    if (answer.success.responseStatus?.type === 'SUCCESSFUL' && answer.success.serviceTicketId) {
+      // The ticket is for the service of the flow that logged in
+      return yield* exchangeTicket(answer.success.serviceTicketId, mfa.flow)
     }
-    return yield* new GarminError({
-      message: `MFA: ${failures.map((failure) => failure.message).join('; ')}`,
-    })
-  }).pipe(Effect.withSpan('Garmin.verifyMfa'))
+    return yield* new LoginRefused({ message: 'Garmin refused the MFA code' })
+  }
+  if (failures.every((failure) => failure._tag === 'RateLimited')) {
+    return yield* new RateLimited({ message: 'MFA: Garmin is rate limiting' })
+  }
+  return yield* new GarminError({
+    message: `MFA: ${failures.map((failure) => failure.message).join('; ')}`,
+  })
+})
 
 // A new access token from the refresh token; NotLoggedIn once Garmin refuses it
-export const refresh = (tokens: Tokens) =>
-  Effect.gen(function* () {
-    if (tokens.di_refresh_token === null) {
-      return yield* new NotLoggedIn({ message: 'the session has no refresh token' })
-    }
-    const client = yield* HttpClient.HttpClient
-    const response = yield* client
-      .execute(
-        HttpClientRequest.post(DI_TOKEN_URL).pipe(
-          HttpClientRequest.setHeaders(
-            nativeHeaders({
-              authorization: `Basic ${Buffer.from(`${tokens.di_client_id}:`).toString('base64')}`,
-              accept: 'application/json',
-              'cache-control': 'no-cache',
-            })
-          ),
-          HttpClientRequest.bodyUrlParams({
-            grant_type: 'refresh_token',
-            client_id: tokens.di_client_id,
-            refresh_token: tokens.di_refresh_token,
+export const refresh = Effect.fn('Garmin.refresh')(function* (tokens: Tokens) {
+  if (tokens.di_refresh_token === null) {
+    return yield* new NotLoggedIn({ message: 'the session has no refresh token' })
+  }
+  const client = yield* HttpClient.HttpClient
+  const response = yield* client
+    .execute(
+      HttpClientRequest.post(DI_TOKEN_URL).pipe(
+        HttpClientRequest.setHeaders(
+          nativeHeaders({
+            authorization: `Basic ${Buffer.from(`${tokens.di_client_id}:`).toString('base64')}`,
+            accept: 'application/json',
+            'cache-control': 'no-cache',
           })
-        )
+        ),
+        HttpClientRequest.bodyUrlParams({
+          grant_type: 'refresh_token',
+          client_id: tokens.di_client_id,
+          refresh_token: tokens.di_refresh_token,
+        })
       )
-      .pipe(Effect.mapError(transport('token refresh')), inTime('token refresh'))
-    if (response.status === 429) {
-      return yield* new RateLimited({ message: 'token refresh: Garmin is rate limiting' })
-    }
-    if (response.status === 400 || response.status === 401 || response.status === 403) {
-      return yield* new NotLoggedIn({
-        message: `Garmin refused to refresh the session (HTTP ${response.status})`,
-      })
-    }
-    if (response.status < 200 || response.status >= 300) {
-      return yield* new GarminError({
-        message: `token refresh: HTTP ${response.status}`,
-        status: response.status,
-      })
-    }
-    return yield* tokensOf(response, tokens.di_client_id, tokens.di_refresh_token)
-  }).pipe(Effect.withSpan('Garmin.refresh'))
+    )
+    .pipe(Effect.mapError(transport('token refresh')), inTime('token refresh'))
+  if (response.status === 429) {
+    return yield* new RateLimited({ message: 'token refresh: Garmin is rate limiting' })
+  }
+  if (response.status === 400 || response.status === 401 || response.status === 403) {
+    return yield* new NotLoggedIn({
+      message: `Garmin refused to refresh the session (HTTP ${response.status})`,
+    })
+  }
+  if (response.status < 200 || response.status >= 300) {
+    return yield* new GarminError({
+      message: `token refresh: HTTP ${response.status}`,
+      status: response.status,
+    })
+  }
+  return yield* tokensOf(response, tokens.di_client_id, tokens.di_refresh_token)
+})

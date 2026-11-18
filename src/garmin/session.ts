@@ -71,8 +71,8 @@ export class GarminSession extends Context.Service<
         Effect.orElseSucceed(() => Option.none<Saved>())
       )
 
-      const save = (tokens: Tokens, account: Account | null) =>
-        Effect.gen(function* () {
+      const save = Effect.fn('GarminSession.save')(
+        function* (tokens: Tokens, account: Account | null) {
           const saved: Saved = {
             di_token: tokens.di_token,
             di_refresh_token: tokens.di_refresh_token,
@@ -83,11 +83,11 @@ export class GarminSession extends Context.Service<
           // Created 0600, then moved over the previous one: never half written, never readable
           yield* writeAtomic(fs, path, JSON.stringify(saved), { mode: 0o600, dirMode: 0o700 })
           return saved
-        }).pipe(
-          Effect.mapError(
-            (error) => new GarminError({ message: `saving the session: ${error.message}` })
-          )
+        },
+        Effect.mapError(
+          (error) => new GarminError({ message: `saving the session: ${error.message}` })
         )
+      )
 
       const clear = fs
         .remove(path, { force: true })

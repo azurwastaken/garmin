@@ -159,31 +159,30 @@ export class WithingsSync extends Context.Service<
           })
         })
 
-      const sync = (app: WithingsApp) =>
-        Effect.gen(function* () {
-          const wanted = syncMonths(yield* newestMonth, yield* parisToday)
-          const range = fetchRange(wanted, yield* Clock.currentTimeMillis)
-          yield* Effect.logInfo(`syncing Withings from ${wanted[0] ?? '?'}`)
-          const { groups, timezone } = yield* measures(app, range)
-          const files = monthFiles(groups, timezone, wanted)
-          for (const file of files) {
-            yield* writeAtomic(
-              fs,
-              join(dataDir, DIR, `${file.month}.json`),
-              JSON.stringify(file)
-            ).pipe(
-              Effect.mapError(
-                (error) =>
-                  new WithingsError({ message: `${file.month}: ${error.message}`, refused: false })
-              )
+      const sync = Effect.fnUntraced(function* (app: WithingsApp) {
+        const wanted = syncMonths(yield* newestMonth, yield* parisToday)
+        const range = fetchRange(wanted, yield* Clock.currentTimeMillis)
+        yield* Effect.logInfo(`syncing Withings from ${wanted[0] ?? '?'}`)
+        const { groups, timezone } = yield* measures(app, range)
+        const files = monthFiles(groups, timezone, wanted)
+        for (const file of files) {
+          yield* writeAtomic(
+            fs,
+            join(dataDir, DIR, `${file.month}.json`),
+            JSON.stringify(file)
+          ).pipe(
+            Effect.mapError(
+              (error) =>
+                new WithingsError({ message: `${file.month}: ${error.message}`, refused: false })
             )
-          }
-          const summary = yield* ingest.run()
-          yield* Effect.logInfo(
-            `Withings: ${groups.length} weigh-in(s); ingest: ${describeIngest(summary)}`
           )
-          return files.length
-        })
+        }
+        const summary = yield* ingest.run()
+        yield* Effect.logInfo(
+          `Withings: ${groups.length} weigh-in(s); ingest: ${describeIngest(summary)}`
+        )
+        return files.length
+      })
 
       const outcomeOf = (
         result: Effect.Effect<number, WithingsLoggedOut | WithingsError | DatabaseError>
@@ -291,26 +290,22 @@ export type WithingsStatus = Effect.Success<typeof withingsStatus>
 
 // The callback: Withings' code traded for the tokens at once (it lives 30 seconds), then the sync
 // woken; the user's refusal or a failure (logged) as a fixed word, never Withings' own text
-export const connectFromCallback = (query: {
+export const connectFromCallback = Effect.fn('WithingsSync.connectFromCallback')(function* (query: {
   readonly code: string | null
   readonly state: string | null
   readonly error: string | null
-}) =>
-  Effect.gen(function* () {
-    const session = yield* WithingsSession
-    const sync = yield* WithingsSync
-    if (Option.isNone(session.app)) return 'off' satisfies ConnectResult
-    if (query.error !== null || query.code === null || query.state === null) {
-      return 'denied' satisfies ConnectResult
-    }
-    return yield* session.app.value.connect({ code: query.code, state: query.state }).pipe(
-      Effect.andThen(sync.trigger),
-      Effect.as<ConnectResult>('connected'),
-      Effect.catchTag('WithingsError', (error) =>
-        Effect.as(
-          Effect.logError(`Withings connection failed: ${error.message}`),
-          'failed' as const
-        )
-      )
+}) {
+  const session = yield* WithingsSession
+  const sync = yield* WithingsSync
+  if (Option.isNone(session.app)) return 'off' satisfies ConnectResult
+  if (query.error !== null || query.code === null || query.state === null) {
+    return 'denied' satisfies ConnectResult
+  }
+  return yield* session.app.value.connect({ code: query.code, state: query.state }).pipe(
+    Effect.andThen(sync.trigger),
+    Effect.as<ConnectResult>('connected'),
+    Effect.catchTag('WithingsError', (error) =>
+      Effect.as(Effect.logError(`Withings connection failed: ${error.message}`), 'failed' as const)
     )
-  })
+  )
+})

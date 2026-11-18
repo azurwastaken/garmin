@@ -56,23 +56,22 @@ export class GarminLogin extends Context.Service<
 
       // Saved, then checked against the API (its profile names the account): a token the API
       // refuses is not kept
-      const adopt = (tokens: Tokens) =>
-        Effect.gen(function* () {
-          const previous = yield* session.load
-          yield* session.save(tokens, null)
-          const account = yield* api.profile.pipe(
-            Effect.tapError(() =>
-              Option.match(previous, {
-                onNone: () => session.clear,
-                onSome: (saved) => session.save(saved, saved.account ?? null),
-              }).pipe(Effect.ignore)
-            )
+      const adopt = Effect.fnUntraced(function* (tokens: Tokens) {
+        const previous = yield* session.load
+        yield* session.save(tokens, null)
+        const account = yield* api.profile.pipe(
+          Effect.tapError(() =>
+            Option.match(previous, {
+              onNone: () => session.clear,
+              onSome: (saved) => session.save(saved, saved.account ?? null),
+            }).pipe(Effect.ignore)
           )
-          yield* session.save(tokens, account)
-          yield* Effect.logInfo(`Garmin: logged in as ${account.full_name ?? account.display_name}`)
-          yield* sync.trigger
-          return account
-        })
+        )
+        yield* session.save(tokens, account)
+        yield* Effect.logInfo(`Garmin: logged in as ${account.full_name ?? account.display_name}`)
+        yield* sync.trigger
+        return account
+      })
 
       const start = Effect.fn('GarminLogin.start')(function* (credentials: {
         readonly email: string

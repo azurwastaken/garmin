@@ -40,28 +40,27 @@ const whileBusy = Schedule.min([
 // interleaves with another. A call never waits for another connection's lock in place (that would
 // block every request): it fails at once and is run again after a pause, so each call must be
 // one statement or one transaction.
-export const connect = (
+export const connect = Effect.fn('Database.connect')(function* (
   path: string,
   migrations: string,
   { foreignKeys = false }: { readonly foreignKeys?: boolean } = {}
-) =>
-  Effect.gen(function* () {
-    const client = yield* Effect.acquireRelease(
-      Effect.try({
-        try: () => openDatabase(path, 0),
-        catch: (cause) => new DatabaseError({ cause }),
-      }),
-      (opened) => Effect.sync(() => opened.close())
+) {
+  const client = yield* Effect.acquireRelease(
+    Effect.try({
+      try: () => openDatabase(path, 0),
+      catch: (cause) => new DatabaseError({ cause }),
+    }),
+    (opened) => Effect.sync(() => opened.close())
+  )
+  if (foreignKeys) client.exec('PRAGMA foreign_keys = ON')
+  const db = drizzle({ client })
+  const use = <A>(run: (db: NodeSQLiteDatabase) => A) =>
+    Effect.try({ try: () => run(db), catch: (cause) => new DatabaseError({ cause }) }).pipe(
+      Effect.retry({ while: (error) => busy(error.cause), schedule: whileBusy })
     )
-    if (foreignKeys) client.exec('PRAGMA foreign_keys = ON')
-    const db = drizzle({ client })
-    const use = <A>(run: (db: NodeSQLiteDatabase) => A) =>
-      Effect.try({ try: () => run(db), catch: (cause) => new DatabaseError({ cause }) }).pipe(
-        Effect.retry({ while: (error) => busy(error.cause), schedule: whileBusy })
-      )
-    yield* use((db) => migrate(db, { migrationsFolder: migrations }))
-    return { path, use }
-  })
+  yield* use((db) => migrate(db, { migrationsFolder: migrations }))
+  return { path, use }
+})
 
 // The app's SQLite file (DATABASE_PATH). WAL lets the MCP's read-only connections and the CLIs
 // work beside the app.
