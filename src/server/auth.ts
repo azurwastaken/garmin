@@ -21,4 +21,12 @@ export const verifyBearer = (token: string, client: string, resource: string) =>
 export const verifySession = (value: string) =>
   runtime.runPromise(Auth.use((auth) => auth.verifySession(value)))
 
-export const logout = () => runtime.runPromise(Auth.use((auth) => auth.logout))
+// A new password, for the current one: every other browser and every OAuth grant must log in again
+export const changePassword = (current: string, next: string, client: string) =>
+  runtime.runPromise(
+    Effect.gen(function* () {
+      const outcome = yield* Auth.use((auth) => auth.change(current, next, client))
+      if (typeof outcome !== 'string') yield* OAuth.use((oauth) => oauth.revokeAll)
+      return outcome
+    })
+  )
