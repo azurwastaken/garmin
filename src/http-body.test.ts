@@ -2,7 +2,7 @@ import { expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
 import { HttpClientRequest, HttpClientResponse } from 'effect/http'
 
-import { body, json } from './body.ts'
+import { body, json } from './http-body.ts'
 
 const answer = (content: string) =>
   HttpClientResponse.fromWeb(HttpClientRequest.get('https://example.com/'), new Response(content))

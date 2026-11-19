@@ -1,7 +1,7 @@
 import { Effect, Option, Schema } from 'effect'
 import { type HttpClient, HttpClientRequest } from 'effect/http'
 
-import { json } from '../garmin/body.ts'
+import { json } from '../http-body.ts'
 
 // One call to Withings' API: a form POST (with the access token, but for the token endpoint),
 // its answer `{ status, body }` checked. Withings answers HTTP 200 for most errors, its status in

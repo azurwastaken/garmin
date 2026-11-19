@@ -22,5 +22,3 @@ export class GarminError extends Schema.TaggedError<GarminError>()('GarminError'
   message: Schema.String,
   status: Schema.optional(Schema.Number),
 }) {}
-
-export type GarminFailure = NotLoggedIn | LoginRefused | RateLimited | GarminError

@@ -1,15 +1,11 @@
-import * as NodeServices from '@effect/platform-node/NodeServices'
 import { expect, layer } from '@effect/vitest'
-import { Effect, Layer } from 'effect'
+import { Effect } from 'effect'
 
-import { rows, sql, testConfig } from '../../test/fixtures.ts'
+import { rows, sql, testLayer } from '../../test/fixtures.ts'
 import { fakeGarmin, inHours, json, jwt, type FakeRequest } from '../../test/garmin.ts'
-import { Database } from '../db.ts'
-import { Ingest } from '../ingest.ts'
+import { Garmin } from '../app.ts'
 
-import { GarminApi } from './api.ts'
 import { GarminSession } from './session.ts'
-import { GarminSync } from './sync.ts'
 import type { WorkoutInput } from './workout-builder.ts'
 import { GarminWorkouts } from './workouts.ts'
 
@@ -79,15 +75,7 @@ const handle = ({ method, url, body }: FakeRequest): Response => {
 const garmin = fakeGarmin(handle)
 const writes = () => garmin.log.filter((request) => request.method !== 'GET')
 
-const testLayer = GarminWorkouts.layer.pipe(
-  Layer.provideMerge(GarminSync.layer),
-  Layer.provideMerge(GarminApi.layer),
-  Layer.provideMerge(GarminSession.layer),
-  Layer.provideMerge(Ingest.layer),
-  Layer.provideMerge(Database.layer),
-  Layer.provideMerge(Layer.merge(NodeServices.layer, garmin.layer)),
-  Layer.provide(testConfig)
-)
+const TestLayer = testLayer(Garmin, garmin.layer)
 
 const loggedIn = GarminSession.use((session) =>
   session.save(
@@ -118,7 +106,7 @@ const planned = () =>
 const failure = <A, E extends { readonly message: string }>(effect: Effect.Effect<A, E>) =>
   Effect.map(Effect.flip(effect), (error) => error.message)
 
-layer(testLayer, { excludeTestServices: true })('GarminWorkouts', (it) => {
+layer(TestLayer, { excludeTestServices: true })('GarminWorkouts', (it) => {
   it.effect('builds and checks a workout in a dry run, sending nothing', () =>
     Effect.gen(function* () {
       yield* loggedIn
@@ -152,6 +140,9 @@ layer(testLayer, { excludeTestServices: true })('GarminWorkouts', (it) => {
       expect(
         yield* failure(workouts.create(EASY, { schedule: ['2027-02-30'], dry_run: true }))
       ).toBe('Not dates (YYYY-MM-DD): 2027-02-30')
+      expect(
+        yield* failure(workouts.create(EASY, { schedule: ['2027-13-01'], dry_run: true }))
+      ).toBe('Not dates (YYYY-MM-DD): 2027-13-01')
     })
   )
 

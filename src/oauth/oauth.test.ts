@@ -77,7 +77,7 @@ const authorize = (client: RegisteredClient, challenge: string, extra = {}) =>
     )
   ).pipe(
     Effect.map((answer) => {
-      if (typeof answer === 'string') throw new Error(answer)
+      if (typeof answer === 'string') throw new TypeError(answer)
       const url = new URL(answer.location)
       expect(url.origin + url.pathname).toBe(REDIRECT)
       expect(url.searchParams.get('state')).toBe('xyz')
@@ -170,7 +170,7 @@ layer(OAuth.layer.pipe(Layer.provide(authDir)))('OAuth', (it) => {
       )
       // Denied: the client hears it
       const refused = yield* oauth.answer({ ...good, state: 's' }, RESOURCE, ISSUER, false)
-      if (typeof refused === 'string') throw new Error(refused)
+      if (typeof refused === 'string') throw new TypeError(refused)
       const denied = new URL(refused.location)
       expect(denied.searchParams.get('error')).toBe('access_denied')
       expect(denied.searchParams.get('state')).toBe('s')

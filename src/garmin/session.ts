@@ -71,8 +71,8 @@ export class GarminSession extends Context.Service<
         Effect.orElseSucceed(() => Option.none<Saved>())
       )
 
-      const save = (tokens: Tokens, account: Account | null) =>
-        Effect.gen(function* () {
+      const save = Effect.fn('GarminSession.save')(
+        function* (tokens: Tokens, account: Account | null) {
           const saved: Saved = {
             di_token: tokens.di_token,
             di_refresh_token: tokens.di_refresh_token,
@@ -83,11 +83,11 @@ export class GarminSession extends Context.Service<
           // Created 0600, then moved over the previous one: never half written, never readable
           yield* writeAtomic(fs, path, JSON.stringify(saved), { mode: 0o600, dirMode: 0o700 })
           return saved
-        }).pipe(
-          Effect.mapError(
-            (error) => new GarminError({ message: `saving the session: ${error.message}` })
-          )
+        },
+        Effect.mapError(
+          (error) => new GarminError({ message: `saving the session: ${error.message}` })
         )
+      )
 
       const clear = fs
         .remove(path, { force: true })
@@ -97,42 +97,45 @@ export class GarminSession extends Context.Service<
           )
         )
 
-      const accessToken = (options?: { readonly rejected?: string }) =>
-        lock.withPermits(1)(
-          Effect.gen(function* () {
-            const saved = yield* load
-            if (Option.isNone(saved)) {
-              return yield* new NotLoggedIn({ message: `no Garmin session: ${LOGIN_HINT}` })
-            }
-            const now = new Date(yield* Clock.currentTimeMillis)
-            const rejected = options?.rejected === saved.value.di_token
-            if (!rejected && !expiresSoon(saved.value, now)) return saved.value.di_token
-            const refused = yield* refresh(saved.value).pipe(
-              Effect.provideService(HttpClient.HttpClient, http),
-              Effect.map((fresh) => ({ fresh })),
-              Effect.catchTag('NotLoggedIn', (error) => Effect.succeed({ error }))
-            )
-            if ('error' in refused) {
-              // Another process (a CLI's sync beside the app) may have refreshed the same token
-              // first, Garmin then refusing it here: its new session is in the file
-              const now = yield* load
-              if (
-                Option.isSome(now) &&
-                now.value.di_refresh_token !== saved.value.di_refresh_token &&
-                !expiresSoon(now.value, new Date(yield* Clock.currentTimeMillis))
-              ) {
-                return now.value.di_token
-              }
-              return yield* new NotLoggedIn({ message: `${refused.error.message}: ${LOGIN_HINT}` })
-            }
-            const { fresh } = refused
-            yield* save(fresh, saved.value.account ?? null)
-            yield* Effect.logInfo(
-              `Garmin session refreshed, valid until ${expiresAt(fresh.di_token)?.toISOString() ?? '?'}`
-            )
-            return fresh.di_token
-          })
+      // Another process (a CLI's sync beside the app) may have refreshed the same token first,
+      // Garmin then refusing it here: its new session is in the file
+      const refreshedElsewhere = Effect.fnUntraced(function* (saved: Saved, refused: NotLoggedIn) {
+        const current = yield* load
+        const now = new Date(yield* Clock.currentTimeMillis)
+        if (
+          Option.isSome(current) &&
+          current.value.di_refresh_token !== saved.di_refresh_token &&
+          !expiresSoon(current.value, now)
+        ) {
+          return current.value.di_token
+        }
+        return yield* new NotLoggedIn({ message: `${refused.message}: ${LOGIN_HINT}` })
+      })
+
+      const refreshed = Effect.fnUntraced(function* (saved: Saved, fresh: Tokens) {
+        yield* save(fresh, saved.account ?? null)
+        yield* Effect.logInfo(
+          `Garmin session refreshed, valid until ${expiresAt(fresh.di_token)?.toISOString() ?? '?'}`
         )
+        return fresh.di_token
+      })
+
+      const accessToken = Effect.fn('GarminSession.accessToken')(function* (options?: {
+        readonly rejected?: string
+      }) {
+        const saved = yield* load
+        if (Option.isNone(saved)) {
+          return yield* new NotLoggedIn({ message: `no Garmin session: ${LOGIN_HINT}` })
+        }
+        const now = new Date(yield* Clock.currentTimeMillis)
+        const rejected = options?.rejected === saved.value.di_token
+        if (!rejected && !expiresSoon(saved.value, now)) return saved.value.di_token
+        return yield* refresh(saved.value).pipe(
+          Effect.provideService(HttpClient.HttpClient, http),
+          Effect.flatMap((fresh) => refreshed(saved.value, fresh)),
+          Effect.catchTag('NotLoggedIn', (refused) => refreshedElsewhere(saved.value, refused))
+        )
+      }, lock.withPermits(1))
 
       return GarminSession.of({ path, load, save, clear, accessToken })
     })

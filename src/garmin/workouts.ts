@@ -75,10 +75,12 @@ const decode =
   (value: unknown) =>
     Option.getOrUndefined(Schema.decodeUnknownOption(schema)(value))
 
-// A real day, YYYY-MM-DD
-export const isDay = (value: string) =>
-  /^\d{4}-\d{2}-\d{2}$/u.test(value) &&
-  new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value
+// A real day, YYYY-MM-DD: not 2026-02-30 (another day once parsed) nor 2026-13-01 (no date)
+export const isDay = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) return false
+  const date = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
 
 const failed = (error: ApiFailure | DatabaseError) =>
   new WorkoutError({
@@ -133,17 +135,20 @@ export class GarminWorkouts extends Context.Service<
       const send = ({ method, path, body }: WriteRequest) =>
         api.write(method, path, body).pipe(Effect.mapError(failed))
 
-      // The calendar entries of a workout, as planned_workouts holds them
+      // A calendar entry's columns, as planned_workouts holds them
+      const entry = {
+        id: plannedWorkouts.id,
+        day: plannedWorkouts.day,
+        workout_id: plannedWorkouts.workout_id,
+        name: plannedWorkouts.name,
+        steps: plannedWorkouts.steps,
+      }
+
+      // The calendar entries of a workout
       const entriesOf = (workoutId: number) =>
         use((db) =>
           db
-            .select({
-              id: plannedWorkouts.id,
-              day: plannedWorkouts.day,
-              workout_id: plannedWorkouts.workout_id,
-              name: plannedWorkouts.name,
-              steps: plannedWorkouts.steps,
-            })
+            .select(entry)
             .from(plannedWorkouts)
             .where(eq(plannedWorkouts.workout_id, workoutId))
             .orderBy(asc(plannedWorkouts.day))
@@ -152,17 +157,7 @@ export class GarminWorkouts extends Context.Service<
 
       const entriesOn = (day: string) =>
         use((db) =>
-          db
-            .select({
-              id: plannedWorkouts.id,
-              day: plannedWorkouts.day,
-              workout_id: plannedWorkouts.workout_id,
-              name: plannedWorkouts.name,
-              steps: plannedWorkouts.steps,
-            })
-            .from(plannedWorkouts)
-            .where(eq(plannedWorkouts.day, day))
-            .all()
+          db.select(entry).from(plannedWorkouts).where(eq(plannedWorkouts.day, day)).all()
         ).pipe(Effect.mapError(failed))
 
       // The calendar months of these days fetched again, into planned_workouts

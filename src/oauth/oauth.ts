@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import { and, desc, eq, gt, inArray, lte, notInArray } from 'drizzle-orm'
-import { Clock, Config, Context, Effect, Layer, Option } from 'effect'
+import { Clock, Config, Context, Effect, Layer, Option, Predicate } from 'effect'
 
 import { failureLog } from '../auth.ts'
 import { connect } from '../db.ts'
@@ -100,7 +100,7 @@ const sameResource = (asked: string, resource: string) =>
   asked.replace(/\/$/u, '') === resource.replace(/\/$/u, '')
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex')
-const token = (prefix: string) => `${prefix}${randomBytes(32).toString('base64url')}`
+const randomToken = (prefix: string) => `${prefix}${randomBytes(32).toString('base64url')}`
 const iso = (ms: number) => new Date(ms).toISOString()
 
 // An https address, or http on this machine (a native app's loopback, RFC 8252); no fragment
@@ -195,10 +195,10 @@ export class OAuth extends Context.Service<
         const at = yield* now
         if (registrations.blocked(from, at)) return 'throttled' as const
         registrations.record(from, at)
-        if (typeof body !== 'object' || body === null) {
+        if (!Predicate.isObject(body)) {
           return failure('invalid_client_metadata', 'A JSON object is expected.')
         }
-        const metadata = body as Record<string, unknown>
+        const metadata = body
         const uris = metadata['redirect_uris']
         if (
           !Array.isArray(uris) ||
@@ -341,8 +341,8 @@ export class OAuth extends Context.Service<
 
       // New tokens: an access token, and a refresh token to put on the grant
       const mint = (at: number) => {
-        const access = token(ACCESS_PREFIX)
-        const refresh = token(REFRESH_PREFIX)
+        const access = randomToken(ACCESS_PREFIX)
+        const refresh = randomToken(REFRESH_PREFIX)
         return {
           access: { hash: sha256(access), expires_at: iso(at + ACCESS_MS) },
           refresh: { hash: sha256(refresh), expires_at: iso(at + REFRESH_MS) },
@@ -369,7 +369,7 @@ export class OAuth extends Context.Service<
           })
         )
 
-      const token_ = Effect.fn('OAuth.token')(function* (field: (name: string) => string | null) {
+      const token = Effect.fn('OAuth.token')(function* (field: (name: string) => string | null) {
         const at = yield* now
         yield* sweep(at)
         const clientId = field('client_id')
@@ -550,7 +550,7 @@ export class OAuth extends Context.Service<
         register,
         check,
         answer,
-        token: token_,
+        token,
         revoke,
         verify,
         grants: list,

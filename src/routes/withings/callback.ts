@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
+import { seeOther } from '#src/auth.ts'
 import { runtime } from '#src/server/runtime.ts'
 import { connectFromCallback } from '#src/withings/sync.ts'
 
@@ -17,10 +18,7 @@ export const Route = createFileRoute('/withings/callback')({
             error: query.get('error'),
           })
         )
-        return new Response(null, {
-          status: 303,
-          headers: { location: `/garmin?withings=${result}` },
-        })
+        return seeOther(`/garmin?withings=${result}`)
       },
     },
   },

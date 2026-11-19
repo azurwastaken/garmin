@@ -265,7 +265,7 @@ const text = (body: string, status: number, headers: Record<string, string> = {}
     headers: { 'content-type': 'text/plain; charset=utf-8', ...headers },
   })
 
-export const cookieOf = (request: Request, name: string) => {
+const cookieOf = (request: Request, name: string) => {
   for (const part of (request.headers.get('cookie') ?? '').split(';')) {
     const [key, ...value] = part.trim().split('=')
     if (key === name) return value.join('=')

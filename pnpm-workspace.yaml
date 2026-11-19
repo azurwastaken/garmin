@@ -7,5 +7,3 @@ savePrefix: ''
 verifyDepsBeforeRun: false
 trustLockfile: true
 minimumReleaseAge: 1440 # minutes (1 day)
-patchedDependencies:
-  '@garmin/fitsdk': patches/@garmin__fitsdk.patch

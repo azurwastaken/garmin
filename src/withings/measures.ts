@@ -1,7 +1,8 @@
 import { DateTime, Option, Schema } from 'effect'
 
-import { round, type BodyRow } from '../connect.ts'
+import type { BodyRow } from '../connect.ts'
 import { addDays, monthEnd, monthOf, months } from '../days.ts'
+import { round } from '../numbers.ts'
 
 // Withings' weigh-ins, without I/O: the authorization URL, the months a sync fetches, the getmeas
 // groups filed by month (data/withings/YYYY-MM.json) and read back as rows of `body`, the tokens.

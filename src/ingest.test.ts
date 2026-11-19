@@ -1,7 +1,6 @@
 import { utimesSync } from 'node:fs'
 import { join } from 'node:path'
 
-import * as NodeServices from '@effect/platform-node/NodeServices'
 import { expect, layer } from '@effect/vitest'
 import { Effect, Layer } from 'effect'
 
@@ -13,18 +12,13 @@ import {
   put,
   rows,
   sql,
-  testConfig,
+  testLayer,
 } from '../test/fixtures.ts'
 
-import { Database } from './db.ts'
-import { Ingest } from './ingest.ts'
+import { Ingest, Storage } from './ingest.ts'
 import { Tools } from './tools.ts'
 
-const TestLayer = Layer.mergeAll(Ingest.layer, Tools.layer).pipe(
-  Layer.provideMerge(Database.layer),
-  Layer.provideMerge(NodeServices.layer),
-  Layer.provide(testConfig)
-)
+const TestLayer = testLayer(Tools.layer.pipe(Layer.provideMerge(Storage)))
 
 const run = (options?: { readonly rebuild?: boolean }) =>
   Ingest.use((ingest) => ingest.run(options))

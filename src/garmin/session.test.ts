@@ -1,10 +1,9 @@
 import { writeFileSync } from 'node:fs'
 
-import * as NodeServices from '@effect/platform-node/NodeServices'
 import { expect, layer } from '@effect/vitest'
-import { Effect, Layer } from 'effect'
+import { Effect } from 'effect'
 
-import { testConfig } from '../../test/fixtures.ts'
+import { testLayer } from '../../test/fixtures.ts'
 import { fakeGarmin, inHours, json, jwt } from '../../test/garmin.ts'
 
 import { GarminSession } from './session.ts'
@@ -36,27 +35,24 @@ const save = GarminSession.use((session) =>
   })
 )
 
-layer(
-  GarminSession.layer.pipe(
-    Layer.provide(Layer.merge(NodeServices.layer, garmin.layer)),
-    Layer.provide(testConfig)
-  ),
-  { excludeTestServices: true }
-)('GarminSession', (it) => {
-  it.effect('takes the session another process refreshed first', () =>
-    Effect.gen(function* () {
-      raced = true
-      yield* save
-      expect(yield* GarminSession.use((session) => session.accessToken())).toBe(theirs)
-    })
-  )
+layer(testLayer(GarminSession.layer, garmin.layer), { excludeTestServices: true })(
+  'GarminSession',
+  (it) => {
+    it.effect('takes the session another process refreshed first', () =>
+      Effect.gen(function* () {
+        raced = true
+        yield* save
+        expect(yield* GarminSession.use((session) => session.accessToken())).toBe(theirs)
+      })
+    )
 
-  it.effect('says logged out when Garmin refuses the refresh token', () =>
-    Effect.gen(function* () {
-      raced = false
-      yield* save
-      const error = yield* GarminSession.use((session) => session.accessToken()).pipe(Effect.flip)
-      expect(error._tag).toBe('NotLoggedIn')
-    })
-  )
-})
+    it.effect('says logged out when Garmin refuses the refresh token', () =>
+      Effect.gen(function* () {
+        raced = false
+        yield* save
+        const error = yield* GarminSession.use((session) => session.accessToken()).pipe(Effect.flip)
+        expect(error._tag).toBe('NotLoggedIn')
+      })
+    )
+  }
+)

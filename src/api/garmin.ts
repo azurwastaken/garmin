@@ -37,18 +37,16 @@ const QUERY_GUIDE = `SQLite tips:
 const WATCH =
   "It changes the user's real Garmin Connect account: the watch gets it at its next sync with the Garmin Connect app."
 
-export const capRows = (
-  {
-    rows,
-    total,
-  }: { readonly rows: ReadonlyArray<Record<string, unknown>>; readonly total: number },
-  maxRows = MAX_ROWS
-) =>
-  total > maxRows
-    ? {
-        rows: rows.slice(0, maxRows),
-        note: `Truncated to ${maxRows} of ${total} rows. Aggregate or add a LIMIT.`,
-      }
+// The reader keeps MAX_ROWS rows and counts them all: the caller hears what it did not get
+export const capRows = ({
+  rows,
+  total,
+}: {
+  readonly rows: ReadonlyArray<Record<string, unknown>>
+  readonly total: number
+}) =>
+  total > rows.length
+    ? { rows, note: `Truncated to ${rows.length} of ${total} rows. Aggregate or add a LIMIT.` }
     : { rows }
 
 const Id = Schema.Int.check(Schema.isGreaterThan(0))
@@ -121,7 +119,7 @@ const compareRuns = tool({
 })
   .input(
     standard(
-      Schema.Struct({ ids: Schema.Array(Id).annotate({ description: 'Activity ids, 2 to 10' }) })
+      Schema.Struct({ ids: Schema.Array(Id).annotate({ description: 'Activity ids, 1 to 10' }) })
     )
   )
   .handler(({ input, context }) => {

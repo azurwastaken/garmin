@@ -1,7 +1,6 @@
 import { join } from 'node:path'
 
 import {
-  Cause,
   Clock,
   Config,
   Context,
@@ -16,10 +15,10 @@ import {
 } from 'effect'
 import { HttpClient } from 'effect/http'
 
+import { parisToday } from '../days.ts'
 import type { DatabaseError } from '../db.ts'
 import { writeAtomic } from '../files.ts'
 import { describe as describeIngest, Ingest } from '../ingest.ts'
-import { parisToday } from '../tools.ts'
 
 import { MEASURE_URL, WithingsError, WithingsLoggedOut, withingsPost } from './client.ts'
 import { fetchRange, MEASURE_TYPES, monthFiles, syncMonths, TIME_ZONE } from './measures.ts'
@@ -92,99 +91,102 @@ export class WithingsSync extends Context.Service<
 
       // Every page of getmeas over the range; a token refused is refreshed and its page asked once
       // more, refused again: logged out
-      const measures = (
+      const measures = Effect.fnUntraced(function* (
         app: WithingsApp,
         range: { readonly startdate: number; readonly enddate: number }
-      ) =>
-        Effect.gen(function* () {
-          let token = yield* app.accessToken()
-          const page = (offset: number) =>
-            withingsPost(
-              http,
-              MEASURE_URL,
-              {
-                action: 'getmeas',
-                meastypes: MEASURE_TYPES,
-                category: '1',
-                startdate: String(range.startdate),
-                enddate: String(range.enddate),
-                ...(offset === 0 ? {} : { offset: String(offset) }),
-              },
-              token
-            )
-          // A page, once more with a refreshed token when Withings refuses this one
-          const pageOrRefresh = (offset: number) =>
-            page(offset).pipe(
-              Effect.catchTag('WithingsRejected', () =>
-                Effect.gen(function* () {
-                  token = yield* app.accessToken({ rejected: token })
-                  return yield* page(offset)
-                })
-              ),
-              Effect.catchTag('WithingsRejected', (error) =>
-                Effect.fail(
-                  new WithingsLoggedOut({
-                    message: `Withings refused a fresh token: ${error.message}`,
-                  })
-                )
-              )
-            )
-          const groups: Array<unknown> = []
-          let timezone: string | null = null
-          let offset = 0
-          for (let pages = 0; pages < MAX_PAGES; pages += 1) {
-            const body = yield* pageOrRefresh(offset)
-            const decoded = decodePage(body)
-            if (Option.isNone(decoded)) {
-              return yield* new WithingsError({
-                message: 'getmeas: not a page of measures',
-                refused: false,
-              })
-            }
-            groups.push(...decoded.value.measuregrps)
-            timezone ??= decoded.value.timezone ?? null
-            if (!decoded.value.more) return { groups, timezone: timezone ?? TIME_ZONE }
-            const next = decoded.value.offset ?? offset
-            if (next <= offset) {
-              return yield* new WithingsError({
-                message: 'getmeas: its offset does not advance',
-                refused: false,
-              })
-            }
-            offset = next
-          }
-          return yield* new WithingsError({
-            message: `getmeas: over ${MAX_PAGES} pages`,
-            refused: false,
-          })
-        })
-
-      const sync = (app: WithingsApp) =>
-        Effect.gen(function* () {
-          const wanted = syncMonths(yield* newestMonth, yield* parisToday)
-          const range = fetchRange(wanted, yield* Clock.currentTimeMillis)
-          yield* Effect.logInfo(`syncing Withings from ${wanted[0] ?? '?'}`)
-          const { groups, timezone } = yield* measures(app, range)
-          const files = monthFiles(groups, timezone, wanted)
-          for (const file of files) {
-            yield* writeAtomic(
-              fs,
-              join(dataDir, DIR, `${file.month}.json`),
-              JSON.stringify(file)
-            ).pipe(
-              Effect.mapError(
-                (error) =>
-                  new WithingsError({ message: `${file.month}: ${error.message}`, refused: false })
-              )
-            )
-          }
-          const summary = yield* ingest.run()
-          yield* Effect.logInfo(
-            `Withings: ${groups.length} weigh-in(s); ingest: ${describeIngest(summary)}`
+      ) {
+        let token = yield* app.accessToken()
+        const page = (offset: number) =>
+          withingsPost(
+            http,
+            MEASURE_URL,
+            {
+              action: 'getmeas',
+              meastypes: MEASURE_TYPES,
+              category: '1',
+              startdate: String(range.startdate),
+              enddate: String(range.enddate),
+              ...(offset === 0 ? {} : { offset: String(offset) }),
+            },
+            token
           )
-          return files.length
+        // A page, once more with a refreshed token when Withings refuses this one
+        const pageOrRefresh = (offset: number) =>
+          page(offset).pipe(
+            Effect.catchTag('WithingsRejected', () =>
+              Effect.gen(function* () {
+                token = yield* app.accessToken({ rejected: token })
+                return yield* page(offset)
+              })
+            ),
+            Effect.catchTag('WithingsRejected', (error) =>
+              Effect.fail(
+                new WithingsLoggedOut({
+                  message: `Withings refused a fresh token: ${error.message}`,
+                })
+              )
+            )
+          )
+        const groups: Array<unknown> = []
+        let timezone: string | null = null
+        let offset = 0
+        for (let pages = 0; pages < MAX_PAGES; pages += 1) {
+          const body = yield* pageOrRefresh(offset)
+          const decoded = decodePage(body)
+          if (Option.isNone(decoded)) {
+            return yield* new WithingsError({
+              message: 'getmeas: not a page of measures',
+              refused: false,
+            })
+          }
+          groups.push(...decoded.value.measuregrps)
+          timezone ??= decoded.value.timezone ?? null
+          if (!decoded.value.more) return { groups, timezone: timezone ?? TIME_ZONE }
+          const next = decoded.value.offset ?? offset
+          if (next <= offset) {
+            return yield* new WithingsError({
+              message: 'getmeas: its offset does not advance',
+              refused: false,
+            })
+          }
+          offset = next
+        }
+        return yield* new WithingsError({
+          message: `getmeas: over ${MAX_PAGES} pages`,
+          refused: false,
         })
+      })
 
+      const sync = Effect.fnUntraced(function* (app: WithingsApp) {
+        const wanted = syncMonths(yield* newestMonth, yield* parisToday)
+        const range = fetchRange(wanted, yield* Clock.currentTimeMillis)
+        yield* Effect.logInfo(`syncing Withings from ${wanted[0] ?? '?'}`)
+        const { groups, timezone } = yield* measures(app, range)
+        const files = monthFiles(groups, timezone, wanted)
+        for (const file of files) {
+          yield* writeAtomic(
+            fs,
+            join(dataDir, DIR, `${file.month}.json`),
+            JSON.stringify(file)
+          ).pipe(
+            Effect.mapError(
+              (error) =>
+                new WithingsError({ message: `${file.month}: ${error.message}`, refused: false })
+            )
+          )
+        }
+        const summary = yield* ingest.run()
+        yield* Effect.logInfo(
+          `Withings: ${groups.length} weigh-in(s); ingest: ${describeIngest(summary)}`
+        )
+        return files.length
+      })
+
+      const failed = (error: string) =>
+        Effect.map(now, (at): WithingsOutcome => ({ _tag: 'Failed', at, error }))
+
+      // Withings' own failures say why (sync_status and /garmin show it); anything else (SQLite,
+      // a bug) is logged and shown without its detail
       const outcomeOf = (
         result: Effect.Effect<number, WithingsLoggedOut | WithingsError | DatabaseError>
       ) =>
@@ -199,12 +201,12 @@ export class WithingsSync extends Context.Service<
               error: error.message,
             }))
           ),
+          Effect.catchTag('WithingsError', (error) => failed(error.message)),
           Effect.catchCause((cause) =>
-            Effect.map(now, (at): WithingsOutcome => ({
-              _tag: 'Failed',
-              at,
-              error: Cause.pretty(cause),
-            }))
+            Effect.andThen(
+              Effect.logError('Withings sync crashed', cause),
+              failed('the sync failed: see the logs')
+            )
           )
         )
 
@@ -212,11 +214,7 @@ export class WithingsSync extends Context.Service<
         Effect.gen(function* () {
           const outcome = yield* Option.match(session.app, {
             onNone: () =>
-              Effect.map(now, (at): WithingsOutcome => ({
-                _tag: 'Failed',
-                at,
-                error: 'Withings is off: set WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET',
-              })),
+              failed('Withings is off: set WITHINGS_CLIENT_ID and WITHINGS_CLIENT_SECRET'),
             onSome: (app) => outcomeOf(sync(app)),
           })
           yield* Ref.set(last, outcome)
@@ -291,26 +289,22 @@ export type WithingsStatus = Effect.Success<typeof withingsStatus>
 
 // The callback: Withings' code traded for the tokens at once (it lives 30 seconds), then the sync
 // woken; the user's refusal or a failure (logged) as a fixed word, never Withings' own text
-export const connectFromCallback = (query: {
+export const connectFromCallback = Effect.fn('WithingsSync.connectFromCallback')(function* (query: {
   readonly code: string | null
   readonly state: string | null
   readonly error: string | null
-}) =>
-  Effect.gen(function* () {
-    const session = yield* WithingsSession
-    const sync = yield* WithingsSync
-    if (Option.isNone(session.app)) return 'off' satisfies ConnectResult
-    if (query.error !== null || query.code === null || query.state === null) {
-      return 'denied' satisfies ConnectResult
-    }
-    return yield* session.app.value.connect({ code: query.code, state: query.state }).pipe(
-      Effect.andThen(sync.trigger),
-      Effect.as<ConnectResult>('connected'),
-      Effect.catchTag('WithingsError', (error) =>
-        Effect.as(
-          Effect.logError(`Withings connection failed: ${error.message}`),
-          'failed' as const
-        )
-      )
+}) {
+  const session = yield* WithingsSession
+  const sync = yield* WithingsSync
+  if (Option.isNone(session.app)) return 'off' satisfies ConnectResult
+  if (query.error !== null || query.code === null || query.state === null) {
+    return 'denied' satisfies ConnectResult
+  }
+  return yield* session.app.value.connect({ code: query.code, state: query.state }).pipe(
+    Effect.andThen(sync.trigger),
+    Effect.as<ConnectResult>('connected'),
+    Effect.catchTag('WithingsError', (error) =>
+      Effect.as(Effect.logError(`Withings connection failed: ${error.message}`), 'failed' as const)
     )
-  })
+  )
+})

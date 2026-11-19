@@ -3,12 +3,12 @@ import { openapi } from '@orpc/openapi'
 import { os } from '@orpc/server'
 import { Schema, type Effect, type Layer } from 'effect'
 
-import type { layer } from '../server/runtime.ts'
+import type { App } from '../app.ts'
 
 // The app's API with oRPC: one router of procedures over the Effect services, served as MCP tools
 // (/mcp), OpenAPI (/api) and RPC (/rpc, the web pages' and scripts' typed client). See server.ts.
 
-export type Services = Layer.Success<typeof layer>
+export type Services = Layer.Success<typeof App>
 
 // An Effect of the app's services run for a call: its failure an ORPCError (see server.ts)
 export type Run = <A, E>(effect: Effect.Effect<A, E, Services>) => Promise<A>

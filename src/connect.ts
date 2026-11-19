@@ -1,5 +1,6 @@
 import { Option, Predicate, Schema } from 'effect'
 
+import { clock, round } from './numbers.ts'
 import type { activities, body, daily, plannedWorkouts } from './schema.ts'
 
 // Garmin Connect's JSON (the sync's files, see garmin/sync.ts) and the "Export your data"
@@ -25,11 +26,9 @@ const Instant = Schema.optional(Schema.NullOr(Schema.Union([Schema.Number, Schem
 const nullable = <A>(value: A | null | undefined): A | null => value ?? null
 const positive = (value: number | null | undefined) =>
   value === null || value === undefined || value <= 0 ? null : value
-export const round = (value: number | null | undefined, digits = 0) =>
-  value === null || value === undefined ? null : Number(value.toFixed(digits))
 
 // A UTC instant as ISO 8601 (Garmin's strings without a zone are UTC when they say GMT)
-export const utcIso = (value: number | string | null | undefined): string | null => {
+const utcIso = (value: number | string | null | undefined): string | null => {
   if (value === null || value === undefined) return null
   const date = Predicate.isNumber(value)
     ? new Date(value)
@@ -37,7 +36,7 @@ export const utcIso = (value: number | string | null | undefined): string | null
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 // A local wall time as YYYY-MM-DDTHH:MM:SS: Garmin's local epochs are the wall time read as UTC
-export const localIso = (value: number | string | null | undefined): string | null =>
+const localIso = (value: number | string | null | undefined): string | null =>
   utcIso(value)?.slice(0, 19) ?? null
 
 const Gear = Schema.Struct({ displayName: Str, customMakeModel: Str })
@@ -377,6 +376,7 @@ const Readiness = Schema.Struct({
   hrvFactorPercent: Num,
 })
 type ReadinessRecord = typeof Readiness.Type
+const decodeReadiness = Schema.decodeUnknownOption(Readiness)
 
 const readinessRow = (r: ReadinessRecord, day: string): DailyRow => ({
   day,
@@ -467,7 +467,7 @@ const statusRow = (s: typeof TrainingStatus.Type, day: string): DailyRow | null 
 }
 
 // Fields set by later rows win, nulls never erase
-export const mergeDaily = (rows: ReadonlyArray<DailyRow | null>): DailyRow | null => {
+const mergeDaily = (rows: ReadonlyArray<DailyRow | null>): DailyRow | null => {
   let merged: Record<string, unknown> | null = null
   for (const row of rows) {
     if (row === null) continue
@@ -513,7 +513,7 @@ export const apiDaily = (json: unknown): DailyRow | null => {
   const hrv = decode(Hrv)(decode(HrvFile)(file.hrv)?.hrvSummary)
   const readiness = readinessOfDay(
     Array.isArray(file.training_readiness)
-      ? file.training_readiness.flatMap((item) => Option.toArray(decodeOption(Readiness, item)))
+      ? file.training_readiness.flatMap((item) => Option.toArray(decodeReadiness(item)))
       : []
   )
   const maxMetrics = Array.isArray(file.max_metrics)
@@ -546,9 +546,6 @@ export const apiDaily = (json: unknown): DailyRow | null => {
     status === null ? null : statusRow(status, day),
   ])
 }
-
-const decodeOption = <S extends Schema.Codec<unknown, unknown>>(schema: S, json: unknown) =>
-  Schema.decodeUnknownOption(schema)(json)
 
 // Every object with a calendarDate, wherever it is in the export's file (arrays, wrappers)
 const records = (json: unknown): Array<Record<string, unknown>> => {
@@ -748,13 +745,6 @@ const Workout = Schema.Struct({
   ),
 })
 
-const clock = (seconds: number) => {
-  const whole = Math.round(seconds)
-  const h = Math.floor(whole / 3600)
-  const m = Math.floor((whole % 3600) / 60)
-  const s = String(whole % 60).padStart(2, '0')
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`
-}
 // m/s → min/km
 const pace = (speed: number) => `${clock(1000 / speed)}/km`
 

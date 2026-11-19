@@ -1,6 +1,7 @@
 import { Decoder, Stream } from '@garmin/fitsdk'
 import { Effect, Predicate, Schema } from 'effect'
 
+import { round } from './numbers.ts'
 import { encode, simplify, type Point } from './polyline.ts'
 
 // An activity's FIT file, decoded with Garmin's FIT SDK, into the columns of activities, laps
@@ -98,8 +99,6 @@ const str = (value: unknown): string | null =>
   Predicate.isString(value) ? value : Predicate.isNumber(value) ? String(value) : null
 const iso = (value: unknown): string | null =>
   value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString() : null
-const round = (value: number | null, digits: number) =>
-  value === null ? null : Number(value.toFixed(digits))
 // Positions are semicircles: 2^31 of them per 180°
 const degrees = (value: unknown) => {
   const n = num(value)
@@ -111,19 +110,13 @@ const cadence = (whole: unknown, fraction: unknown, footed: boolean) => {
   return footed ? round((n + (num(fraction) ?? 0)) * 2, 1) : n
 }
 
-// Whether the bytes are a FIT file at all, and of which kind (activity, monitoring, settings…)
-export const fitFileType = (bytes: Uint8Array): string | null => {
+// An activity's start (UTC ISO), to match an exported file with Garmin Connect's activity; null
+// for what is not a FIT activity file (monitoring, settings…)
+export const activityStart = (bytes: Uint8Array): string | null => {
   const decoder = new Decoder(Stream.fromByteArray(bytes))
   if (!decoder.isFIT()) return null
   const { messages } = decoder.read({ convertDateTimesToDates: true })
-  return str(messages.fileIdMesgs?.[0]?.type)
-}
-
-// The activity's start (UTC ISO), to match an exported file with Garmin Connect's activity
-export const fitStart = (bytes: Uint8Array): string | null => {
-  const decoder = new Decoder(Stream.fromByteArray(bytes))
-  if (!decoder.isFIT()) return null
-  const { messages } = decoder.read({ convertDateTimesToDates: true })
+  if (str(messages.fileIdMesgs?.[0]?.type) !== 'activity') return null
   return iso(messages.sessionMesgs?.[0]?.startTime) ?? iso(messages.fileIdMesgs?.[0]?.timeCreated)
 }
 
