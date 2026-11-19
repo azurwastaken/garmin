@@ -1,11 +1,16 @@
-import { Effect, Stream } from 'effect'
+import { Effect, Schema, Stream } from 'effect'
 import type { HttpClientResponse } from 'effect/http'
 
-import { GarminError } from './errors.ts'
+// An HTTP answer's body, read with a cap and a deadline, for the Garmin and Withings clients: each
+// maps BodyError to its own error
+
+export class BodyError extends Schema.TaggedError<BodyError>()('BodyError', {
+  message: Schema.String,
+}) {}
 
 // An answer's body at most: a page of activities or a day's file is well under a MB, a FIT zip a
 // few (a bigger one would only fill the memory)
-export const MAX_BODY = 64 * 1024 * 1024
+const MAX_BODY = 64 * 1024 * 1024
 
 // The body, refused past `max` bytes as it arrives, or past 60 seconds
 export const body = (
@@ -19,7 +24,7 @@ export const body = (
     (read, chunk) => {
       read.size += chunk.length
       if (read.size > max) {
-        return Effect.fail(new GarminError({ message: `${what}: over ${max} bytes` }))
+        return Effect.fail(new BodyError({ message: `${what}: over ${max} bytes` }))
       }
       read.chunks.push(chunk)
       return Effect.succeed(read)
@@ -29,12 +34,10 @@ export const body = (
     // A stalled body would hold the sync's lock for good
     Effect.timeoutOrElse({
       duration: '60 seconds',
-      orElse: () => Effect.fail(new GarminError({ message: `${what}: body not read in 60 s` })),
+      orElse: () => Effect.fail(new BodyError({ message: `${what}: body not read in 60 s` })),
     }),
     Effect.mapError((error) =>
-      error._tag === 'GarminError'
-        ? error
-        : new GarminError({ message: `${what}: ${error.message}` })
+      error._tag === 'BodyError' ? error : new BodyError({ message: `${what}: ${error.message}` })
     )
   )
 
@@ -47,6 +50,6 @@ export const json = (what: string, response: HttpClientResponse.HttpClientRespon
   Effect.flatMap(text(what, response), (content) =>
     Effect.try({
       try: (): unknown => JSON.parse(content),
-      catch: () => new GarminError({ message: `${what}: not JSON` }),
+      catch: () => new BodyError({ message: `${what}: not JSON` }),
     })
   )

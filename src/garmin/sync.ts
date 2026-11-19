@@ -6,10 +6,12 @@ import {
   Clock,
   Config,
   Context,
+  Duration,
   Effect,
   FileSystem,
   Layer,
   Option,
+  Predicate,
   Queue,
   Ref,
   Schema,
@@ -120,10 +122,7 @@ const CalendarItem = Schema.Struct({
 const decodeActivity = Schema.decodeUnknownOption(ActivityItem)
 const decodeCalendarItem = Schema.decodeUnknownOption(CalendarItem)
 
-const record = (value: unknown): Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
+const record = (value: unknown): Record<string, unknown> => (Predicate.isObject(value) ? value : {})
 
 const accountName = (account: Account) => account.full_name ?? account.display_name
 
@@ -178,33 +177,32 @@ export class GarminSync extends Context.Service<
       // One month (YYYY-MM) of the calendar into data/, and each workout it schedules, once in
       // `seen` (the months overlap, a routine is scheduled under one id). `fetch` answers null
       // for what is missing (a run goes on past a failing call; a refresh after a write does not)
-      const calendarMonth = <E>(
+      const calendarMonth = Effect.fnUntraced(function* <E>(
         month: string,
         seen: Set<number>,
         fetch: (what: string, path: string) => Effect.Effect<unknown, E>,
         write: (path: string, data: unknown) => Effect.Effect<void, GarminError>
-      ) =>
-        Effect.gen(function* () {
-          const year = Number(month.slice(0, 4))
-          // Garmin's months count from 0
-          const index = Number(month.slice(5, 7)) - 1
-          const calendar = yield* fetch(
-            `calendar ${month}`,
-            `/calendar-service/year/${year}/month/${index}`
-          )
-          if (calendar === null) return
-          yield* write(`connect/calendar/${month}.json`, calendar)
-          const items = record(calendar)['calendarItems']
-          for (const raw of Array.isArray(items) ? items : []) {
-            const item = decodeCalendarItem(raw)
-            const id = Option.isSome(item) ? item.value.workoutId : null
-            if (Option.isNone(item) || item.value.itemType !== 'workout' || !id) continue
-            if (seen.has(id)) continue
-            seen.add(id)
-            const workout = yield* fetch(`workout ${id}`, `/workout-service/workout/${id}`)
-            if (workout !== null) yield* write(`connect/workouts/${id}.json`, workout)
-          }
-        })
+      ) {
+        const year = Number(month.slice(0, 4))
+        // Garmin's months count from 0
+        const index = Number(month.slice(5, 7)) - 1
+        const calendar = yield* fetch(
+          `calendar ${month}`,
+          `/calendar-service/year/${year}/month/${index}`
+        )
+        if (calendar === null) return
+        yield* write(`connect/calendar/${month}.json`, calendar)
+        const items = record(calendar)['calendarItems']
+        for (const raw of Array.isArray(items) ? items : []) {
+          const item = decodeCalendarItem(raw)
+          const id = Option.isSome(item) ? item.value.workoutId : null
+          if (Option.isNone(item) || item.value.itemType !== 'workout' || !id) continue
+          if (seen.has(id)) continue
+          seen.add(id)
+          const workout = yield* fetch(`workout ${id}`, `/workout-service/workout/${id}`)
+          if (workout !== null) yield* write(`connect/workouts/${id}.json`, workout)
+        }
+      })
 
       const sync = Effect.fnUntraced(function* (
         since: string | undefined,
@@ -426,100 +424,99 @@ export class GarminSync extends Context.Service<
         return Option.none<string>()
       }).pipe(Effect.orElseSucceed(() => Option.none<string>()))
 
-      const run = (options?: { readonly since?: string }) =>
-        lock.withPermits(1)(
-          Effect.gen(function* () {
-            const saved = yield* session.load
-            if (Option.isNone(saved)) {
-              return {
-                ok: false,
-                logged_out: true,
-                account: null,
-                since: null,
-                files_written: 0,
-                warnings: [],
-                error: 'no Garmin session: log in first',
-              } satisfies SyncOutcome
-            }
-            yield* Ref.set(busy, true)
-            const startedAt = yield* now
-            const [row] = yield* use((db) =>
-              db
-                .insert(syncRuns)
-                .values({
-                  started_at: startedAt,
-                  account: saved.value.account ? accountName(saved.value.account) : null,
-                  since: options?.since ?? null,
-                })
-                .returning({ id: syncRuns.id })
-                .all()
-            )
-            const warnings: Array<string> = []
-            const written = yield* Ref.make(0)
-            const result = yield* sync(options?.since, warnings, written).pipe(Effect.result)
-            const failure = result._tag === 'Failure' ? result.failure : null
-            const outcome: SyncOutcome = {
-              ok: failure === null,
-              logged_out: failure?._tag === 'NotLoggedIn',
-              account:
-                result._tag === 'Success'
-                  ? accountName(result.success.account)
-                  : saved.value.account
-                    ? accountName(saved.value.account)
-                    : null,
-              since: result._tag === 'Success' ? result.success.since : (options?.since ?? null),
-              files_written: yield* Ref.get(written),
-              warnings,
-              error: failure === null ? null : failure.message,
-            }
-            if (row !== undefined) {
-              const finishedAt = yield* now
-              yield* use((db) =>
-                db
-                  .update(syncRuns)
-                  .set({
-                    finished_at: finishedAt,
-                    ok: outcome.ok,
-                    logged_out: outcome.logged_out,
-                    account: outcome.account,
-                    since: outcome.since,
-                    files_written: outcome.files_written,
-                    warnings: warnings.length === 0 ? null : JSON.stringify(warnings.slice(0, 20)),
-                    error: outcome.error,
-                  })
-                  .where(eq(syncRuns.id, row.id))
-                  .run()
-              )
-            }
-            if (outcome.ok) {
-              yield* Effect.logInfo(
-                `sync done: ${outcome.files_written} file(s) written, ${warnings.length} warning(s)`
-              )
-            } else {
-              yield* Effect.logError(`sync failed: ${outcome.error ?? ''}`)
-            }
-            // What was written, into SQLite now
-            if (outcome.files_written > 0) {
-              const summary = yield* ingest.run()
-              yield* Effect.logInfo(`ingest: ${describeIngest(summary)}`)
-            }
-            return outcome
-          }).pipe(
-            Effect.ensuring(Ref.set(busy, false)),
-            Effect.catchCause((cause) =>
-              Effect.as(Effect.logError('sync crashed', cause), {
-                ok: false,
-                logged_out: false,
-                account: null,
-                since: null,
-                files_written: 0,
-                warnings: [],
-                error: Cause.pretty(cause),
-              } satisfies SyncOutcome)
-            ),
-            Effect.withSpan('GarminSync.run')
+      const run = Effect.fn('GarminSync.run')(
+        // Required, even if undefined: Effect.fn's pipe steps lose an optional parameter
+        function* (options: { readonly since?: string } | undefined) {
+          const saved = yield* session.load
+          if (Option.isNone(saved)) {
+            return {
+              ok: false,
+              logged_out: true,
+              account: null,
+              since: null,
+              files_written: 0,
+              warnings: [],
+              error: 'no Garmin session: log in first',
+            } satisfies SyncOutcome
+          }
+          yield* Ref.set(busy, true)
+          const startedAt = yield* now
+          const [row] = yield* use((db) =>
+            db
+              .insert(syncRuns)
+              .values({
+                started_at: startedAt,
+                account: saved.value.account ? accountName(saved.value.account) : null,
+                since: options?.since ?? null,
+              })
+              .returning({ id: syncRuns.id })
+              .all()
           )
-        )
+          const warnings: Array<string> = []
+          const written = yield* Ref.make(0)
+          const result = yield* sync(options?.since, warnings, written).pipe(Effect.result)
+          const failure = result._tag === 'Failure' ? result.failure : null
+          const outcome: SyncOutcome = {
+            ok: failure === null,
+            logged_out: failure?._tag === 'NotLoggedIn',
+            account:
+              result._tag === 'Success'
+                ? accountName(result.success.account)
+                : saved.value.account
+                  ? accountName(saved.value.account)
+                  : null,
+            since: result._tag === 'Success' ? result.success.since : (options?.since ?? null),
+            files_written: yield* Ref.get(written),
+            warnings,
+            error: failure === null ? null : failure.message,
+          }
+          if (row !== undefined) {
+            const finishedAt = yield* now
+            yield* use((db) =>
+              db
+                .update(syncRuns)
+                .set({
+                  finished_at: finishedAt,
+                  ok: outcome.ok,
+                  logged_out: outcome.logged_out,
+                  account: outcome.account,
+                  since: outcome.since,
+                  files_written: outcome.files_written,
+                  warnings: warnings.length === 0 ? null : JSON.stringify(warnings.slice(0, 20)),
+                  error: outcome.error,
+                })
+                .where(eq(syncRuns.id, row.id))
+                .run()
+            )
+          }
+          if (outcome.ok) {
+            yield* Effect.logInfo(
+              `sync done: ${outcome.files_written} file(s) written, ${warnings.length} warning(s)`
+            )
+          } else {
+            yield* Effect.logError(`sync failed: ${outcome.error ?? ''}`)
+          }
+          // What was written, into SQLite now
+          if (outcome.files_written > 0) {
+            const summary = yield* ingest.run()
+            yield* Effect.logInfo(`ingest: ${describeIngest(summary)}`)
+          }
+          return outcome
+        },
+        Effect.ensuring(Ref.set(busy, false)),
+        Effect.catchCause((cause) =>
+          Effect.as(Effect.logError('sync crashed', cause), {
+            ok: false,
+            logged_out: false,
+            account: null,
+            since: null,
+            files_written: 0,
+            warnings: [],
+            error: Cause.pretty(cause),
+          } satisfies SyncOutcome)
+        ),
+        lock.withPermits(1)
+      )
 
       const marker = join(dataDir, BACKFILL_MARKER)
       const backfilling = fs.exists(marker).pipe(Effect.orElseSucceed(() => false))
@@ -534,8 +531,8 @@ export class GarminSync extends Context.Service<
       const recent = (limit: number) =>
         use((db) => db.select().from(syncRuns).orderBy(desc(syncRuns.id)).limit(limit).all())
 
-      const waitFor = (duration: string) =>
-        Effect.raceFirst(Effect.sleep(duration as '1 minute'), Queue.take(wake))
+      const waitFor = (duration: Duration.Input) =>
+        Effect.raceFirst(Effect.sleep(duration), Queue.take(wake))
 
       const loop = Effect.gen(function* () {
         // The session Garmin refused (its saved_at), not tried again until a new one replaces it

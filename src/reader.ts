@@ -1,7 +1,6 @@
 import { join } from 'node:path'
 import process from 'node:process'
 
-import * as NodeServices from '@effect/platform-node/NodeServices'
 import { Context, Duration, Effect, Layer, Schema, Semaphore } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
@@ -116,7 +115,7 @@ export class Reader extends Context.Service<
 
         return Reader.of({ query, columns })
       })
-    ).pipe(Layer.provide(NodeServices.layer))
+    )
 
   static readonly layer = Reader.layerWithTimeout('30 seconds')
 }

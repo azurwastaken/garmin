@@ -18,13 +18,7 @@ import { HttpClient } from 'effect/http'
 
 import { writeAtomic } from '../files.ts'
 
-import {
-  TOKEN_URL,
-  WithingsError,
-  WithingsLoggedOut,
-  type WithingsRejected,
-  withingsPost,
-} from './client.ts'
+import { TOKEN_URL, WithingsError, WithingsLoggedOut, withingsPost } from './client.ts'
 import {
   authorizeUrl,
   expiresSoon,
@@ -127,26 +121,24 @@ export class WithingsSession extends Context.Service<
         const secret = Redacted.value(clientSecret)
 
         // requesttoken's answer as tokens
-        const requestToken = (params: Readonly<Record<string, string>>) =>
-          withingsPost(http, TOKEN_URL, {
+        const requestToken = Effect.fnUntraced(function* (
+          params: Readonly<Record<string, string>>
+        ) {
+          const body = yield* withingsPost(http, TOKEN_URL, {
             action: 'requesttoken',
             client_id: clientId,
             client_secret: secret,
             ...params,
-          }).pipe(
-            Effect.flatMap((body) =>
-              Effect.gen(function* () {
-                const tokens = tokensOf(body, yield* Clock.currentTimeMillis)
-                if (tokens === null) {
-                  return yield* new WithingsError({
-                    message: 'requesttoken: an answer without tokens',
-                    refused: false,
-                  })
-                }
-                return tokens
-              })
-            )
-          )
+          })
+          const tokens = tokensOf(body, yield* Clock.currentTimeMillis)
+          if (tokens === null) {
+            return yield* new WithingsError({
+              message: 'requesttoken: an answer without tokens',
+              refused: false,
+            })
+          }
+          return tokens
+        })
 
         const authorize = Effect.fn('WithingsSession.authorize')(function* (redirectUri: string) {
           const state = randomUUID()
@@ -185,7 +177,7 @@ export class WithingsSession extends Context.Service<
             code: callback.code,
             redirect_uri: entry.redirectUri,
           }).pipe(
-            Effect.catchTag('WithingsRejected', (error: WithingsRejected) =>
+            Effect.catchTag('WithingsRejected', (error) =>
               Effect.fail(new WithingsError({ message: error.message, refused: true }))
             )
           )
@@ -197,45 +189,48 @@ export class WithingsSession extends Context.Service<
         const loggedOut = (message: string) =>
           new WithingsLoggedOut({ message: `${message}: ${CONNECT_HINT}` })
 
-        const accessToken = (options?: { readonly rejected?: string }) =>
-          lock.withPermits(1)(
-            Effect.gen(function* () {
-              const saved = yield* load
-              if (Option.isNone(saved)) return yield* loggedOut('no Withings session')
-              const rejected = options?.rejected === saved.value.access_token
-              if (!rejected && !expiresSoon(saved.value, yield* Clock.currentTimeMillis)) {
-                return saved.value.access_token
-              }
-              const refreshed = yield* requestToken({
-                grant_type: 'refresh_token',
-                refresh_token: saved.value.refresh_token,
-              }).pipe(
-                Effect.map((fresh) => ({ fresh })),
-                Effect.catchTag('WithingsRejected', (error) =>
-                  Effect.succeed({ refused: error.message })
-                ),
-                Effect.catchTag('WithingsError', (error) =>
-                  error.refused ? Effect.succeed({ refused: error.message }) : Effect.fail(error)
-                )
-              )
-              if ('refused' in refreshed) {
-                // Another process (a CLI beside the app) may have refreshed it first: its session
-                // is in the file
-                const now = yield* load
-                if (
-                  Option.isSome(now) &&
-                  now.value.refresh_token !== saved.value.refresh_token &&
-                  !expiresSoon(now.value, yield* Clock.currentTimeMillis)
-                ) {
-                  return now.value.access_token
-                }
-                return yield* loggedOut(`Withings refused the refresh (${refreshed.refused})`)
-              }
-              const fresh = yield* save(refreshed.fresh)
-              yield* Effect.logInfo(`Withings session refreshed, valid until ${fresh.expires_at}`)
-              return fresh.access_token
+        // Another process (a CLI beside the app) may have refreshed it first: its session is in
+        // the file
+        const refreshedElsewhere = Effect.fnUntraced(function* (saved: Saved, refused: string) {
+          const current = yield* load
+          if (
+            Option.isSome(current) &&
+            current.value.refresh_token !== saved.refresh_token &&
+            !expiresSoon(current.value, yield* Clock.currentTimeMillis)
+          ) {
+            return current.value.access_token
+          }
+          return yield* loggedOut(`Withings refused the refresh (${refused})`)
+        })
+
+        const refreshed = Effect.fnUntraced(function* (tokens: WithingsTokens) {
+          const fresh = yield* save(tokens)
+          yield* Effect.logInfo(`Withings session refreshed, valid until ${fresh.expires_at}`)
+          return fresh.access_token
+        })
+
+        const accessToken = Effect.fn('WithingsSession.accessToken')(function* (options?: {
+          readonly rejected?: string
+        }) {
+          const saved = yield* load
+          if (Option.isNone(saved)) return yield* loggedOut('no Withings session')
+          const rejected = options?.rejected === saved.value.access_token
+          if (!rejected && !expiresSoon(saved.value, yield* Clock.currentTimeMillis)) {
+            return saved.value.access_token
+          }
+          return yield* requestToken({
+            grant_type: 'refresh_token',
+            refresh_token: saved.value.refresh_token,
+          }).pipe(
+            Effect.flatMap(refreshed),
+            Effect.catchTags({
+              WithingsRejected: (error) => refreshedElsewhere(saved.value, error.message),
+              // A failure Withings did not refuse (an outage) is not a logout
+              WithingsError: (error) =>
+                error.refused ? refreshedElsewhere(saved.value, error.message) : Effect.fail(error),
             })
           )
+        }, lock.withPermits(1))
 
         return { authorize, connect, accessToken }
       })

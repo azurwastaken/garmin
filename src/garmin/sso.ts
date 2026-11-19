@@ -1,7 +1,8 @@
-import { Duration, Effect, Random, Ref, Schema } from 'effect'
+import { Duration, Effect, Predicate, Random, Ref, Schema } from 'effect'
 import { type Cookies, HttpClient, HttpClientRequest, type HttpClientResponse } from 'effect/http'
 
-import * as Body from './body.ts'
+import * as Body from '../http-body.ts'
+
 import { GarminError, LoginRefused, NotLoggedIn, RateLimited } from './errors.ts'
 
 // Garmin's SSO, as Garmin Connect's mobile app does it (garminconnect 0.3.7's, in Python, was the
@@ -87,7 +88,7 @@ const claims = (token: string): Record<string, unknown> => {
   if (payload === undefined) return {}
   try {
     const parsed: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
-    return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {}
+    return Predicate.isObject(parsed) ? parsed : {}
   } catch {
     return {}
   }
@@ -363,15 +364,16 @@ const loginWith = Effect.fnUntraced(function* (
 
 // The email and password: tokens, or the MFA code to ask for (verifyMfa). portalDelay: the
 // pause of the portal's flow, doubled at most (10 s by default; tests set 0)
-export const login = (
+export const login = Effect.fn('Garmin.login')(function* (
   email: string,
   password: string,
   options: { readonly portalDelay?: Duration.Input } = {}
-) =>
-  loginWith('mobile', email, password, 0).pipe(
+) {
+  const portal = loginWith('portal', email, password, options.portalDelay ?? '10 seconds')
+  return yield* loginWith('mobile', email, password, 0).pipe(
     Effect.catchTags({
       RateLimited: (first) =>
-        loginWith('portal', email, password, options.portalDelay ?? '10 seconds').pipe(
+        portal.pipe(
           Effect.mapError((second) =>
             second._tag === 'GarminError'
               ? new GarminError({ message: `${first.message}; then ${second.message}` })
@@ -379,16 +381,16 @@ export const login = (
           )
         ),
       GarminError: (first) =>
-        loginWith('portal', email, password, options.portalDelay ?? '10 seconds').pipe(
+        portal.pipe(
           Effect.mapError((second) =>
             second._tag === 'LoginRefused'
               ? second
               : new GarminError({ message: `${first.message}; then ${second.message}` })
           )
         ),
-    }),
-    Effect.withSpan('Garmin.login')
+    })
   )
+})
 
 // The MFA code (Garmin's email or app): its flow's endpoint, then the other's (both share the
 // SSO's cookies, and may not share a rate limit)

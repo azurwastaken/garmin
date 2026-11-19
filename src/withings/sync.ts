@@ -91,72 +91,71 @@ export class WithingsSync extends Context.Service<
 
       // Every page of getmeas over the range; a token refused is refreshed and its page asked once
       // more, refused again: logged out
-      const measures = (
+      const measures = Effect.fnUntraced(function* (
         app: WithingsApp,
         range: { readonly startdate: number; readonly enddate: number }
-      ) =>
-        Effect.gen(function* () {
-          let token = yield* app.accessToken()
-          const page = (offset: number) =>
-            withingsPost(
-              http,
-              MEASURE_URL,
-              {
-                action: 'getmeas',
-                meastypes: MEASURE_TYPES,
-                category: '1',
-                startdate: String(range.startdate),
-                enddate: String(range.enddate),
-                ...(offset === 0 ? {} : { offset: String(offset) }),
-              },
-              token
-            )
-          // A page, once more with a refreshed token when Withings refuses this one
-          const pageOrRefresh = (offset: number) =>
-            page(offset).pipe(
-              Effect.catchTag('WithingsRejected', () =>
-                Effect.gen(function* () {
-                  token = yield* app.accessToken({ rejected: token })
-                  return yield* page(offset)
+      ) {
+        let token = yield* app.accessToken()
+        const page = (offset: number) =>
+          withingsPost(
+            http,
+            MEASURE_URL,
+            {
+              action: 'getmeas',
+              meastypes: MEASURE_TYPES,
+              category: '1',
+              startdate: String(range.startdate),
+              enddate: String(range.enddate),
+              ...(offset === 0 ? {} : { offset: String(offset) }),
+            },
+            token
+          )
+        // A page, once more with a refreshed token when Withings refuses this one
+        const pageOrRefresh = (offset: number) =>
+          page(offset).pipe(
+            Effect.catchTag('WithingsRejected', () =>
+              Effect.gen(function* () {
+                token = yield* app.accessToken({ rejected: token })
+                return yield* page(offset)
+              })
+            ),
+            Effect.catchTag('WithingsRejected', (error) =>
+              Effect.fail(
+                new WithingsLoggedOut({
+                  message: `Withings refused a fresh token: ${error.message}`,
                 })
-              ),
-              Effect.catchTag('WithingsRejected', (error) =>
-                Effect.fail(
-                  new WithingsLoggedOut({
-                    message: `Withings refused a fresh token: ${error.message}`,
-                  })
-                )
               )
             )
-          const groups: Array<unknown> = []
-          let timezone: string | null = null
-          let offset = 0
-          for (let pages = 0; pages < MAX_PAGES; pages += 1) {
-            const body = yield* pageOrRefresh(offset)
-            const decoded = decodePage(body)
-            if (Option.isNone(decoded)) {
-              return yield* new WithingsError({
-                message: 'getmeas: not a page of measures',
-                refused: false,
-              })
-            }
-            groups.push(...decoded.value.measuregrps)
-            timezone ??= decoded.value.timezone ?? null
-            if (!decoded.value.more) return { groups, timezone: timezone ?? TIME_ZONE }
-            const next = decoded.value.offset ?? offset
-            if (next <= offset) {
-              return yield* new WithingsError({
-                message: 'getmeas: its offset does not advance',
-                refused: false,
-              })
-            }
-            offset = next
+          )
+        const groups: Array<unknown> = []
+        let timezone: string | null = null
+        let offset = 0
+        for (let pages = 0; pages < MAX_PAGES; pages += 1) {
+          const body = yield* pageOrRefresh(offset)
+          const decoded = decodePage(body)
+          if (Option.isNone(decoded)) {
+            return yield* new WithingsError({
+              message: 'getmeas: not a page of measures',
+              refused: false,
+            })
           }
-          return yield* new WithingsError({
-            message: `getmeas: over ${MAX_PAGES} pages`,
-            refused: false,
-          })
+          groups.push(...decoded.value.measuregrps)
+          timezone ??= decoded.value.timezone ?? null
+          if (!decoded.value.more) return { groups, timezone: timezone ?? TIME_ZONE }
+          const next = decoded.value.offset ?? offset
+          if (next <= offset) {
+            return yield* new WithingsError({
+              message: 'getmeas: its offset does not advance',
+              refused: false,
+            })
+          }
+          offset = next
+        }
+        return yield* new WithingsError({
+          message: `getmeas: over ${MAX_PAGES} pages`,
+          refused: false,
         })
+      })
 
       const sync = Effect.fnUntraced(function* (app: WithingsApp) {
         const wanted = syncMonths(yield* newestMonth, yield* parisToday)

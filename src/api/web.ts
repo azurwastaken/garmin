@@ -10,6 +10,9 @@ import { type WithingsStatus, withingsStatus, WithingsSync } from '../withings/s
 import { base, standard } from './base.ts'
 import { RUNS_SPANS, SLEEP_PERIODS } from './periods.ts'
 
+// sync_runs.warnings: the JSON array the sync wrote
+const decodeWarnings = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(Schema.String)))
+
 // The web pages' calls (RPC only, behind the web session): their loaders and buttons, through the
 // typed client (client.ts)
 
@@ -69,7 +72,7 @@ const garminView = Effect.gen(function* () {
       logged_out: run.logged_out,
       account: run.account,
       files_written: run.files_written,
-      warnings: run.warnings === null ? [] : (JSON.parse(run.warnings) as Array<string>),
+      warnings: run.warnings === null ? [] : decodeWarnings(run.warnings),
       error: run.error,
     })),
   } satisfies GarminView

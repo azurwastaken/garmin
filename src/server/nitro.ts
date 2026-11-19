@@ -11,7 +11,7 @@ declare global {
   var garminJobs: Promise<JobsFiber> | undefined
 }
 
-// The ingest of data/, on the shared runtime (see runtime.ts)
+// The background jobs (app.ts's Jobs), on the shared runtime (see runtime.ts)
 const startJobs = () => runtime.runFork(Layer.launch(Jobs))
 
 // Never rejects: a failing stop is logged, so the next start and the shutdown still run

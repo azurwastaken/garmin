@@ -1,7 +1,8 @@
 import { Context, Effect, Layer, Schedule, Schema } from 'effect'
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from 'effect/http'
 
-import { body, text } from './body.ts'
+import { body, type BodyError, text } from '../http-body.ts'
+
 import { GarminError, NotLoggedIn, RateLimited } from './errors.ts'
 import { type Account, GarminSession, LOGIN_HINT } from './session.ts'
 import { nativeHeaders } from './sso.ts'
@@ -98,11 +99,14 @@ export class GarminApi extends Context.Service<
         return yield* checked(call.path, response)
       })
 
+      const unreadable = (error: BodyError) => new GarminError({ message: error.message })
+
       // The answer's JSON, null for an empty one
       const parsed = (path: string, response: HttpClientResponse.HttpClientResponse) =>
         response.status === 204
           ? Effect.succeed(null)
           : text(path, response).pipe(
+              Effect.mapError(unreadable),
               Effect.flatMap((content) =>
                 Effect.try({
                   try: (): unknown => (content.trim() === '' ? null : JSON.parse(content)),
@@ -149,7 +153,7 @@ export class GarminApi extends Context.Service<
 
       const bytes = (path: string) =>
         request({ method: 'GET', path, params: {}, accept: '*/*' }).pipe(
-          Effect.flatMap((response) => body(path, response)),
+          Effect.flatMap((response) => Effect.mapError(body(path, response), unreadable)),
           Effect.withSpan('GarminApi.bytes', { attributes: { path } })
         )
 
