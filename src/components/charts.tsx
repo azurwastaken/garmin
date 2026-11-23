@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react'
 import { fmt as format } from './format.ts'
 
 // The web pages' charts, plain SVG: thin marks, recessive axes, a hover readout, a table view (the
-// values are reachable without the pointer). Colors come from the CSS tokens (styles.css), light
-// and dark.
+// values are reachable without the pointer). Colors come from the CSS tokens (styles.css), the dark
+// HUD.
 
 // The container's width in pixels: the charts draw at their real size (text stays 11px). A
 // callback ref: a container that appears later (data arriving on navigation) is measured too.

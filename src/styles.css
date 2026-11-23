@@ -1,68 +1,47 @@
-/* The web app: one sheet, light and dark (the data-viz palette's chrome and series steps) */
+/* The web app: one sheet, a dark HUD (glowing cyan on near-black). Every color is an opaque token,
+   so src/styles.test.ts can hold text at 4.5:1 and marks at 3:1 on every surface. */
 :root {
-  color-scheme: light;
-  --page: #f9f9f7;
-  --surface: #fcfcfb;
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --muted: #898781;
-  --grid: #e1e0d9;
-  --axis: #c3c2b7;
-  --ring: rgba(11, 11, 11, 0.1);
-  --series-1: #2a78d6;
-  --series-2: #eb6834;
-  --series-3: #1baf7a;
-  --series-4: #eda100;
-  --series-4-ink: #0b0b0b;
-  /* HR zones: one blue, ordinal, light to dark (validated, step 250 to 650) */
-  --zone-1: #86b6ef;
-  --zone-2: #5598e7;
-  --zone-3: #2a78d6;
-  --zone-4: #1c5cab;
-  --zone-5: #104281;
-  --zone-1-ink: #0b0b0b;
-  --zone-2-ink: #0b0b0b;
-  --zone-3-ink: #ffffff;
-  --zone-4-ink: #ffffff;
-  --zone-5-ink: #ffffff;
-  --good: #006300;
-  --critical: #d03b3b;
-  --warning-ink: #8a5a00;
-  --accent: #2a78d6;
+  color-scheme: dark;
+  --page: #03060b;
+  /* The backdrop: a glow at the top and a grid of lines */
+  --page-glow: #081521;
+  --grid-line: #0b1a27;
+  --surface: #08111b;
+  /* A card's gradient runs from --card-top to --surface, with an inset --card-glow */
+  --card-top: #0a1621;
+  --card-glow: #0c1a26;
+  --ink: #e8f7ff;
+  --ink-2: #a9cadb;
+  --muted: #8aabbd;
+  --grid: #17324a;
+  --axis: #2f6f93;
+  --ring: #2c7d9c;
+  --series-1: #22d3ee;
+  --series-1-ink: #03060b;
+  --series-2: #f9a8d4;
+  --series-2-ink: #03060b;
+  --series-3: #a78bfa;
+  --series-3-ink: #03060b;
+  --series-4: #e7e5e4;
+  --series-4-ink: #03060b;
+  /* HR zones: one cyan, ordinal, more is lighter */
+  --zone-1: #1a7088;
+  --zone-2: #1690ad;
+  --zone-3: #1aa3c2;
+  --zone-4: #4cd0e8;
+  --zone-5: #a8f0fb;
+  --zone-1-ink: #ffffff;
+  --zone-2-ink: #03060b;
+  --zone-3-ink: #03060b;
+  --zone-4-ink: #03060b;
+  --zone-5-ink: #03060b;
+  --good: #a3e635;
+  --critical: #ff5470;
+  --warning-ink: #fbbf24;
+  --accent: #3fe0ff;
+  --accent-ink: #03060b;
+  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --page: #0d0d0d;
-    --surface: #1a1a19;
-    --ink: #f0efec;
-    --ink-2: #c3c2b7;
-    --muted: #898781;
-    --grid: #2c2c2a;
-    --axis: #383835;
-    --ring: rgba(255, 255, 255, 0.1);
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --series-3: #199e70;
-    --series-4: #c98500;
-    --series-4-ink: #0b0b0b;
-    /* On the dark surface the ramp runs the other way: more is lighter (step 600 to 150) */
-    --zone-1: #184f95;
-    --zone-2: #256abf;
-    --zone-3: #3987e5;
-    --zone-4: #6da7ec;
-    --zone-5: #b7d3f6;
-    --zone-1-ink: #ffffff;
-    --zone-2-ink: #ffffff;
-    --zone-3-ink: #ffffff;
-    --zone-4-ink: #0b0b0b;
-    --zone-5-ink: #0b0b0b;
-    --good: #0ca30c;
-    --critical: #e66767;
-    --warning-ink: #fab219;
-    --accent: #3987e5;
-  }
 }
 
 * {
@@ -70,7 +49,11 @@
 }
 body {
   margin: 0;
-  background: var(--page);
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 0, var(--page-glow), transparent 70%),
+    repeating-linear-gradient(0deg, var(--grid-line) 0 1px, transparent 1px 32px),
+    repeating-linear-gradient(90deg, var(--grid-line) 0 1px, transparent 1px 32px), var(--page);
   color: var(--ink);
   line-height: 1.45;
 }
@@ -84,47 +67,77 @@ a {
 }
 .top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 20px;
+  gap: 12px 20px;
   margin-bottom: 24px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--grid);
 }
 .top .brand {
-  font-weight: 650;
-  font-size: 17px;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
   margin-right: auto;
-  color: var(--ink);
+  color: var(--accent);
   text-decoration: none;
+  text-shadow: 0 0 12px var(--accent);
 }
 .top nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
 .top nav a {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--ink-2);
   text-decoration: none;
   padding: 6px 10px;
-  border-radius: 8px;
+  border: 1px solid transparent;
+}
+.top nav a:hover {
+  color: var(--ink);
+  border-color: var(--grid);
 }
 .top nav a[data-status='active'] {
-  color: var(--ink);
+  color: var(--accent);
+  border-color: var(--ring);
   background: var(--surface);
-  box-shadow: 0 0 0 1px var(--ring);
 }
 .top form button {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   background: none;
   border: 0;
   color: var(--muted);
   cursor: pointer;
-  font: inherit;
 }
 
 h1 {
+  font-family: var(--mono);
   font-size: 22px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   margin: 0 0 4px;
 }
 h2 {
-  font-size: 15px;
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
   margin: 0 0 2px;
+}
+/* Card titles carry units ("HRV (ms)", "(min/km)"): their case kept */
+.card h2 {
+  text-transform: none;
 }
 .sub {
   color: var(--ink-2);
@@ -147,21 +160,50 @@ h2 {
 .cols-2 {
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
 }
+/* A HUD panel: its frame drawn under it (cut corners, a 1px line, a glow), the card itself never
+   clipped so a chart's tooltip can overflow it */
 .card {
-  background: var(--surface);
-  border-radius: 12px;
-  box-shadow: 0 0 0 1px var(--ring);
+  position: relative;
+  isolation: isolate;
   padding: 16px;
+}
+.card::before,
+.card::after {
+  content: '';
+  position: absolute;
+  clip-path: polygon(
+    0 12px,
+    12px 0,
+    100% 0,
+    100% calc(100% - 12px),
+    calc(100% - 12px) 100%,
+    0 100%
+  );
+}
+.card::before {
+  inset: 0;
+  z-index: -2;
+  background: var(--ring);
+}
+.card::after {
+  inset: 1px;
+  z-index: -1;
+  background: linear-gradient(var(--card-top), var(--surface));
+  box-shadow: inset 0 0 24px var(--card-glow);
 }
 section {
   margin-top: 26px;
 }
 
 .tile .label {
+  font-family: var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 12px;
 }
 .tile .value {
+  font-family: var(--mono);
   font-size: 28px;
   font-weight: 600;
   margin-top: 2px;
@@ -181,8 +223,11 @@ section {
 .status {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  font-family: var(--mono);
   font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 .status::before {
   content: '';
@@ -190,6 +235,7 @@ section {
   height: 8px;
   border-radius: 50%;
   background: currentColor;
+  box-shadow: 0 0 6px currentColor;
 }
 .status.good {
   color: var(--good);
@@ -208,6 +254,10 @@ table {
 }
 th {
   text-align: left;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--muted);
   font-weight: 500;
   padding: 6px 8px;
@@ -240,7 +290,7 @@ label {
 input {
   font: inherit;
   padding: 9px 11px;
-  border-radius: 8px;
+  border-radius: 2px;
   border: 1px solid var(--axis);
   background: var(--page);
   color: var(--ink);
@@ -252,15 +302,19 @@ input:focus {
 button.primary,
 button.secondary {
   font: inherit;
-  font-weight: 550;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   padding: 9px 14px;
-  border-radius: 8px;
+  border-radius: 2px;
   cursor: pointer;
   border: 0;
 }
 button.primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
 }
 button.secondary {
   background: transparent;
@@ -289,10 +343,11 @@ ol.steps li {
   margin-bottom: 6px;
 }
 code {
+  font-family: var(--mono);
   font-size: 12px;
   background: var(--page);
   padding: 1px 5px;
-  border-radius: 4px;
+  border-radius: 2px;
   box-shadow: 0 0 0 1px var(--ring);
 }
 .row {
@@ -372,8 +427,8 @@ code {
   background: var(--surface);
   box-shadow:
     0 0 0 1px var(--ring),
-    0 4px 14px rgba(0, 0, 0, 0.12);
-  border-radius: 8px;
+    0 4px 14px var(--page);
+  border-radius: 2px;
   padding: 7px 9px;
   font-size: 12px;
   white-space: nowrap;
@@ -460,7 +515,7 @@ details.table-view summary {
   display: inline-flex;
   gap: 2px;
   padding: 2px;
-  border-radius: 9px;
+  border-radius: 2px;
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--ring);
 }
@@ -474,14 +529,16 @@ details.table-view summary {
 }
 .periods a {
   padding: 5px 11px;
-  border-radius: 7px;
-  font-size: 13px;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
   color: var(--ink-2);
   text-decoration: none;
 }
 .periods a.on {
   background: var(--page);
-  color: var(--ink);
+  color: var(--accent);
   font-weight: 600;
   box-shadow: 0 0 0 1px var(--ring);
 }
@@ -495,6 +552,7 @@ details.table-view summary {
 
 /* The page's one headline number */
 .hero {
+  font-family: var(--mono);
   font-size: 52px;
   font-weight: 650;
   line-height: 1.05;
@@ -566,4 +624,49 @@ td a:hover {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* The boot-in: panels arrive in turn, only for whoever has not asked to reduce motion */
+@keyframes boot {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  section,
+  .card {
+    animation: boot 0.4s ease-out calc(var(--i, 0) * 70ms) backwards;
+  }
+}
+.grid > :nth-child(2) {
+  --i: 1;
+}
+.grid > :nth-child(3) {
+  --i: 2;
+}
+.grid > :nth-child(4) {
+  --i: 3;
+}
+
+/* The Today verdict: the gauge beside its text */
+.gauge {
+  width: 96px;
+  flex: none;
+  overflow: visible;
+}
+.gauge .ring {
+  filter: drop-shadow(0 0 6px currentColor);
+}
+.verdict {
+  align-items: flex-start;
+}
+.verdict-text {
+  flex: 1 1 100px;
+  min-width: 0;
+}
+.verdict .legend {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
 }

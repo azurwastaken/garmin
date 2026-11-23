@@ -1,7 +1,7 @@
 import type { Part } from './charts.tsx'
 
-// The parts of the segmented bars: an activity's time per HR zone (ordinal: one blue, light to
-// dark), a night's stages (categorical, slots 1 to 4)
+// The parts of the segmented bars: an activity's time per HR zone (ordinal: one cyan, more is
+// lighter), a night's stages (categorical, slots 1 to 4)
 
 export const zoneParts = (zones: {
   readonly z1_s: number
@@ -27,9 +27,9 @@ export const zoneParts = (zones: {
   }))
 
 export const STAGES = [
-  { key: 'deep', label: 'Profond', color: 'var(--series-1)', ink: '#ffffff' },
-  { key: 'light', label: 'Léger', color: 'var(--series-2)', ink: '#ffffff' },
-  { key: 'rem', label: 'Paradoxal', color: 'var(--series-3)', ink: '#ffffff' },
+  { key: 'deep', label: 'Profond', color: 'var(--series-1)', ink: 'var(--series-1-ink)' },
+  { key: 'light', label: 'Léger', color: 'var(--series-2)', ink: 'var(--series-2-ink)' },
+  { key: 'rem', label: 'Paradoxal', color: 'var(--series-3)', ink: 'var(--series-3-ink)' },
   { key: 'awake', label: 'Éveillé', color: 'var(--series-4)', ink: 'var(--series-4-ink)' },
 ] as const
 

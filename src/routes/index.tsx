@@ -3,8 +3,9 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { api } from '#src/api/client.ts'
 import { LineChart, shortDay, StackedColumns } from '#src/components/charts.tsx'
 import { dayLabel, fmt, hours, longDay, numericDay, pace, sport } from '#src/components/format.ts'
+import { measureFraction, shownLimit } from '#src/components/gauge.ts'
 import type { Morning, Period, Week } from '#src/stats.ts'
-import type { Burn, Light, Verdict } from '#src/today.ts'
+import type { Burn, Light, Measure, Verdict } from '#src/today.ts'
 
 // The dashboard: the Garmin connection at a glance, today (the verdict on the night, the plan,
 // the energy, the journal), the last 7 days, the last night, 12 weeks of training, 28 days of
@@ -78,6 +79,87 @@ const LIGHTS: Record<
   },
 }
 
+type Judged = Extract<Verdict, { kind: 'judged' }>
+
+// The gauge's measures, in ring order, outer first: the legend lists them in that order
+const MEASURES = [
+  { key: 'hrv', label: 'HRV', unit: 'ms', r: 66, color: 'var(--series-1)' },
+  { key: 'resting_hr', label: 'FC au repos', unit: 'bpm', r: 50, color: 'var(--series-3)' },
+] as const
+
+// One measure's ring: its track, its arc and two ticks, where its normal and its limit fall
+function MeasureArc({
+  measure,
+  r,
+  color,
+}: {
+  readonly measure: Measure
+  readonly r: number
+  readonly color: string
+}) {
+  const length = 2 * Math.PI * r
+  const fraction = measureFraction(measure)
+  return (
+    <g>
+      <circle cx={90} cy={90} r={r} fill="none" stroke="var(--grid)" strokeWidth={8} />
+      {fraction > 0 ? (
+        <circle
+          cx={90}
+          cy={90}
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth={8}
+          strokeDasharray={`${fraction * length} ${length}`}
+          transform="rotate(-90 90 90)"
+        />
+      ) : null}
+      {[measure.limit, measure.normal]
+        .map((at) => measureFraction({ ...measure, value: at }))
+        .map((tick) => (
+          <line
+            key={tick}
+            x1={90}
+            y1={90 - r - 5}
+            x2={90}
+            y2={90 - r - 10}
+            stroke="var(--ink-2)"
+            strokeWidth={2}
+            transform={`rotate(${tick * 360} 90 90)`}
+          />
+        ))}
+    </g>
+  )
+}
+
+// The verdict as rings: the light's color around, each measured value's arc inside (a missing one
+// draws no ring; the legend beside it carries the words and the values)
+function Gauge(props: Pick<Judged, 'light' | 'hrv' | 'resting_hr'>) {
+  return (
+    <svg
+      className={`gauge status ${LIGHTS[props.light].status}`}
+      viewBox="-8 -8 196 196"
+      aria-hidden="true"
+    >
+      <circle
+        className="ring"
+        cx={90}
+        cy={90}
+        r={84}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={6}
+      />
+      {MEASURES.map((m) => {
+        const measure = props[m.key]
+        return measure === null ? null : (
+          <MeasureArc key={m.key} measure={measure} r={m.r} color={m.color} />
+        )
+      })}
+    </svg>
+  )
+}
+
 function VerdictCard({ verdict }: { verdict: Verdict }) {
   if (verdict.kind === 'no-night') {
     return (
@@ -101,20 +183,34 @@ function VerdictCard({ verdict }: { verdict: Verdict }) {
   const light = LIGHTS[verdict.light]
   return (
     <div className="card">
-      <span className={`status ${light.status}`}>{light.label}</span>
-      <p className="note">{light.advice}</p>
-      {verdict.reasons.length > 0 ? (
-        <ul>
-          {verdict.reasons.map((reason) => (
-            <li key={reason}>{reason}</li>
-          ))}
-        </ul>
-      ) : null}
-      <p className="sub">
-        HRV {fmt(verdict.hrv?.value)} ms (normale {fmt(verdict.hrv?.normal)}) · FC au repos{' '}
-        {fmt(verdict.resting_hr?.value)} bpm (normale {fmt(verdict.resting_hr?.normal)}) ·
-        récupération {fmt(verdict.recovery_h)} h
-      </p>
+      <div className="row verdict">
+        <Gauge light={verdict.light} hrv={verdict.hrv} resting_hr={verdict.resting_hr} />
+        <div className="verdict-text">
+          <span className={`status ${light.status}`}>{light.label}</span>
+          <p className="note">{light.advice}</p>
+          {verdict.reasons.length > 0 ? (
+            <ul>
+              {verdict.reasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="legend">
+            {MEASURES.map((m) => {
+              const measure = verdict[m.key]
+              return (
+                <span key={m.key}>
+                  <i style={{ background: m.color }} />
+                  {measure === null
+                    ? `${m.label} –`
+                    : `${m.label} ${fmt(measure.value)} ${m.unit} (normale ${fmt(measure.normal)}, seuil ${fmt(shownLimit(measure), 1)})`}
+                </span>
+              )
+            })}
+            <span>récupération {fmt(verdict.recovery_h)} h</span>
+          </p>
+        </div>
+      </div>
     </div>
   )
 }

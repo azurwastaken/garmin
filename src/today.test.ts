@@ -47,8 +47,8 @@ describe('verdict', () => {
       kind: 'judged',
       light: 'green',
       reasons: [],
-      hrv: { value: 44, normal: 40 },
-      resting_hr: { value: 53, normal: 54 },
+      hrv: { value: 44, normal: 40, limit: 36 },
+      resting_hr: { value: 53, normal: 54, limit: 57 },
       recovery_h: 0,
     })
   })
@@ -82,7 +82,10 @@ describe('verdict', () => {
     expect(judge({ hrv: 36 })).toMatchObject({ light: 'orange' })
     // Resting HR 50 and 60 in turn: mean 55, SD 5, above the floor
     const noisy = history(28, { resting: [50, 60] })
-    expect(judge({ resting_hr: 59 }, noisy)).toMatchObject({ light: 'green' })
+    expect(judge({ resting_hr: 59 }, noisy)).toMatchObject({
+      light: 'green',
+      resting_hr: { limit: 60 },
+    })
     expect(judge({ resting_hr: 60 }, noisy)).toMatchObject({ light: 'orange' })
   })
 
@@ -115,6 +118,30 @@ describe('verdict', () => {
       reasons: ['pas assez de nuits pour la normale de la HRV'],
       hrv: null,
       resting_hr: { value: 54, normal: 54 },
+    })
+  })
+})
+
+describe('the limit', () => {
+  it('is the unrounded bound, the value the rounded reading', () => {
+    // Mean 40.5, normal 41, limit 36.5: 37 is within it (41 − 4 = 37 would call it off)
+    expect(judge({ hrv: 37 }, history(28, { hrv: [40, 41] }))).toMatchObject({
+      light: 'green',
+      hrv: { value: 37, normal: 41, limit: 36.5 },
+    })
+    // Mean 51.04, SD 0.19: limit 54.04, 54 is within it
+    const nearly = judge(
+      { resting_hr: 54 },
+      history(28, { resting: [52, ...Array.from({ length: 27 }, () => 51)] })
+    )
+    expect(nearly).toMatchObject({ light: 'green', resting_hr: { value: 54, normal: 51 } })
+    expect(nearly.kind === 'judged' ? nearly.resting_hr?.limit : null).toBeCloseTo(54.036, 3)
+    // Tonight's reading rounded before it is judged: 36.6 is 37, 36.4 is 36 (on the limit)
+    expect(judge({ hrv: 36.6 })).toMatchObject({ light: 'green', hrv: { value: 37 } })
+    expect(judge({ hrv: 36.4 })).toMatchObject({
+      light: 'orange',
+      hrv: { value: 36, normal: 40, limit: 36 },
+      reasons: ['HRV 36 (normale 40)'],
     })
   })
 })

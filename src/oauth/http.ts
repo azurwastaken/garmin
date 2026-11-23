@@ -57,22 +57,22 @@ export const escapeHtml = (value: string) =>
       character
   )
 
-// The OAuth pages: plain HTML from the server, styled like the app (light and dark). Every value
+// The OAuth pages: plain HTML from the server, styled like the app (its dark HUD tokens, the same
+// values as styles.css's, which src/styles.test.ts checks). Every value
 // in them goes through escapeHtml.
 const STYLE = `
-:root{color-scheme:light;--page:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink-2:#52514e;--axis:#c3c2b7;--ring:rgba(11,11,11,.1);--accent:#2a78d6;--critical:#d03b3b;font-family:system-ui,-apple-system,'Segoe UI',sans-serif}
-@media (prefers-color-scheme:dark){:root{color-scheme:dark;--page:#0d0d0d;--surface:#1a1a19;--ink:#f0efec;--ink-2:#c3c2b7;--axis:#383835;--ring:rgba(255,255,255,.1);--accent:#3987e5}}
+:root{color-scheme:dark;--page:#03060b;--surface:#08111b;--ink:#e8f7ff;--ink-2:#a9cadb;--axis:#2f6f93;--ring:#2c7d9c;--accent:#3fe0ff;--accent-ink:#03060b;--critical:#ff5470;--mono:ui-monospace,'SF Mono',Menlo,monospace;font-family:system-ui,-apple-system,'Segoe UI',sans-serif}
 body{margin:0;background:var(--page);color:var(--ink)}
 .shell{max-width:440px;margin:0 auto;padding:12vh 16px 32px}
 .card{background:var(--surface);border-radius:12px;box-shadow:0 0 0 1px var(--ring);padding:20px}
-h1{font-size:20px;margin:0 0 6px}
+h1{font-size:20px;margin:0 0 6px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em}
 p{color:var(--ink-2);font-size:14px;line-height:1.5;margin:8px 0}
 strong{color:var(--ink)}
 ul{color:var(--ink-2);font-size:14px;line-height:1.5;padding-left:18px;margin:8px 0}
 code{font-size:13px}
 .actions{display:flex;gap:8px;margin-top:16px}
 button{font:inherit;font-weight:550;padding:9px 14px;border-radius:8px;cursor:pointer;border:0}
-.primary{background:var(--accent);color:#fff}
+.primary{background:var(--accent);color:var(--accent-ink)}
 .secondary{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1px var(--axis)}
 .error{color:var(--critical)}
 a{color:var(--accent)}`

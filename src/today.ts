@@ -15,10 +15,12 @@ export interface Reading {
 
 export type Light = 'green' | 'orange' | 'red'
 
-// Tonight's value and its normal (the mean, rounded)
+// Tonight's value (rounded, as Garmin shows it), its normal (the mean, rounded) and where the
+// verdict calls it off (unrounded)
 export interface Measure {
   readonly value: number
   readonly normal: number
+  readonly limit: number
 }
 
 export type Verdict =
@@ -61,19 +63,24 @@ type Assessment =
   | { readonly kind: 'off'; readonly measure: Measure; readonly reason: string }
   | { readonly kind: 'normal'; readonly measure: Measure }
 
-// One measure tonight against its normal, `off` saying when it is on the wrong side of it
+// One measure tonight against its normal: off once `floor` (or one SD, if wider) on its `worse`
+// side
 const assess = (
   label: string,
-  value: number | null,
+  raw: number | null,
   normal: Normal | null,
-  off: (value: number, normal: Normal) => boolean
+  worse: 'below' | 'above',
+  floor: number
 ): Assessment => {
-  if (value === null) return { kind: 'missing', reason: `${label} non mesurée cette nuit` }
+  if (raw === null) return { kind: 'missing', reason: `${label} non mesurée cette nuit` }
   if (normal === null) {
     return { kind: 'missing', reason: `pas assez de nuits pour la normale de la ${label}` }
   }
-  const measure = { value, normal: Math.round(normal.mean) }
-  return off(value, normal)
+  const value = Math.round(raw)
+  const spread = Math.max(floor, normal.sd)
+  const limit = worse === 'below' ? normal.mean - spread : normal.mean + spread
+  const measure = { value, normal: Math.round(normal.mean), limit }
+  return (worse === 'below' ? value <= limit : value >= limit)
     ? { kind: 'off', measure, reason: `${label} ${value} (normale ${measure.normal})` }
     : { kind: 'normal', measure }
 }
@@ -98,13 +105,8 @@ export const verdict = (today: string, readings: ReadonlyArray<Reading>): Verdic
   if (hrvNormal === null && restingNormal === null) {
     return { kind: 'too-few', nights: { hrv: hrvs.length, resting_hr: restings.length } }
   }
-  const hrv = assess('HRV', night.hrv, hrvNormal, (value, n) => value <= n.mean - Math.max(4, n.sd))
-  const resting = assess(
-    'FC au repos',
-    night.resting_hr,
-    restingNormal,
-    (value, n) => value >= n.mean + Math.max(3, n.sd)
-  )
+  const hrv = assess('HRV', night.hrv, hrvNormal, 'below', 4)
+  const resting = assess('FC au repos', night.resting_hr, restingNormal, 'above', 3)
   const recovering = (night.recovery_time_h ?? 0) > RECOVERING_H
   const offs = [hrv, resting].filter((assessment) => assessment.kind === 'off').length
   const missing = hrv.kind === 'missing' || resting.kind === 'missing'
