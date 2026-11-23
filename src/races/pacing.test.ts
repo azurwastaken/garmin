@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { profileOf, segmentCourse } from './course.ts'
-import { bestEffort, distanceAt, fuelling, riegel, timeAt, timeline } from './pacing.ts'
+import { bestEffort, distanceAt, fuelling, gelEvery, riegel, timeAt, timeline } from './pacing.ts'
 
 const profile = (d: Array<number>, ele: Array<number>) => {
   const made = profileOf(d, ele)
@@ -33,9 +33,9 @@ describe('the pacing', () => {
   it("splits the model's time by effort, monotonic to its total", () => {
     const segments = segmentCourse(hilly)
     const line = timeline(hilly, segments, reference, new Map())
-    const total = line.at(-1)?.t ?? 0
-    expect(line.every((p, i) => i === 0 || p.t > (line[i - 1]?.t ?? 0))).toBe(true)
-    expect(line[0]?.t).toBe(0)
+    const total = line.t.at(-1) ?? 0
+    expect(line.t.every((t, i) => i === 0 || t > (line.t[i - 1] ?? 0))).toBe(true)
+    expect(line.t[0]).toBe(0)
     expect(total).toBeGreaterThan(riegel(3000, 10_000, 16_000))
     // Uphill slower than flat, by the GAP factor
     const flatPace = timeAt(line, 5000) / 5
@@ -56,7 +56,7 @@ describe('the pacing', () => {
   it('places a gel every 25 minutes at 60 g/h, and water by the hour', () => {
     const segments = segmentCourse(hilly)
     const line = timeline(hilly, segments, reference, new Map())
-    const total = line.at(-1)?.t ?? 0
+    const total = line.t.at(-1) ?? 0
     const plan = fuelling(line, segments, {
       carbs_g_per_h: 60,
       gel_carbs_g: 25,
@@ -71,8 +71,9 @@ describe('the pacing', () => {
       (500 * total) / 3600,
       6
     )
-    expect(
-      fuelling(line, segments, { carbs_g_per_h: 0, gel_carbs_g: 25, water_ml_per_h: 0 }).gels
-    ).toEqual([])
+    const none = { carbs_g_per_h: 0, gel_carbs_g: 25, water_ml_per_h: 0 }
+    expect(fuelling(line, segments, none).gels).toEqual([])
+    expect(gelEvery(none)).toBeNull()
+    expect(gelEvery({ ...none, carbs_g_per_h: 60 })).toBe(1500)
   })
 })

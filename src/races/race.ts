@@ -4,7 +4,15 @@ import { parsePace } from '../garmin/workout-builder.ts'
 import { round } from '../numbers.ts'
 
 import { type Course, type Segment, segmentCourse, totals } from './course.ts'
-import { type Fuel, fuelling, type Run, timeAt, timeline } from './pacing.ts'
+import {
+  type Fuel,
+  fuelling,
+  gelEvery,
+  type Run,
+  timeAt,
+  timeline,
+  type Timeline,
+} from './pacing.ts'
 
 // A race's files and what get_race says of them, without I/O. In data/races/: <slug>.gpx (the
 // course, the source of truth), <slug>.json (its facts), <slug>.plan.json (the plan the MCP writes).
@@ -38,11 +46,27 @@ export const slugOf = (name: string, date: string): Slug | null => {
     .replaceAll(/^-|-$/gu, '')
   if (words === '') return null
   const year = date.slice(0, 4)
-  const slug = (words.split('-').includes(year) ? words : `${words}-${year}`)
-    .slice(0, 64)
-    .replace(/-$/u, '')
-  return SlugSchema.make(slug)
+  // The year last, never cut off: a long name's next edition gets its own slug
+  const cut = (text: string, max: number) => text.slice(0, max).replace(/-$/u, '')
+  return SlugSchema.make(
+    words.split('-').includes(year) ? cut(words, 64) : `${cut(words, 64 - year.length - 1)}-${year}`
+  )
 }
+
+// A race's GPX at most (a 100 km trail recorded every second is a few MB)
+export const MAX_GPX_BYTES = 20 * 1024 * 1024
+
+// Why an uploaded file cannot be a race's GPX: too big, or neither named .gpx nor typed XML
+export const uploadRefusal = (file: {
+  readonly name: string
+  readonly type: string
+  readonly size: number
+}): 'size' | 'gpx' | null =>
+  file.size > MAX_GPX_BYTES
+    ? 'size'
+    : /\.gpx$/iu.test(file.name) || /xml|gpx/iu.test(file.type)
+      ? null
+      : 'gpx'
 
 export const racePaths = (slug: Slug) => ({
   gpx: `races/${slug}.gpx`,
@@ -90,7 +114,9 @@ export type RaceFacts = typeof RaceFactsJson.Type
 // A plan's slowest pace: a steep climb walked, 60'00 a km
 const SLOWEST_PACE_S = 3600
 
-const Hr = Schema.Struct({ low: Between(40, 230), high: Between(40, 230) })
+const Hr = Schema.Struct({ low: Between(40, 230), high: Between(40, 230) }).check(
+  Schema.makeFilter((hr) => hr.low <= hr.high || 'FC : low ≤ high')
+)
 
 const planFields = {
   carbs_g_per_h: Schema.optionalKey(Between(0, 150)),
@@ -232,6 +258,8 @@ export interface RaceView extends Omit<RaceSummary, 'predicted_s'> {
   readonly ele_max: number
   readonly segments: ReadonlyArray<SegmentView>
   readonly fuel: Fuel
+  // Seconds between two gels, none without carbs
+  readonly gel_every_s: number | null
   readonly notes: string | null
   readonly warnings: ReadonlyArray<string>
   // Without a run of 3 km or more in the last year, null: the segments and the plan stand alone
@@ -323,10 +351,19 @@ export const raceView = ({
       plan: matched.get(segment.index) ?? null,
     })),
     fuel,
+    gel_every_s: gelEvery(fuel),
     notes: plan?.notes ?? null,
     warnings,
     prediction:
-      reference === null ? null : predict(course, segments, reference, matched, facts, fuel),
+      reference === null
+        ? null
+        : predict({
+            segments,
+            reference,
+            times: timesOf(course, segments, matched, reference),
+            facts,
+            fuel,
+          }),
   }
 }
 
@@ -336,21 +373,53 @@ const pick = (plan: RacePlan | null): Partial<Fuel> => ({
   ...(plan?.water_ml_per_h === undefined ? {} : { water_ml_per_h: plan.water_ml_per_h }),
 })
 
-// The times: per segment, at the aid stations and cutoffs, and the gels
-const predict = (
+// The time at each course point: the planned paces of the entries that still match
+const timesOf = (
   course: Course,
   segments: ReadonlyArray<Segment>,
-  reference: Run,
   plan: ReadonlyMap<number, PlanEntry>,
-  facts: RaceFacts,
-  fuel: Fuel
-): NonNullable<RaceView['prediction']> => {
-  const paces = new Map(
-    [...plan].flatMap(([index, entry]) =>
-      entry.pace_s === undefined ? [] : [[index, entry.pace_s] as const]
+  reference: Run
+) =>
+  timeline(
+    course,
+    segments,
+    reference,
+    new Map(
+      [...plan].flatMap(([index, entry]) =>
+        entry.pace_s === undefined ? [] : [[index, entry.pace_s] as const]
+      )
     )
   )
-  const times = timeline(course, segments, reference, paces)
+
+// The predicted time at each course point (the page's cursor), as raceView predicts them
+export const raceTimes = ({
+  course,
+  plan,
+  reference,
+}: {
+  readonly course: Course
+  readonly plan: RacePlan | null
+  readonly reference: Run | null
+}): Timeline | null => {
+  if (reference === null) return null
+  const segments = segmentCourse(course)
+  return timesOf(course, segments, matchPlan(plan, segments).matched, reference)
+}
+
+// The times: per segment, at the aid stations and cutoffs, and the gels
+const predict = ({
+  segments,
+  reference,
+  times,
+  facts,
+  fuel,
+}: {
+  readonly segments: ReadonlyArray<Segment>
+  readonly reference: Run
+  readonly times: Timeline
+  readonly facts: RaceFacts
+  readonly fuel: Fuel
+}): NonNullable<RaceView['prediction']> => {
   const start = facts.start_time
   const clock = (seconds: number) => (start === undefined ? null : clockOf(start, seconds))
   const { gels, per_segment } = fuelling(times, segments, fuel)
@@ -380,7 +449,7 @@ const predict = (
     })),
   ].toSorted((a, b) => a.km - b.km)
   return {
-    total_s: Math.round(times.at(-1)?.t ?? 0),
+    total_s: Math.round(times.t.at(-1) ?? 0),
     reference,
     segments: segments.map((segment, i) => {
       const startS = at(segment.from_km)

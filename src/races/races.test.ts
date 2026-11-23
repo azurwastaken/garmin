@@ -149,9 +149,24 @@ layer(TestLayer, { excludeTestServices: true })('Races', (it) => {
         expect(race.view.prediction?.reference).toMatchObject({ id: 701, moving_s: 1800 })
         expect(race.view.prediction?.total_s).toBeGreaterThan(1800 * 1.5)
 
-        // A hand-edited facts file: that race is listed with its problem, the others as they are
+        // A hand-edited facts file: that race is listed last with its problem, the others by date
+        yield* races.add({
+          facts: FactsInputSchema.make({ name: 'Printemps', date: '2027-03-01' }),
+          gpx: gpxText(course.points),
+        })
         yield* put('races/avec-altitudes-2027.json', { name: 'X' })
         const listed = yield* races.list
+        expect(listed.map((r) => [r._tag, r.slug])).toEqual([
+          ['Race', 'printemps-2027'],
+          ['Race', 'local-2027'],
+          ['Race', 'sans-altitudes-2027'],
+          ['Broken', 'avec-altitudes-2027'],
+        ])
+        // Its facts cannot be replaced without its GPX: where its altitudes come from is unreadable
+        const repaired = yield* races
+          .update('avec-altitudes-2027' as Slug, { facts: facts('Avec altitudes') })
+          .pipe(Effect.flip)
+        expect(repaired.message).toMatch(/renvoie le GPX/u)
         expect(listed.find((r) => r.slug === 'avec-altitudes-2027')).toMatchObject({
           _tag: 'Broken',
           problem: expect.stringMatching(/^races\/avec-altitudes-2027\.json : /u),

@@ -5,7 +5,16 @@ import { dirname, join } from 'node:path'
 import { describe, expect, it, layer } from '@effect/vitest'
 import { Config, ConfigProvider, Effect, Layer } from 'effect'
 
-import { Auth, clientOf, failureLog, gate, safeNext, secureCookie, type Verdict } from './auth.ts'
+import {
+  Auth,
+  clientOf,
+  failureLog,
+  gate,
+  readForm,
+  safeNext,
+  secureCookie,
+  type Verdict,
+} from './auth.ts'
 
 const PASSWORD = 'correct horse battery'
 
@@ -140,6 +149,46 @@ describe('the password file', () => {
       expect(yield* run(Auth.use((auth) => auth.verify(PASSWORD, 'a')))).toBe('ok')
     })
   )
+})
+
+describe('readForm', () => {
+  const post = (form: FormData) =>
+    new Request('http://localhost/races', { method: 'POST', body: form })
+  // The body as sent, so that it has its content-length
+  const sized = async (form: FormData) => {
+    const request = post(form)
+    const body = await request.arrayBuffer()
+    return new Request('http://localhost/races', {
+      method: 'POST',
+      headers: {
+        'content-type': request.headers.get('content-type') ?? '',
+        'content-length': String(body.byteLength),
+      },
+      body,
+    })
+  }
+
+  it('reads text fields and files, each only as what it is', async () => {
+    const form = new FormData()
+    form.set('name', 'Trail')
+    form.set('gpx', new File(['<gpx/>'], 'course.gpx', { type: 'application/gpx+xml' }))
+    const read = await readForm(await sized(form), 1024)
+    if (read instanceof Response) throw new TypeError('refused')
+    expect(read('name')).toBe('Trail')
+    expect(read('gpx')).toBeNull()
+    expect(read.file('gpx')?.name).toBe('course.gpx')
+    expect(read.file('name')).toBeNull()
+  })
+
+  it('refuses past its cap, or without a length, unread', async () => {
+    const form = new FormData()
+    form.set('gpx', new File(['x'.repeat(5000)], 'course.gpx'))
+    const request = await sized(form)
+    expect(await readForm(request, 1024)).toMatchObject({ status: 413 })
+    // The default: a small form (a password or two)
+    expect(await readForm(await sized(form))).toMatchObject({ status: 413 })
+    expect(await readForm(post(form), 1024 * 1024)).toMatchObject({ status: 413 })
+  })
 })
 
 describe('gate', () => {

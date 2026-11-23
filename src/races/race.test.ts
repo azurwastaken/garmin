@@ -9,11 +9,14 @@ import {
   clockOf,
   FactsInputSchema,
   HHMMSchema,
+  MAX_GPX_BYTES,
+  PlanInputSchema,
   planFile,
   RaceFactsJson,
   raceView,
   SlugSchema,
   slugOf,
+  uploadRefusal,
 } from './race.ts'
 
 const course = (() => {
@@ -58,6 +61,11 @@ describe('the race files', () => {
     )
     expect(slugOf('  Écotrail — Paris!  ', '2027-03-20')).toBe('ecotrail-paris-2027')
     expect(slugOf('—', '2027-03-20')).toBeNull()
+    // A long name keeps its year: next year's edition is another race
+    const long = 'Trail International des Aiguilles Rouges et du Massif du Mont-Blanc'
+    expect(slugOf(long, '2027-09-25')).toMatch(/^trail-international-des-aiguilles-.*-2027$/u)
+    expect(slugOf(long, '2028-09-25')).toMatch(/-2028$/u)
+    expect(slugOf(long, '2028-09-25')?.length).toBeLessThanOrEqual(64)
     expect(
       Schema.decodeUnknownExit(FactsInputSchema)({ name: '東京', date: '2027-03-01' })._tag
     ).toBe('Failure')
@@ -109,6 +117,21 @@ describe('the race files', () => {
     )
   })
 
+  it('takes only a GPX of 20 MB at most', () => {
+    expect(uploadRefusal({ name: 'tar.gpx', type: '', size: 1000 })).toBeNull()
+    expect(uploadRefusal({ name: 'course', type: 'application/gpx+xml', size: 1000 })).toBeNull()
+    expect(uploadRefusal({ name: 'course.GPX', type: 'text/plain', size: 1000 })).toBeNull()
+    expect(uploadRefusal({ name: 'photo.jpg', type: 'image/jpeg', size: 1000 })).toBe('gpx')
+    expect(uploadRefusal({ name: 'tar.gpx', type: '', size: MAX_GPX_BYTES + 1 })).toBe('size')
+  })
+
+  it('refuses a heart-rate band upside down', () => {
+    const plan = (hr: object) =>
+      Schema.decodeUnknownExit(PlanInputSchema)({ segments: [{ segment: 1, hr }] })._tag
+    expect(plan({ low: 150, high: 160 })).toBe('Success')
+    expect(plan({ low: 160, high: 150 })).toBe('Failure')
+  })
+
   it('writes clock times, past midnight too', () => {
     const at = HHMMSchema.make('22:30')
     expect(clockOf(at, 3600)).toBe('23:30')
@@ -149,6 +172,32 @@ describe('raceView', () => {
     if (cutoff?.kind !== 'cutoff' || cutoff.timing === null) throw new Error('no cutoff timing')
     expect(cutoff.timing.margin_s).toBe(3600 - cutoff.at_s)
     expect(prediction.gels.length).toBe(Math.ceil(prediction.total_s / 1500) - 1)
+  })
+
+  it('times a cutoff past midnight on the next day', () => {
+    const night = Schema.decodeUnknownSync(RaceFactsJson)({
+      ...facts,
+      start_time: '22:00',
+      aid_stations: [],
+      cutoffs: [{ km: 6, time: '01:00' }],
+    })
+    const prediction = raceView({ slug, facts: night, plan: null, course, reference }).prediction
+    const [cutoff] = prediction?.passings ?? []
+    if (cutoff?.kind !== 'cutoff' || cutoff.timing === null) throw new Error('no cutoff timing')
+    expect(cutoff.timing.margin_s).toBe(3 * 3600 - cutoff.at_s)
+  })
+
+  it('says how often a gel goes, and none without carbs', () => {
+    expect(raceView({ slug, facts, plan: null, course, reference: null }).gel_every_s).toBe(1500)
+    const view = raceView({
+      slug,
+      facts,
+      plan: { carbs_g_per_h: 0, segments: [] },
+      course,
+      reference,
+    })
+    expect(view.gel_every_s).toBeNull()
+    expect(view.prediction?.gels).toEqual([])
   })
 
   it("warns of a plan entry whose segment moved, and doesn't apply it", () => {

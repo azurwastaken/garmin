@@ -6,7 +6,7 @@ import { findExercises, WorkoutSchema } from '../garmin/workout-builder.ts'
 import { GarminWorkouts } from '../garmin/workouts.ts'
 import { Journal } from '../journal/log.ts'
 import { JournalNoteJson } from '../journal/note.ts'
-import { FactsInputSchema, PlanInputSchema, SlugSchema } from '../races/race.ts'
+import { FactsInputSchema, MAX_GPX_BYTES, PlanInputSchema, SlugSchema } from '../races/race.ts'
 import { Races } from '../races/races.ts'
 import { MAX_ROWS, Reader } from '../reader.ts'
 import { Tools } from '../tools.ts'
@@ -304,7 +304,7 @@ const logNote = tool({
 
 // --- The races the user prepares: a course (GPX), its facts, and the plan per segment
 
-const RACE_MODEL = `A race is its GPX course (data/races/<slug>.gpx), its facts (name, date, start time, aid stations, cutoffs) and the plan written by plan_race. The course is resampled every 25 m (altitudes smoothed over ±50 m) and cut into climbs (≥ +3 %), descents (≤ −3 %) and flats, 5 km at most, numbered from 1. km_effort = km + D+/100. The prediction carries the user's best run of the last year (least moving time once scaled with Riegel 1.06, on its grade-adjusted distance) to the race's grade-adjusted distance (Strava's 2017 GAP curve: −9 % ≈ 0.88, +10 % ≈ 1.45), then splits it over the segments by effort; a planned pace replaces its segment's time. It knows nothing of technical terrain, walking or heat: adjust with planned paces. Gels: one every gel_carbs_g / carbs_g_per_h hours.`
+const RACE_MODEL = `A race is its GPX course (data/races/<slug>.gpx), its facts (name, date, start time, aid stations, cutoffs) and the plan written by plan_race. The course is resampled every 25 m (altitudes smoothed over ±50 m) and cut into climbs (≥ +3 %), descents (≤ −3 %) and flats, 5 km at most, numbered from 1. km_effort = km + D+/100. The prediction carries the user's best run of the last year (least moving time once scaled with Riegel 1.06, on its grade-adjusted distance) to the race's grade-adjusted distance (Strava's 2017 GAP curve: −9 % ≈ 0.88, +10 % ≈ 1.49), then splits it over the segments by effort; a planned pace replaces its segment's time. The grade curve is Strava's population fit, not the user's: their runs are flat, so nothing here checks it on steep grades. It knows nothing of technical terrain, walking or heat: adjust with planned paces. Gels: one every gel_carbs_g / carbs_g_per_h hours.`
 
 const SlugInput = SlugSchema.annotate({ description: 'The race (list_races)' })
 
@@ -341,7 +341,7 @@ const getRace = tool({
 const addRace = tool({
   name: 'add_race',
   title: 'Add or update a race',
-  description: `Add a target race from its GPX text (a track or a route; without altitudes they are read from the elevation tiles: IGN in Chamonix and Paris, else AWS Terrain Tiles), with its facts: name, date, start time, aid stations (km, name, what they offer) and cutoffs (km, clock time). Its slug is its name and year; a taken slug is refused. With slug: that race's facts are replaced (send them all), and its course too when gpx is given (a plan whose segments then moved is not applied until plan_race again). Returns the race as get_race.`,
+  description: `Add a target race from its GPX text (a track or a route; without altitudes they are read from the elevation tiles: a local area of data/terrain holding the course, else AWS Terrain Tiles), with its facts: name, date, start time, aid stations (km, name, what they offer) and cutoffs (km, clock time). Its slug is its name and year; a taken slug is refused. With slug: that race's facts are replaced (send them all), and its course too when gpx is given (a plan whose segments then moved is not applied until plan_race again). Returns the race as get_race.`,
   method: 'POST',
   path: '/races',
   tags: ['races'],
@@ -355,7 +355,7 @@ const addRace = tool({
         slug: opt(SlugInput.annotate({ description: 'An existing race to update' })),
         ...FactsInputSchema.fields,
         gpx: opt(
-          Schema.String.check(Schema.isMaxLength(20 * 1024 * 1024)).annotate({
+          Schema.String.check(Schema.isMaxLength(MAX_GPX_BYTES)).annotate({
             description: "The GPX file's text (20 MB at most); required for a new race",
           })
         ),

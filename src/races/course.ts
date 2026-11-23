@@ -47,7 +47,7 @@ export const cumulative = (points: ReadonlyArray<LatLon>) => {
 }
 
 // Linear interpolation of y at x over increasing xs (clamped at the ends)
-const interpolate = (xs: ReadonlyArray<number>, ys: ReadonlyArray<number>, x: number) => {
+export const interpolate = (xs: ReadonlyArray<number>, ys: ReadonlyArray<number>, x: number) => {
   let lo = 0
   let hi = xs.length - 1
   if (x <= (xs[0] ?? 0)) return ys[0] ?? 0
@@ -302,7 +302,7 @@ export const segmentCourse = (profile: Profile): ReadonlyArray<Segment> =>
 
 // Strava's 2017 data-driven grade-adjusted pace, as a reverse-engineered quartic in % grade,
 // divided by its value at 0 so that flat is exactly 1: about 0.876 at −8 %, 1.037 at −18 %,
-// 1.45 at +10 %. Clamped to ±35 % (past that the fit has no data, and a runner walks).
+// 1.49 at +10 %. Clamped to ±35 % (past that the fit has no data, and a runner walks).
 const GAP = [0.98462, 0.030266, 0.0018814, -3.3882e-6, -4.5704e-7] as const
 const gapPolynomial = (g: number) => GAP.reduce((sum, c, power) => sum + c * g ** power, 0)
 export const gapFactor = (gradePct: number) =>
@@ -315,6 +315,15 @@ export const equivalentM = (profile: Profile, from = 0, to = profile.length - 1)
     sum += (dAt(profile, i + 1) - dAt(profile, i)) * gapFactor(netGrade(profile, i, i + 1))
   }
   return sum
+}
+
+// The flat distance of the same effort from the start, at each point
+export const cumulativeEquivalent = (profile: Profile) => {
+  let sum = 0
+  return profile.map((_, i) => {
+    if (i > 0) sum += equivalentM(profile, i - 1, i)
+    return sum
+  })
 }
 
 export const totals = (course: Course) => {

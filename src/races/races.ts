@@ -19,7 +19,7 @@ import { writeAtomic } from '../files.ts'
 
 import { type Course, courseOf, equivalentM, profileOf, segmentCourse, totals } from './course.ts'
 import { type Fix, gpxOf, parseGpx } from './gpx.ts'
-import { bestEffort, type Run } from './pacing.ts'
+import { bestEffort, type Run, type Timeline } from './pacing.ts'
 import {
   type FactsInput,
   planFile,
@@ -30,6 +30,7 @@ import {
   RacePlanJson,
   racePaths,
   type RaceSummary,
+  raceTimes,
   type RaceView,
   raceView,
   type Slug,
@@ -51,6 +52,8 @@ export interface RaceDetail {
   readonly view: RaceView
   readonly course: Course
   readonly dem: Dem
+  // The predicted time at each course point, without a reference run none
+  readonly times: Timeline | null
 }
 
 const decodeFacts = Schema.decodeUnknownEffect(Schema.fromJsonString(RaceFactsJson))
@@ -180,15 +183,23 @@ export class Races extends Context.Service<
         const loaded = yield* load(slug)
         if (Option.isNone(loaded)) return Option.none<RaceDetail>()
         const { facts, plan, course } = loaded.value
-        const view = raceView({ slug, facts, plan, course, reference: yield* reference })
+        const best = yield* reference
+        const view = raceView({ slug, facts, plan, course, reference: best })
         const dem = demFor(yield* terrain.areas, totals(course).bbox)
-        return Option.some<RaceDetail>({ view, course, dem })
+        const times = raceTimes({ course, plan, reference: best })
+        return Option.some<RaceDetail>({ view, course, dem, times })
       })
 
       const list = Effect.gen(function* () {
         const names = yield* fs
           .readDirectory(join(dataDir, 'races'))
-          .pipe(Effect.orElseSucceed((): Array<string> => []))
+          .pipe(
+            Effect.catch((error) =>
+              error.reason._tag === 'NotFound'
+                ? Effect.succeed([])
+                : Effect.as(Effect.logWarning('races: data/races unreadable', error), [])
+            )
+          )
         const slugs = names.flatMap((name) => {
           const slug = name.endsWith('.gpx') ? name.slice(0, -4) : ''
           return isSlug(slug) ? [slug] : []
@@ -226,11 +237,14 @@ export class Races extends Context.Service<
             )
           )
         )
-        return listed
-          .flat()
-          .toSorted((a, b) =>
-            a._tag === 'Race' && b._tag === 'Race' ? a.date.localeCompare(b.date) : 0
-          )
+        // By date, the broken ones last
+        const all = listed.flat()
+        return [
+          ...all
+            .filter((race) => race._tag === 'Race')
+            .toSorted((a, b) => a.date.localeCompare(b.date)),
+          ...all.filter((race) => race._tag === 'Broken'),
+        ]
       })
 
       // A GPX's text as stored, and where its altitudes come from: as given when it has some,
@@ -262,17 +276,25 @@ export class Races extends Context.Service<
         Effect.gen(function* () {
           const paths = racePaths(slug)
           const stored = gpx === undefined ? null : yield* prepared(paths.gpx, gpx)
-          const elevation =
-            stored?.elevation ??
-            (yield* load(slug).pipe(
-              Effect.map((loaded) =>
-                Option.isSome(loaded) ? loaded.value.facts.elevation : { source: 'gpx' as const }
-              )
-            ))
+          const elevation = stored?.elevation ?? (yield* storedElevation(slug))
           if (stored !== null) yield* write(paths.gpx, stored.text ?? gpx ?? '')
           const file: RaceFacts = { ...facts, elevation }
           yield* write(paths.facts, `${JSON.stringify(file, null, 2)}\n`)
           return slug
+        })
+
+      // Where the stored course's altitudes come from: its facts file's word on it alone
+      const storedElevation = (slug: Slug) =>
+        Effect.gen(function* () {
+          const path = racePaths(slug).facts
+          const text = yield* read(path)
+          if (Option.isNone(text)) return { source: 'gpx' as const }
+          const facts = yield* decodeFacts(text.value).pipe(
+            Effect.mapError((error) =>
+              broken(path, `${error.message} (renvoie le GPX avec add_race pour le réécrire)`)
+            )
+          )
+          return facts.elevation
         })
 
       const exists = (slug: Slug) =>

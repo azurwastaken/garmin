@@ -68,53 +68,59 @@ const elevation = (text: string): number | null | string => {
 // A tag of a point or its altitude, or a run of text (bounded: linear on any input)
 const TOKEN = /<(\/?)(trkpt|rtept|ele)\b([^<>]{0,1024})>|([^<]{1,64})/gu
 
+// An open point's altitude: no <ele> yet, its text being read, or read (null: blank)
+type Altitude =
+  | { readonly state: 'unseen' }
+  | { readonly state: 'reading'; readonly text: string }
+  | { readonly state: 'read'; readonly value: number | null }
+
 interface Scan {
   readonly track: Array<Fix>
   readonly route: Array<Fix>
-  point: { kind: 'trkpt' | 'rtept'; at: LatLon; ele: number | null; seen: boolean } | null
-  // The open <ele>'s text so far, inside a point only
-  text: string | null
+  point: { readonly kind: 'trkpt' | 'rtept'; readonly at: LatLon; altitude: Altitude } | null
 }
 
 // One token into the scan; a reason when the file must be refused
 const step = (scan: Scan, match: RegExpExecArray): string | null => {
   const [, closing, tag, attributes = '', text] = match
+  const point = scan.point
   if (text !== undefined) {
-    if (scan.text !== null) {
-      scan.text += text
-      if (scan.text.length > ELE_TEXT_MAX * 4) return 'une altitude trop longue'
-    }
+    if (point?.altitude.state !== 'reading') return null
+    const read = point.altitude.text + text
+    if (read.length > ELE_TEXT_MAX * 4) return 'une altitude trop longue'
+    point.altitude = { state: 'reading', text: read }
     return null
   }
   if (tag === 'ele') {
-    if (scan.point === null) return null
+    // A waypoint's altitude, outside any point: not the course's
+    if (point === null) return null
     if (closing === '/') {
-      if (scan.text === null) return null
-      const value = elevation(scan.text)
+      if (point.altitude.state !== 'reading') return null
+      const value = elevation(point.altitude.text)
       if (typeof value === 'string') return value
-      scan.point.ele = value
-      scan.text = null
+      point.altitude = { state: 'read', value }
       return null
     }
-    if (scan.point.seen) return 'deux altitudes pour un point'
-    scan.point.seen = true
-    scan.text = attributes.trimEnd().endsWith('/') ? null : ''
+    if (point.altitude.state !== 'unseen') return 'deux altitudes pour un point'
+    point.altitude = attributes.trimEnd().endsWith('/')
+      ? { state: 'read', value: null }
+      : { state: 'reading', text: '' }
     return null
   }
   const kind = tag === 'trkpt' ? 'trkpt' : 'rtept'
   const points = kind === 'trkpt' ? scan.track : scan.route
   if (closing === '/') {
-    if (scan.point === null || scan.point.kind !== kind) return `un </${kind}> sans ouverture`
-    if (scan.text !== null) return 'une altitude non fermée'
-    points.push({ ...scan.point.at, ele: scan.point.ele })
+    if (point?.kind !== kind) return `un </${kind}> sans ouverture`
+    if (point.altitude.state === 'reading') return 'une altitude non fermée'
+    points.push({ ...point.at, ele: point.altitude.state === 'read' ? point.altitude.value : null })
     scan.point = null
     return null
   }
-  if (scan.point !== null) return `un <${kind}> dans un autre point`
+  if (point !== null) return `un <${kind}> dans un autre point`
   const at = position(attributes)
   if (typeof at === 'string') return at
   if (attributes.trimEnd().endsWith('/')) points.push({ ...at, ele: null })
-  else scan.point = { kind, at, ele: null, seen: false }
+  else scan.point = { kind, at, altitude: { state: 'unseen' } }
   return null
 }
 
@@ -125,7 +131,7 @@ export const parseGpx = (xml: string): Result.Result<ReadonlyArray<Fix>, string>
   const text = withoutComments(xml)
   if (text === null) return Result.fail('un commentaire ou un CDATA non fermé')
   if (!/<gpx\b/u.test(text)) return Result.fail("pas un fichier GPX (pas d'élément <gpx>)")
-  const scan: Scan = { track: [], route: [], point: null, text: null }
+  const scan: Scan = { track: [], route: [], point: null }
   for (const match of text.matchAll(TOKEN)) {
     const refused = step(scan, match)
     if (refused !== null) return Result.fail(refused)

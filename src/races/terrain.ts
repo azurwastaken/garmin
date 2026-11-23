@@ -102,7 +102,14 @@ export class Terrain extends Context.Service<
         if (served === null) return Effect.succeedNone
         return fs.readFile(join(root, served.path)).pipe(
           Effect.map((bytes) => Option.some({ bytes, type: served.type })),
-          Effect.orElseSucceed(() => Option.none())
+          Effect.catch((error) =>
+            error.reason._tag === 'NotFound'
+              ? Effect.succeedNone
+              : Effect.as(
+                  Effect.logWarning(`terrain: ${served.path} unreadable`, error),
+                  Option.none()
+                )
+          )
         )
       }
 

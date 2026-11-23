@@ -4,20 +4,19 @@ import { Effect, Schema } from 'effect'
 import { api } from '#src/api/client.ts'
 import { readForm, seeOther } from '#src/auth.ts'
 import { duration, fmt, longDay } from '#src/components/format.ts'
-import { FactsInputSchema } from '#src/races/race.ts'
+import { FactsInputSchema, MAX_GPX_BYTES, uploadRefusal } from '#src/races/race.ts'
 import { Races } from '#src/races/races.ts'
 import { runtime } from '#src/server/runtime.ts'
 
 // The races being prepared, and the upload of a new one's GPX (a multipart POST to this page: the
 // file in data/races/, then its page)
 
-const MAX_GPX = 20 * 1024 * 1024
-
 const ERRORS = {
   size: 'Fichier trop gros : 20 Mo au plus.',
   fields: 'Il faut un nom (avec au moins une lettre ou un chiffre), une date et un fichier GPX.',
   gpx: 'Ce fichier n’est pas un GPX lisible.',
   exists: 'Une course de ce nom cette année existe déjà.',
+  file: 'La course n’a pas pu être enregistrée sur le disque.',
   terrain: 'Le GPX n’a pas d’altitudes et les tuiles d’élévation n’ont pas répondu : réessaie.',
 } as const
 type UploadError = keyof typeof ERRORS
@@ -27,7 +26,7 @@ const upload = async (request: Request) => {
     seeOther(
       `/races?error=${error}${detail === undefined ? '' : `&detail=${encodeURIComponent(detail.slice(0, 200))}`}`
     )
-  const form = await readForm(request, MAX_GPX + 64 * 1024)
+  const form = await readForm(request, MAX_GPX_BYTES + 64 * 1024)
   if (form instanceof Response) return back('size')
   const file = form.file('gpx')
   const start = form('start_time')
@@ -37,8 +36,8 @@ const upload = async (request: Request) => {
     ...(start === null || start === '' ? {} : { start_time: start }),
   })
   if (file === null || file.size === 0 || facts._tag === 'None') return back('fields')
-  if (file.size > MAX_GPX) return back('size')
-  if (!/\.gpx$/iu.test(file.name) && !/xml|gpx/iu.test(file.type)) return back('gpx')
+  const refusal = uploadRefusal(file)
+  if (refusal !== null) return back(refusal)
   const gpx = await file.text()
   const outcome = await runtime.runPromise(
     Races.use((races) => races.add({ facts: facts.value, gpx })).pipe(Effect.result)
@@ -46,7 +45,10 @@ const upload = async (request: Request) => {
   if (outcome._tag === 'Success') return seeOther(`/races/${outcome.success}`)
   const error = outcome.failure
   if (error._tag === 'TerrainError') return back('terrain', error.message)
-  return back(error.reason === 'exists' ? 'exists' : 'gpx', error.message)
+  return back(
+    error.reason === 'exists' ? 'exists' : error.reason === 'file' ? 'file' : 'gpx',
+    error.message
+  )
 }
 
 export const Route = createFileRoute('/races/')({

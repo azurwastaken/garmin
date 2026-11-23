@@ -190,23 +190,25 @@ export const web = {
   races: base.handler(({ context }) => context.run(Races.use((races) => races.list))),
 
   // A race: get_race's view, its course point by point (every 25 m: lon, lat, altitude, metres
-  // from the start) for the map and the profile, and the elevation tiles to draw it on
+  // from the start, predicted seconds or null) for the map and the profile, and the elevation
+  // tiles to draw it on
   race: base.input(standard(Schema.Struct({ slug: SlugSchema }))).handler(({ input, context }) =>
     context.run(
       Effect.map(
         Races.use((races) => races.get(input.slug)),
         Option.match({
           onNone: () => null,
-          onSome: ({ view, course, dem }) => ({
+          onSome: ({ view, course, dem, times }) => ({
             view,
             dem,
             track: course.map(
-              (p) =>
+              (p, i) =>
                 [
                   Math.round(p.lon * 1e6) / 1e6,
                   Math.round(p.lat * 1e6) / 1e6,
                   Math.round(p.ele * 10) / 10,
                   Math.round(p.d),
+                  times === null ? null : Math.round(times.t[i] ?? 0),
                 ] as const
             ),
           }),

@@ -132,7 +132,8 @@ describe('the course', () => {
 describe('the grade-adjusted effort', () => {
   it("hits Strava's published anchors within the stated tolerance", () => {
     expect(gapFactor(0)).toBe(1)
-    const grades = Array.from({ length: 201 }, (_, i) => -10 + i * 0.01)
+    // The minimum over the whole clamped range, wherever it is
+    const grades = Array.from({ length: 7001 }, (_, i) => -35 + i * 0.01)
     const minimum = grades.reduce((best, g) => (gapFactor(g) < gapFactor(best) ? g : best))
     expect(minimum).toBeGreaterThanOrEqual(-10)
     expect(minimum).toBeLessThanOrEqual(-8)

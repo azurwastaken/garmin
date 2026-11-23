@@ -42,8 +42,8 @@ export const Withings = WithingsSync.layer.pipe(
 )
 
 // Everything the server runs: Garmin, Withings, the MCP's and the web pages' queries, the journal,
-// the races (their files and the elevation tiles), the password and the MCP's OAuth server. A layer is built once however many parts use it: Storage
-// is one SQLite connection, the only writer.
+// the races (their files and the elevation tiles), the password and the MCP's OAuth server. A
+// layer is built once however many parts use it: Storage is one SQLite connection, the only writer.
 export const Services = Layer.mergeAll(
   Garmin,
   Withings,

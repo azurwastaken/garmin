@@ -8,8 +8,8 @@ import type { Dem } from '../races/terrarium.ts'
 // same tiles on the page's dark ground, the route colored by grade, its segment cuts, aid stations
 // and cutoffs, and a flight along it (step by step when the visitor asks for less motion).
 
-// A course point: longitude, latitude, altitude (m), metres from the start
-export type TrackPoint = readonly [number, number, number, number]
+// A course point: longitude, latitude, altitude (m), metres from the start, predicted seconds
+export type TrackPoint = readonly [number, number, number, number, number | null]
 
 export interface MapMark {
   readonly km: number
@@ -298,9 +298,10 @@ export function RaceMap({
   // The cursor where the profile (or the flight) points
   useEffect(() => {
     if (state !== 'ready') return
-    void map.current
+    map.current
       ?.getSource<GeoJSONSource>('cursor')
       ?.setData(pointsOf(track, hover === null ? [] : [hover]))
+      .catch((error: unknown) => console.warn('race map', error))
   }, [hover, state, track])
 
   const stop = () => {

@@ -6,7 +6,7 @@ import { api } from '#src/api/client.ts'
 import { LineChart } from '#src/components/charts.tsx'
 import { duration, fmt, longDay, pace } from '#src/components/format.ts'
 import { type MapMark, pointAt, RaceMap, type TrackPoint } from '#src/components/race-map.tsx'
-import type { RaceView, SegmentView } from '#src/races/race.ts'
+import type { SegmentView } from '#src/races/race.ts'
 
 // One race: its numbers, the course in 3D on its relief, the profile (one cursor with the map),
 // and the plan per segment with the predicted times, the passing times and the fuelling
@@ -46,18 +46,6 @@ const KINDS: Record<SegmentView['kind'], string> = {
 
 // Points of the profile: one in 4 of the course's (every 100 m)
 const PROFILE_EVERY = 4
-
-type Prediction = NonNullable<RaceView['prediction']>
-
-// Seconds from the start at a distance, from the segments' predicted times (linear within one)
-const passingAt = (view: RaceView, prediction: Prediction, km: number) => {
-  const i = view.segments.findIndex((s) => km <= s.to_km)
-  const segment = view.segments[i]
-  const timed = prediction.segments[i]
-  if (segment === undefined || timed === undefined) return prediction.total_s
-  const share = segment.km === 0 ? 0 : (km - segment.from_km) / segment.km
-  return timed.start_s + share * timed.time_s
-}
 
 function Fact({ label, value }: { readonly label: string; readonly value: string }) {
   return (
@@ -150,9 +138,7 @@ function Race() {
               {hoveredSegment === undefined
                 ? ''
                 : ` · segment ${hoveredSegment.index} (${KINDS[hoveredSegment.kind].toLowerCase()})`}
-              {prediction === null
-                ? ''
-                : ` · passage ${duration(passingAt(view, prediction, hoveredKm))}`}
+              {hovered[4] === null ? '' : ` · passage ${duration(hovered[4])}`}
             </>
           )}
         </p>
@@ -185,7 +171,8 @@ function Race() {
             {longDay(prediction.reference.day)} : {fmt(prediction.reference.distance_m / 1000, 1)}{' '}
             km en {duration(prediction.reference.moving_s)} (
             {fmt(prediction.reference.equivalent_m / 1000, 1)} km à plat équivalents), étendue à la
-            course (Riegel 1,06) et répartie selon la pente.
+            course (Riegel 1,06) et répartie selon la pente : la courbe de Strava, pas la tienne
+            (tes sorties sont plates, rien ne la vérifie dans les pentes raides).
           </p>
         )}
         <div className="table-wrap">
@@ -315,9 +302,11 @@ function Race() {
             <h2 className="hud-title">Ravitaillement</h2>
             <p className="sub">
               {fmt(view.fuel.carbs_g_per_h)} g de glucides par heure, gels de{' '}
-              {fmt(view.fuel.gel_carbs_g)} g : un toutes les{' '}
-              {fmt((view.fuel.gel_carbs_g / Math.max(1, view.fuel.carbs_g_per_h)) * 60)} min ·{' '}
-              {fmt(view.fuel.water_ml_per_h)} ml d’eau par heure
+              {fmt(view.fuel.gel_carbs_g)} g :{' '}
+              {view.gel_every_s === null
+                ? 'pas de gel'
+                : `un toutes les ${fmt(view.gel_every_s / 60)} min`}{' '}
+              · {fmt(view.fuel.water_ml_per_h)} ml d’eau par heure
               {view.planned ? '' : ' (par défaut, tant que le plan ne dit rien)'}.
             </p>
             <ol className="hud-gels">
