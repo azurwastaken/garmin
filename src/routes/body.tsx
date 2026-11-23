@@ -1,5 +1,5 @@
-import { ClientOnly, createFileRoute, Link, useRouter } from '@tanstack/react-router'
-import { Component, lazy, type ReactNode, Suspense, useEffect, useMemo, useState } from 'react'
+import { CatchBoundary, ClientOnly, createFileRoute, Link, useRouter } from '@tanstack/react-router'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 
 import {
   type BodyPoint,
@@ -130,23 +130,6 @@ function BodyMap() {
   )
 }
 
-// The scene fails alone (no WebGL): the lists still do everything
-class SceneBoundary extends Component<{ readonly children: ReactNode }, { failed: boolean }> {
-  override state = { failed: false }
-  static getDerivedStateFromError() {
-    return { failed: true }
-  }
-  override render() {
-    return this.state.failed ? (
-      <p className="note body-stage-note">
-        Vue 3D indisponible sur ce navigateur : choisis la structure dans la liste.
-      </p>
-    ) : (
-      this.props.children
-    )
-  }
-}
-
 function Atlas({
   catalog,
   history: { pins, structures },
@@ -181,7 +164,15 @@ function Atlas({
     <div className="body-layout">
       <section className="body-stage" aria-label="Modèle 3D">
         <ClientOnly fallback={<p className="note body-stage-note">Chargement de la vue 3D…</p>}>
-          <SceneBoundary>
+          {/* The scene fails alone (no WebGL): the lists still do everything */}
+          <CatchBoundary
+            getResetKey={() => 'scene'}
+            errorComponent={() => (
+              <p className="note body-stage-note">
+                Vue 3D indisponible sur ce navigateur : choisis la structure dans la liste.
+              </p>
+            )}
+          >
             <Suspense fallback={<p className="note body-stage-note">Chargement de la vue 3D…</p>}>
               <BodyScene
                 catalog={catalog}
@@ -194,7 +185,7 @@ function Atlas({
                 onPin={(time) => setPanel({ tag: 'pin', time })}
               />
             </Suspense>
-          </SceneBoundary>
+          </CatchBoundary>
         </ClientOnly>
         <p className="body-readout" aria-live="polite">
           <span className="body-label">Cible</span>{' '}

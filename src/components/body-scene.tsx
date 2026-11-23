@@ -42,6 +42,9 @@ import type { BodyPin } from '#src/journal/history.ts'
 
 const MODEL_URL = '/anatomy/runner.glb'
 
+// A pin's mesh name: never a structure's (their ids are [a-z0-9_])
+const PIN = 'pin:'
+
 export interface SceneProps {
   readonly catalog: Catalog
   readonly shown: (id: string) => boolean
@@ -200,8 +203,8 @@ function Model({
     if (!reduced) time.value += delta
   })
 
-  // One material per look, made when first needed, all disposed with the palette
-  const materials = useMemo(() => new Map<string, ShaderMaterial>(), [palette])
+  // One material per look, made when first needed, all disposed with the scene
+  const [materials] = useState(() => new Map<string, ShaderMaterial>())
   useEffect(() => () => materials.forEach((material) => material.dispose()), [materials])
   const materialOf = (look: HoloLook) => {
     const key = `${look.color}|${look.opacity}`
@@ -234,6 +237,8 @@ function Model({
       }}
       onPointerOut={() => onHover(null)}
       onClick={(event) => {
+        // A pin is drawn over the model: the click is the pin's, even with a structure in front
+        if (event.intersections.some((hit) => hit.object.name.startsWith(PIN))) return
         event.stopPropagation()
         // A drag turns the model, it does not pin
         if (event.delta <= 4) onPick(event.object.name, pointOf(event))
@@ -264,6 +269,7 @@ function Pins({
     return [
       <group key={pin.time} position={[...point]}>
         <mesh
+          name={`${PIN}${pin.time}`}
           onClick={(event) => {
             event.stopPropagation()
             onPin(pin.time)
