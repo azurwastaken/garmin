@@ -2,8 +2,9 @@ import { expect, layer } from '@effect/vitest'
 import { Effect, Layer } from 'effect'
 import { describe, it } from 'vitest'
 
-import { apiSummary, dailyFile, fitRun, put, testLayer } from '../test/fixtures.ts'
+import { anatomyCatalog, apiSummary, dailyFile, fitRun, put, testLayer } from '../test/fixtures.ts'
 
+import { Anatomy } from './anatomy/anatomy.ts'
 import { addDays, parisToday } from './days.ts'
 import { Ingest, Storage } from './ingest.ts'
 import {
@@ -15,7 +16,9 @@ import {
   type SleepNight,
 } from './stats.ts'
 
-const TestLayer = testLayer(Stats.layer.pipe(Layer.provideMerge(Storage)))
+const TestLayer = testLayer(
+  Stats.layer.pipe(Layer.provideMerge(Anatomy.layer), Layer.provideMerge(Storage))
+)
 
 // The real clock: the pages' periods end today
 layer(TestLayer, { excludeTestServices: true })('Stats', (it) => {
@@ -150,7 +153,34 @@ layer(TestLayer, { excludeTestServices: true })('Stats, the morning', (it) => {
       expect(morning.burn).toEqual({ kind: 'known', rest: 2160, sessions: 409, total: 2569 })
       expect(morning.protein_g).toBe(126)
       expect(morning.weighed).toBe(true)
-      expect(morning.notes).toEqual([note, lastNote])
+      expect(morning.notes).toEqual([
+        { ...note, where: null },
+        { ...lastNote, where: null },
+      ])
+    })
+  )
+
+  it.effect("names a pinned pain's structure on the home page, the id without the model", () =>
+    Effect.gen(function* () {
+      const today = yield* parisToday
+      const pinned = {
+        time: `${today}T09:00:00.000Z`,
+        day: today,
+        text: 'Douleur vive 6/10',
+        body: { structure: 'vastus_lateralis_r', side: 'right', pain: 6, kind: 'vive', when: [] },
+      }
+      yield* put(`journal/${today.slice(0, 4)}/${today}T09-00-00.000Z.json`, pinned)
+      yield* Ingest.use((ingest) => ingest.run())
+      const where = Effect.map(
+        Stats.use((stats) => stats.dashboard),
+        ({ morning }) =>
+          morning.notes.filter((note) => note.time === pinned.time).map((note) => note.where)
+      )
+      expect(yield* where).toEqual(['vastus_lateralis_r'])
+      yield* put('anatomy/structures.json', anatomyCatalog)
+      expect(yield* where).toEqual(['vaste latéral (quadriceps), côté droit'])
+      yield* put('anatomy/structures.json', '{"broken"')
+      expect(yield* where).toEqual(['vastus_lateralis_r'])
     })
   )
 })

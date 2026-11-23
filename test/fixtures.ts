@@ -272,3 +272,51 @@ export const dailyFile = (day: string) => ({
     timeMarathon: 13_720,
   },
 })
+
+// A few entries of data/anatomy/structures.json, as the asset writes them (with its `source`)
+const vastus = (side: 'left' | 'right') => ({
+  latin: 'Musculus vastus lateralis',
+  english: 'Vastus lateralis (quadriceps)',
+  french: 'vaste latéral (quadriceps)',
+  french_alt: 'vaste externe',
+  kind: 'muscle' as const,
+  side,
+  region: 'thigh',
+  source: `Vastus lateralis muscle.${side[0]}`,
+})
+const vastusTendon = (side: 'left' | 'right') => ({
+  latin: 'Tendo musculi vasti lateralis (proximalis)',
+  english: 'Vastus lateralis proximal tendon',
+  french: 'tendon proximal du vaste latéral',
+  french_alt: null,
+  kind: 'tendon' as const,
+  side,
+  region: 'hip',
+  source: `Vastus lateralis muscle.${side[0]} (proximal tendon)`,
+})
+export const anatomyCatalog = {
+  linea_alba: {
+    latin: 'Linea alba',
+    english: 'Linea alba',
+    french: 'ligne blanche',
+    french_alt: null,
+    kind: 'fascia',
+    side: 'midline',
+    region: 'core',
+    source: 'Linea alba',
+  },
+  patellar_ligament_r: {
+    latin: 'Ligamentum patellae',
+    english: 'Patellar tendon (patellar ligament)',
+    french: 'tendon rotulien',
+    french_alt: 'ligament patellaire',
+    kind: 'tendon',
+    side: 'right',
+    region: 'knee',
+    source: 'Patellar ligament.r',
+  },
+  vastus_lateralis_l: vastus('left'),
+  vastus_lateralis_proximal_tendon_l: vastusTendon('left'),
+  vastus_lateralis_proximal_tendon_r: vastusTendon('right'),
+  vastus_lateralis_r: vastus('right'),
+} as const

@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root.tsx'
 import { Route as IndexRouteImport } from './routes/index.tsx'
 import { Route as AccessRouteImport } from './routes/access.tsx'
 import { Route as AuthorizeRouteImport } from './routes/authorize.ts'
+import { Route as BodyRouteImport } from './routes/body.tsx'
 import { Route as GarminRouteImport } from './routes/garmin.tsx'
 import { Route as HealthzRouteImport } from './routes/healthz.ts'
 import { Route as LoginRouteImport } from './routes/login.tsx'
@@ -23,6 +24,7 @@ import { Route as SleepRouteImport } from './routes/sleep.tsx'
 import { Route as DotwellKnownSplatRouteImport } from './routes/[.]well-known.$.ts'
 import { Route as ActivitiesIndexRouteImport } from './routes/activities.index.tsx'
 import { Route as ActivitiesIdRouteImport } from './routes/activities.$id.tsx'
+import { Route as AnatomyFileRouteImport } from './routes/anatomy.$file.ts'
 import { Route as ApiSplatRouteImport } from './routes/api.$.ts'
 import { Route as AuthLoginRouteImport } from './routes/auth/login.ts'
 import { Route as AuthLogoutRouteImport } from './routes/auth/logout.ts'
@@ -52,6 +54,11 @@ const AccessRoute = AccessRouteImport.update({
 const AuthorizeRoute = AuthorizeRouteImport.update({
   id: '/authorize',
   path: '/authorize',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BodyRoute = BodyRouteImport.update({
+  id: '/body',
+  path: '/body',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GarminRoute = GarminRouteImport.update({
@@ -107,6 +114,11 @@ const ActivitiesIndexRoute = ActivitiesIndexRouteImport.update({
 const ActivitiesIdRoute = ActivitiesIdRouteImport.update({
   id: '/activities/$id',
   path: '/activities/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnatomyFileRoute = AnatomyFileRouteImport.update({
+  id: '/anatomy/$file',
+  path: '/anatomy/$file',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiSplatRoute = ApiSplatRouteImport.update({
@@ -189,6 +201,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/access': typeof AccessRoute
   '/authorize': typeof AuthorizeRoute
+  '/body': typeof BodyRoute
   '/garmin': typeof GarminRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
@@ -199,6 +212,7 @@ export interface FileRoutesByFullPath {
   '/sleep': typeof SleepRoute
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/activities/$id': typeof ActivitiesIdRoute
+  '/anatomy/$file': typeof AnatomyFileRoute
   '/api/$': typeof ApiSplatRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/logout': typeof AuthLogoutRoute
@@ -220,6 +234,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/access': typeof AccessRoute
   '/authorize': typeof AuthorizeRoute
+  '/body': typeof BodyRoute
   '/garmin': typeof GarminRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
@@ -230,6 +245,7 @@ export interface FileRoutesByTo {
   '/sleep': typeof SleepRoute
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/activities/$id': typeof ActivitiesIdRoute
+  '/anatomy/$file': typeof AnatomyFileRoute
   '/api/$': typeof ApiSplatRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/logout': typeof AuthLogoutRoute
@@ -252,6 +268,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/access': typeof AccessRoute
   '/authorize': typeof AuthorizeRoute
+  '/body': typeof BodyRoute
   '/garmin': typeof GarminRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
@@ -262,6 +279,7 @@ export interface FileRoutesById {
   '/sleep': typeof SleepRoute
   '/.well-known/$': typeof DotwellKnownSplatRoute
   '/activities/$id': typeof ActivitiesIdRoute
+  '/anatomy/$file': typeof AnatomyFileRoute
   '/api/$': typeof ApiSplatRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/logout': typeof AuthLogoutRoute
@@ -285,6 +303,7 @@ export interface FileRouteTypes {
     | '/'
     | '/access'
     | '/authorize'
+    | '/body'
     | '/garmin'
     | '/healthz'
     | '/login'
@@ -295,6 +314,7 @@ export interface FileRouteTypes {
     | '/sleep'
     | '/.well-known/$'
     | '/activities/$id'
+    | '/anatomy/$file'
     | '/api/$'
     | '/auth/login'
     | '/auth/logout'
@@ -316,6 +336,7 @@ export interface FileRouteTypes {
     | '/'
     | '/access'
     | '/authorize'
+    | '/body'
     | '/garmin'
     | '/healthz'
     | '/login'
@@ -326,6 +347,7 @@ export interface FileRouteTypes {
     | '/sleep'
     | '/.well-known/$'
     | '/activities/$id'
+    | '/anatomy/$file'
     | '/api/$'
     | '/auth/login'
     | '/auth/logout'
@@ -347,6 +369,7 @@ export interface FileRouteTypes {
     | '/'
     | '/access'
     | '/authorize'
+    | '/body'
     | '/garmin'
     | '/healthz'
     | '/login'
@@ -357,6 +380,7 @@ export interface FileRouteTypes {
     | '/sleep'
     | '/.well-known/$'
     | '/activities/$id'
+    | '/anatomy/$file'
     | '/api/$'
     | '/auth/login'
     | '/auth/logout'
@@ -379,6 +403,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccessRoute: typeof AccessRoute
   AuthorizeRoute: typeof AuthorizeRoute
+  BodyRoute: typeof BodyRoute
   GarminRoute: typeof GarminRoute
   HealthzRoute: typeof HealthzRoute
   LoginRoute: typeof LoginRoute
@@ -389,6 +414,7 @@ export interface RootRouteChildren {
   SleepRoute: typeof SleepRoute
   DotwellKnownSplatRoute: typeof DotwellKnownSplatRoute
   ActivitiesIdRoute: typeof ActivitiesIdRoute
+  AnatomyFileRoute: typeof AnatomyFileRoute
   ApiSplatRoute: typeof ApiSplatRoute
   AuthLoginRoute: typeof AuthLoginRoute
   AuthLogoutRoute: typeof AuthLogoutRoute
@@ -428,6 +454,13 @@ declare module '@tanstack/react-router' {
       path: '/authorize'
       fullPath: '/authorize'
       preLoaderRoute: typeof AuthorizeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/body': {
+      id: '/body'
+      path: '/body'
+      fullPath: '/body'
+      preLoaderRoute: typeof BodyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/garmin': {
@@ -505,6 +538,13 @@ declare module '@tanstack/react-router' {
       path: '/activities/$id'
       fullPath: '/activities/$id'
       preLoaderRoute: typeof ActivitiesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/anatomy/$file': {
+      id: '/anatomy/$file'
+      path: '/anatomy/$file'
+      fullPath: '/anatomy/$file'
+      preLoaderRoute: typeof AnatomyFileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/$': {
@@ -619,6 +659,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccessRoute: AccessRoute,
   AuthorizeRoute: AuthorizeRoute,
+  BodyRoute: BodyRoute,
   GarminRoute: GarminRoute,
   HealthzRoute: HealthzRoute,
   LoginRoute: LoginRoute,
@@ -629,6 +670,7 @@ const rootRouteChildren: RootRouteChildren = {
   SleepRoute: SleepRoute,
   DotwellKnownSplatRoute: DotwellKnownSplatRoute,
   ActivitiesIdRoute: ActivitiesIdRoute,
+  AnatomyFileRoute: AnatomyFileRoute,
   ApiSplatRoute: ApiSplatRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthLogoutRoute: AuthLogoutRoute,

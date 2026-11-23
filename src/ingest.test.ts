@@ -214,17 +214,40 @@ layer(TestLayer, { excludeTestServices: true })('Ingest', (it) => {
     })
   )
 
-  it.effect('files the journal: a note per file, kept across a rebuild', () =>
+  it.effect('files the journal: a note per file, its body as JSON, kept across a rebuild', () =>
     Effect.gen(function* () {
       const note = { time: '2024-04-02T18:30:00.000Z', day: '2024-04-02', text: 'Quadri raide' }
+      const pinned = {
+        time: '2024-04-03T07:00:00.000Z',
+        day: '2024-04-03',
+        text: 'Douleur vive 6/10',
+        body: {
+          structure: 'vastus_lateralis_r',
+          side: 'right',
+          point: [-0.12, 0.62, 0.03],
+          pain: 6,
+          kind: 'vive',
+          when: ['descente', 'escaliers'],
+          since: '2024-03-31',
+        },
+      }
       yield* put('journal/2024/2024-04-02T18-30-00.000Z.json', note)
+      yield* put('journal/2024/2024-04-03T07-00-00.000Z.json', pinned)
       yield* put('journal/2024/broken.json', { day: '2024-04-02', text: '' })
+      yield* put('journal/2024/bad-body.json', { ...pinned, body: { ...pinned.body, pain: 11 } })
       const summary = yield* run()
-      expect(summary.errors).toEqual(['journal/2024/broken.json: not a journal note'])
-      const notes = rows(sql`SELECT time, day, text FROM journal`)
-      expect(yield* notes).toEqual([note])
+      expect(summary.errors).toEqual([
+        'journal/2024/bad-body.json: not a journal note',
+        'journal/2024/broken.json: not a journal note',
+      ])
+      const notes = rows(sql`SELECT time, day, text, body FROM journal ORDER BY time`)
+      const filed = [
+        { ...note, body: null },
+        { ...pinned, body: JSON.stringify(pinned.body) },
+      ]
+      expect(yield* notes).toEqual(filed)
       yield* run({ rebuild: true })
-      expect(yield* notes).toEqual([note])
+      expect(yield* notes).toEqual(filed)
     })
   )
 })

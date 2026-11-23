@@ -1,11 +1,13 @@
-import { sql, type SQL } from 'drizzle-orm'
+import { between, desc, sql, type SQL } from 'drizzle-orm'
 import { Context, Effect, Layer } from 'effect'
 
+import { Anatomy, readableCatalog } from './anatomy/anatomy.ts'
 import { addDays, daysBetween, earlierDay, parisToday } from './days.ts'
 import { Database, type DatabaseError } from './db.ts'
-import type { JournalNote } from './journal/note.ts'
+import { namesOf } from './journal/history.ts'
 import { mean, present, round } from './numbers.ts'
 import { decode, type Point } from './polyline.ts'
+import { journal } from './schema.ts'
 import { type Burn, plannedBurn, type Reading, verdict, type Verdict } from './today.ts'
 import { decoupling, kmSplits, type SamplePoint, type Split } from './tools.ts'
 
@@ -71,6 +73,15 @@ export interface PlannedToday {
   readonly kcal: number | null
 }
 
+// A note of the journal as the home page shows it: where a pinned pain is, in French
+export interface NoteLine {
+  readonly time: string
+  readonly day: string
+  readonly text: string
+  // "vaste latéral (quadriceps), côté droit"; the id without the catalog; null without a body
+  readonly where: string | null
+}
+
 // The morning: the verdict on the night, the day's plan and energy, the journal
 export interface Morning {
   readonly verdict: Verdict
@@ -82,7 +93,7 @@ export interface Morning {
   // A weigh-in today
   readonly weighed: boolean
   // The last 14 days', newest first
-  readonly notes: ReadonlyArray<JournalNote>
+  readonly notes: ReadonlyArray<NoteLine>
 }
 
 export interface Dashboard {
@@ -423,6 +434,7 @@ export class Stats extends Context.Service<
     Stats,
     Effect.gen(function* () {
       const { use } = yield* Database
+      const anatomy = yield* Anatomy
       const all = <A extends object>(query: SQL) => use((db) => db.all<A>(query))
 
       const period = (from: string, to: string) =>
@@ -462,9 +474,26 @@ export class Stats extends Context.Service<
             (SELECT round(1.8 * weight_kg) FROM body WHERE weight_kg IS NOT NULL
               ORDER BY time DESC LIMIT 1) AS protein_g,
             EXISTS (SELECT 1 FROM body WHERE day = ${today}) AS weighed`)
-        const notes = yield* all<JournalNote>(sql`
-          SELECT time, day, text FROM journal
-          WHERE day BETWEEN ${addDays(today, -13)} AND ${today} ORDER BY day DESC, time DESC`)
+        const journalRows = yield* use((db) =>
+          db
+            .select({
+              time: journal.time,
+              day: journal.day,
+              text: journal.text,
+              body: journal.body,
+            })
+            .from(journal)
+            .where(between(journal.day, addDays(today, -13), today))
+            .orderBy(desc(journal.day), desc(journal.time))
+            .all()
+        )
+        const catalog = journalRows.some((note) => note.body !== null)
+          ? yield* readableCatalog(anatomy)
+          : null
+        const notes = journalRows.map(({ body, ...note }): NoteLine => ({
+          ...note,
+          where: body === null ? null : (namesOf(catalog, body)?.label ?? body.structure),
+        }))
         return {
           verdict: verdict(today, readings),
           planned,

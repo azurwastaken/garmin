@@ -1,9 +1,11 @@
-import { sql, type SQL } from 'drizzle-orm'
+import { and, between, isNotNull, sql, type SQL } from 'drizzle-orm'
 import { Context, Effect, Layer } from 'effect'
 
 import { addDays, parisToday } from './days.ts'
 import { Database, type DatabaseError } from './db.ts'
+import type { BodyNote } from './journal/history.ts'
 import { clock, mean, present, round } from './numbers.ts'
+import { journal } from './schema.ts'
 
 // The typed MCP tools' answers (see api/garmin.ts): plain rows, in the units Garmin Connect shows
 
@@ -163,6 +165,13 @@ export class Tools extends Context.Service<
       readonly to?: string | undefined
     }) => Effect.Effect<ReadonlyArray<Row>, DatabaseError>
     readonly syncStatus: Effect.Effect<Row, DatabaseError>
+    // The notes with a pinned pain over the `days` days ending today (Paris), by day then time
+    readonly bodyNotes: (
+      days: number
+    ) => Effect.Effect<
+      { readonly from: string; readonly to: string; readonly notes: ReadonlyArray<BodyNote> },
+      DatabaseError
+    >
   }
 >()('garmin/Tools') {
   static readonly layer = Layer.effect(
@@ -351,6 +360,29 @@ export class Tools extends Context.Service<
         return { ...freshness, last_runs: runs, ingest_errors: errors }
       })
 
+      const bodyNotes = Effect.fn('Tools.bodyNotes')(function* (days: number) {
+        const to = yield* parisToday
+        const from = addDays(to, 1 - days)
+        const rows = yield* use((db) =>
+          db
+            .select({
+              time: journal.time,
+              day: journal.day,
+              text: journal.text,
+              body: journal.body,
+            })
+            .from(journal)
+            .where(and(isNotNull(journal.body), between(journal.day, from, to)))
+            .orderBy(journal.day, journal.time)
+            .all()
+        )
+        // The WHERE keeps no null body; the type does not know it
+        const notes = rows.flatMap(({ body, ...note }) =>
+          body === null ? [] : [{ ...note, body }]
+        )
+        return { from, to, notes }
+      })
+
       return Tools.of({
         syncStatus,
         listActivities,
@@ -359,6 +391,7 @@ export class Tools extends Context.Service<
         dailyReadiness,
         weeklyLoad,
         plannedWorkouts,
+        bodyNotes,
       })
     })
   )

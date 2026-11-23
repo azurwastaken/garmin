@@ -4,12 +4,15 @@ import { join } from 'node:path'
 import { expect, layer } from '@effect/vitest'
 import { Effect, Exit, Layer } from 'effect'
 
-import { dataDir, rows, sql, testLayer } from '../../test/fixtures.ts'
+import { anatomyCatalog, dataDir, put, rows, sql, testLayer } from '../../test/fixtures.ts'
+import { Anatomy } from '../anatomy/anatomy.ts'
 import { Storage } from '../ingest.ts'
 
 import { Journal } from './log.ts'
 
-const TestLayer = testLayer(Journal.layer.pipe(Layer.provideMerge(Storage)))
+const TestLayer = testLayer(
+  Journal.layer.pipe(Layer.provideMerge(Anatomy.layer), Layer.provideMerge(Storage))
+)
 
 const files = Effect.map(dataDir, (root) => {
   const directory = join(root, 'journal', '1970')
@@ -48,6 +51,64 @@ layer(TestLayer)('Journal', (it) => {
         first,
         second,
       ])
+    })
+  )
+
+  it.effect('writes a pinned pain the anatomy model takes, refuses one it does not', () =>
+    Effect.gen(function* () {
+      const journal = yield* Journal
+      const body = {
+        structure: 'vastus_lateralis_r',
+        side: 'right',
+        point: [-0.12, 0.62, 0.03],
+        pain: 6,
+        kind: 'vive',
+        when: ['descente'],
+      } as const
+      const refused = (note: Parameters<typeof journal.log>[0]) =>
+        journal.log(note).pipe(
+          Effect.flip,
+          Effect.map((error) => [error._tag, error.message])
+        )
+      const before = yield* files
+
+      // Without the model: any id the schema takes, but never a point off the model
+      const blind = yield* journal.log({ text: 'Sans modèle', body: { ...body, structure: 'x' } })
+      expect(blind.body?.structure).toBe('x')
+      expect(yield* refused({ text: 'Loin', body: { ...body, point: [1.9, 1.9, 1.9] } })).toEqual([
+        'BodyRefused',
+        'The point [1.9,1.9,1.9] is outside the anatomy model.',
+      ])
+
+      // With it: a known structure on its side
+      yield* put('anatomy/structures.json', anatomyCatalog)
+      const saved = yield* journal.log({ day: '1970-01-01', text: 'Quadri', body })
+      expect(saved).toEqual({
+        time: expect.any(String),
+        day: '1970-01-01',
+        text: 'Quadri',
+        body,
+      })
+      expect(yield* rows(sql`SELECT body FROM journal WHERE time = ${saved.time}`)).toEqual([
+        { body: JSON.stringify(body) },
+      ])
+      expect(
+        yield* refused({ text: 'Typo', body: { ...body, structure: 'vastus_lateralis_right' } })
+      ).toEqual([
+        'BodyRefused',
+        'Unknown structure "vastus_lateralis_right"; closest: vastus_lateralis_r, vastus_lateralis_proximal_tendon_r, vastus_lateralis_l.',
+      ])
+      expect(yield* refused({ text: 'Côté', body: { ...body, side: 'left' } })).toEqual([
+        'BodyRefused',
+        'vastus_lateralis_r is on the right side, not left.',
+      ])
+
+      // A model there but unreadable: no pain is checked against it, so none is written
+      yield* put('anatomy/structures.json', '{"vastus_lateralis_r": {}')
+      expect((yield* refused({ text: 'Cassé', body }))[0]).toBe('BodyRefused')
+      // A note without a body does not need the model
+      yield* journal.log({ text: 'Bien dormi' })
+      expect((yield* files).length).toBe(before.length + 3)
     })
   )
 
