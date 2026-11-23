@@ -155,13 +155,27 @@ layer(TestLayer, { excludeTestServices: true })('Races', (it) => {
           gpx: gpxText(course.points),
         })
         yield* put('races/avec-altitudes-2027.json', { name: 'X' })
+        // A course with a stray fix at 0,0, put there by hand: listed as broken, never resampled
+        yield* put(
+          'races/ile-nulle-2027.gpx',
+          gpxText([...course.points.slice(0, 50), { lat: 0, lon: 0, ele: 0 }, ...course.points])
+        )
+        yield* put('races/ile-nulle-2027.json', {
+          name: 'Île nulle',
+          date: '2027-09-25',
+          elevation: { source: 'gpx' },
+        })
         const listed = yield* races.list
         expect(listed.map((r) => [r._tag, r.slug])).toEqual([
           ['Race', 'printemps-2027'],
           ['Race', 'local-2027'],
           ['Race', 'sans-altitudes-2027'],
           ['Broken', 'avec-altitudes-2027'],
+          ['Broken', 'ile-nulle-2027'],
         ])
+        expect(listed.at(-1)).toMatchObject({
+          problem: expect.stringMatching(/un saut de \d+ km/u),
+        })
         // Its facts cannot be replaced without its GPX: where its altitudes come from is unreadable
         const repaired = yield* races
           .update('avec-altitudes-2027' as Slug, { facts: facts('Avec altitudes') })

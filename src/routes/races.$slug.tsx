@@ -13,6 +13,8 @@ import type { SegmentView } from '#src/races/race.ts'
 
 export const Route = createFileRoute('/races/$slug')({
   loader: async ({ params }) => {
+    // A cheap guard against a URL that cannot be a race (the server checks SlugSchema itself):
+    // importing it here would bring Effect's Schema and race.ts's imports into the page's bundle
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(params.slug) || params.slug.length > 64) {
       throw notFound()
     }

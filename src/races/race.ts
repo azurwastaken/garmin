@@ -48,9 +48,11 @@ export const slugOf = (name: string, date: string): Slug | null => {
   const year = date.slice(0, 4)
   // The year last, never cut off: a long name's next edition gets its own slug
   const cut = (text: string, max: number) => text.slice(0, max).replace(/-$/u, '')
-  return SlugSchema.make(
-    words.split('-').includes(year) ? cut(words, 64) : `${cut(words, 64 - year.length - 1)}-${year}`
-  )
+  const base = words
+    .split('-')
+    .filter((word) => word !== year)
+    .join('-')
+  return SlugSchema.make(base === '' ? year : `${cut(base, 64 - year.length - 1)}-${year}`)
 }
 
 // A race's GPX at most (a 100 km trail recorded every second is a few MB)

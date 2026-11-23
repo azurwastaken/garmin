@@ -1,6 +1,7 @@
-import type { Brand } from 'effect'
+import { Brand, Result } from 'effect'
 
 import type { Fix, LatLon } from './gpx.ts'
+import { boundsOf } from './terrarium.ts'
 
 // A course's profile and its segments, without I/O: the race's GPX and the user's runs alike go
 // through profileOf, so both are measured the same way.
@@ -19,6 +20,13 @@ export interface CoursePoint extends ProfilePoint, LatLon {}
 export type Profile<P extends ProfilePoint = ProfilePoint> = ReadonlyArray<P> &
   Brand.Brand<'Profile'>
 export type Course = Profile<CoursePoint>
+const makeProfile = Brand.nominal<Profile>()
+const makeCourse = Brand.nominal<Course>()
+
+// A course past these is a broken file (a stray fix at 0,0), not a race: refused before its
+// points are resampled (each km is 40 of them)
+const MAX_HOP_M = 10_000
+const MAX_COURSE_M = 1_000_000
 
 // The profile's distance and altitude at a point (the dense arrays' index is always in range)
 const dAt = (profile: ReadonlyArray<ProfilePoint>, i: number) => profile[i]?.d ?? 0
@@ -127,17 +135,22 @@ export const profileOf = (
   if (kept.length < 2 || filled === null) return null
   const at = positions(keptD.at(-1) ?? 0, STEP_M)
   const smoothed = smooth(resampleAt(keptD, filled, STEP_M), SMOOTH_HALF_STEPS)
-  return at.map((x, i) => ({ d: x, ele: smoothed[i] ?? 0 })) as unknown as Profile
+  return makeProfile(at.map((x, i) => ({ d: x, ele: smoothed[i] ?? 0 })))
 }
 
-// The race's fixes → its course: the profile, with lat/lon at the same steps
-export const courseOf = (fixes: ReadonlyArray<Fix>): Course | null => {
+// The race's fixes → its course: the profile, with lat/lon at the same steps; or why not
+export const courseOf = (fixes: ReadonlyArray<Fix>): Result.Result<Course, string> => {
   const d = cumulative(fixes)
+  const hop = d.reduce((most, value, i) => Math.max(most, value - (d[i - 1] ?? value)), 0)
+  if (hop > MAX_HOP_M) {
+    return Result.fail(`un saut de ${Math.round(hop / 1000)} km entre deux points`)
+  }
+  if ((d.at(-1) ?? 0) > MAX_COURSE_M) return Result.fail('un parcours de plus de 1 000 km')
   const profile = profileOf(
     d,
     fixes.map((fix) => fix.ele)
   )
-  if (profile === null) return null
+  if (profile === null) return Result.fail('parcours vide (un seul point, ou aucune altitude)')
   const kept = advancing(d)
   const keptD = kept.map((i) => d[i] ?? 0)
   const lat = resampleAt(
@@ -150,11 +163,9 @@ export const courseOf = (fixes: ReadonlyArray<Fix>): Course | null => {
     kept.map((i) => fixes[i]?.lon ?? 0),
     STEP_M
   )
-  return profile.map((point, i) => ({
-    ...point,
-    lat: lat[i] ?? 0,
-    lon: lon[i] ?? 0,
-  })) as unknown as Course
+  return Result.succeed(
+    makeCourse(profile.map((point, i) => ({ ...point, lat: lat[i] ?? 0, lon: lon[i] ?? 0 })))
+  )
 }
 
 // --- Segments
@@ -329,20 +340,13 @@ export const cumulativeEquivalent = (profile: Profile) => {
 export const totals = (course: Course) => {
   const { up, down } = climb(course)
   const km = dAt(course, course.length - 1) / 1000
-  const ele = course.map((point) => point.ele)
   return {
     km,
     d_plus: up,
     d_minus: down,
     km_effort: km + up / 100,
-    ele_min: Math.min(...ele),
-    ele_max: Math.max(...ele),
-    // West, south, east, north
-    bbox: [
-      Math.min(...course.map((p) => p.lon)),
-      Math.min(...course.map((p) => p.lat)),
-      Math.max(...course.map((p) => p.lon)),
-      Math.max(...course.map((p) => p.lat)),
-    ] as const,
+    ele_min: course.reduce((low, point) => Math.min(low, point.ele), Number.POSITIVE_INFINITY),
+    ele_max: course.reduce((high, point) => Math.max(high, point.ele), Number.NEGATIVE_INFINITY),
+    bbox: boundsOf(course),
   }
 }

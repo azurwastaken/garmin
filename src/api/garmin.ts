@@ -363,15 +363,16 @@ const addRace = tool({
     )
   )
   .handler(async ({ input: { slug, gpx, ...fields }, context }) => {
+    if (slug === undefined && gpx === undefined) {
+      throw new ORPCError('BAD_REQUEST', {
+        message: 'gpx is required for a new race (or give the slug to update one).',
+      })
+    }
     const facts = await context.run(Schema.decodeUnknownEffect(FactsInputSchema)(fields))
     const saved = await context.run(
       Races.use((races) =>
         slug === undefined
-          ? gpx === undefined
-            ? Effect.fail(
-                new Error('gpx is required for a new race (or give the slug to update one).')
-              )
-            : races.add({ facts, gpx })
+          ? races.add({ facts, gpx: gpx ?? '' })
           : races.update(slug, { facts, gpx })
       )
     )

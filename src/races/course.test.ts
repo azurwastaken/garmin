@@ -34,11 +34,9 @@ const chamonix = syntheticCourse(
 )
 
 const courseFrom = (points: ReturnType<typeof syntheticCourse>['points']) => {
-  const fixes = parseGpx(gpxText(points))
-  if (Result.isFailure(fixes)) throw new Error(fixes.failure)
-  const course = courseOf(fixes.success)
-  if (course === null) throw new Error('no course')
-  return course
+  const course = Result.flatMap(parseGpx(gpxText(points)), courseOf)
+  if (Result.isFailure(course)) throw new TypeError(course.failure)
+  return course.success
 }
 
 describe('the course', () => {
@@ -58,6 +56,29 @@ describe('the course', () => {
     expect(profile?.map((p) => p.d)).toEqual([0, 25, 50, 60])
     expect(profileOf([0, 0], [1, 1])).toBeNull()
     expect(profileOf([0, 100], [null, null])).toBeNull()
+  })
+
+  it('refuses a stray fix far away, or a course of no race, before resampling it', () => {
+    const points = chamonix.points.map(({ lat, lon, ele }) => ({ lat, lon, ele }))
+    const stray = [...points.slice(0, 100), { lat: 0, lon: 0, ele: 0 }, ...points.slice(100)]
+    expect(Result.flatMap(parseGpx(gpxText(stray)), courseOf)).toEqual(
+      Result.fail('un saut de 5151 km entre deux points')
+    )
+    // 1 100 km in 9 km hops
+    const long = Array.from({ length: 123 }, (_, i) => ({
+      lat: 45 + (i * 9) / 111.195,
+      lon: 6.87,
+      ele: 0,
+    }))
+    expect(Result.flatMap(parseGpx(gpxText(long)), courseOf)).toEqual(
+      Result.fail('un parcours de plus de 1 000 km')
+    )
+    expect(
+      courseOf([
+        { lat: 45, lon: 6, ele: 1 },
+        { lat: 45, lon: 6, ele: 1 },
+      ])
+    ).toEqual(Result.fail('parcours vide (un seul point, ou aucune altitude)'))
   })
 
   it("lands within 2 % of a Chamonix course's distance and D+, noise and all", () => {

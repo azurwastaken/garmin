@@ -113,11 +113,10 @@ export class Races extends Context.Service<
 
       // The course of a GPX file's text, or why not
       const courseIn = (path: string, text: string): Effect.Effect<Course, RaceError> => {
-        const fixes = parseGpx(text)
-        const course = Result.isSuccess(fixes) ? courseOf(fixes.success) : null
-        return course === null
-          ? Effect.fail(broken(path, Result.isFailure(fixes) ? fixes.failure : 'parcours vide'))
-          : Effect.succeed(course)
+        const course = Result.flatMap(parseGpx(text), courseOf)
+        return Result.isSuccess(course)
+          ? Effect.succeed(course.success)
+          : Effect.fail(broken(path, course.failure))
       }
 
       // A race's three files, read and checked; none without its GPX

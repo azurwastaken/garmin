@@ -29,9 +29,9 @@ const course = (() => {
       ]).points
     )
   )
-  const made = Result.isSuccess(fixes) ? courseOf(fixes.success) : null
-  if (made === null) throw new Error('no course')
-  return made
+  const made = Result.flatMap(fixes, courseOf)
+  if (Result.isFailure(made)) throw new TypeError(made.failure)
+  return made.success
 })()
 const segments = segmentCourse(course)
 
@@ -66,6 +66,11 @@ describe('the race files', () => {
     expect(slugOf(long, '2027-09-25')).toMatch(/^trail-international-des-aiguilles-.*-2027$/u)
     expect(slugOf(long, '2028-09-25')).toMatch(/-2028$/u)
     expect(slugOf(long, '2028-09-25')?.length).toBeLessThanOrEqual(64)
+    // ...and when the name says its year too
+    const named = (year: string) => slugOf(`${long} ${year}`, `${year}-09-25`)
+    expect(named('2027')).toMatch(/^trail-international-.*-2027$/u)
+    expect(named('2028')).toMatch(/^trail-international-.*-2028$/u)
+    expect(slugOf('2027', '2027-01-01')).toBe('2027')
     expect(
       Schema.decodeUnknownExit(FactsInputSchema)({ name: '東京', date: '2027-03-01' })._tag
     ).toBe('Failure')

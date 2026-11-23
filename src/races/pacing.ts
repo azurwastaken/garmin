@@ -1,4 +1,4 @@
-import type { Brand } from 'effect'
+import { Brand } from 'effect'
 
 import { cumulativeEquivalent, interpolate, type Profile, type Segment } from './course.ts'
 
@@ -39,6 +39,7 @@ export type Timeline = {
   readonly d: ReadonlyArray<number>
   readonly t: ReadonlyArray<number>
 } & Brand.Brand<'Timeline'>
+const makeTimeline = Brand.nominal<Timeline>()
 
 // Seconds from the start at every point: the model's total (riegel from the reference to the
 // race's equivalent distance) split by equivalent distance; a planned pace (s/km, > 0) gives its
@@ -67,7 +68,7 @@ export const timeline = (
     }
     start += time
   }
-  return { d: distance, t: times } as unknown as Timeline
+  return makeTimeline({ d: distance, t: times })
 }
 
 // The time at a distance from the start (m), and the distance at a time (s)

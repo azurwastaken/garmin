@@ -146,8 +146,16 @@ export function RaceMap({
           ? {}
           : { bounds: [...dem.bounds] as [number, number, number, number] }),
       }
-      const lons = track.map((p) => p[0])
-      const lats = track.map((p) => p[1])
+      // West, south, east, north (a fold: no spread of every point into Math.min)
+      const [west, south, east, north] = track.reduce<readonly [number, number, number, number]>(
+        ([w, s, e, n], [lon, lat]) => [
+          Math.min(w, lon),
+          Math.min(s, lat),
+          Math.max(e, lon),
+          Math.max(n, lat),
+        ],
+        [180, 90, -180, -90]
+      )
       const accent = color('--accent', '#22d3ee')
       created = new maplibre.Map({
         container: element,
@@ -155,8 +163,8 @@ export function RaceMap({
         pitch: 62,
         bearing: -20,
         bounds: [
-          [Math.min(...lons), Math.min(...lats)],
-          [Math.max(...lons), Math.max(...lats)],
+          [west, south],
+          [east, north],
         ],
         fitBoundsOptions: { padding: 48 },
         attributionControl: { compact: true },
