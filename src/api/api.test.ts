@@ -3,6 +3,7 @@ import { ManagedRuntime } from 'effect'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { testLayer } from '../../test/fixtures.ts'
+import { gpxText, syntheticCourse } from '../../test/races.ts'
 import { Services } from '../app.ts'
 
 import { makeHandlers, makeRun } from './handlers.ts'
@@ -63,15 +64,19 @@ describe('the MCP', () => {
     const { tools } = (await mcp('tools/list')) as { tools: Array<ListedTool> }
     const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]))
     expect(Object.keys(byName).toSorted()).toEqual([
+      'add_race',
       'compare_runs',
       'create_workout',
       'daily_readiness',
       'delete_workout',
       'find_exercises',
       'get_activity',
+      'get_race',
       'list_activities',
+      'list_races',
       'list_workouts',
       'log_note',
+      'plan_race',
       'planned_workouts',
       'schedule_workout',
       'schema',
@@ -104,6 +109,18 @@ describe('the MCP', () => {
       openWorldHint: true,
     })
     expect(byName['sql']?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
+    expect(byName['add_race']?.inputSchema.required).toEqual(['name', 'date'])
+    expect(byName['add_race']?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: true,
+    })
+    expect(byName['plan_race']?.annotations).toMatchObject({
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    })
+    expect(byName['plan_race']?.inputSchema.required).toEqual(['slug', 'segments'])
     // Plain JSON Schema numbers for the model
     expect(byName['list_activities']?.inputSchema.properties?.['limit']).toMatchObject({
       type: 'integer',
@@ -143,6 +160,96 @@ describe('the MCP', () => {
       isError: true,
       data: { code: 'BAD_REQUEST', message: 'Input validation failed' },
     })
+  })
+})
+
+describe('the race tools', () => {
+  // A 9 km course: 3 km flat, 3 km up 300 m, 3 km down
+  const course = syntheticCourse([
+    [3000, 0],
+    [3000, 300],
+    [3000, -300],
+  ])
+
+  it('adds a race, refuses its slug twice, plans it and reads it back', async () => {
+    const added = await call('add_race', {
+      name: 'Trail du Test',
+      date: '2027-09-25',
+      start_time: '06:00',
+      cutoffs: [{ km: 6, time: '09:00' }],
+      gpx: gpxText(course.points),
+    })
+    expect(added).toMatchObject({
+      isError: false,
+      data: { slug: 'trail-du-test-2027', km: 9, planned: false, prediction: null },
+    })
+    expect(
+      await call('add_race', {
+        name: 'Trail du Test',
+        date: '2027-09-25',
+        gpx: gpxText(course.points),
+      })
+    ).toMatchObject({
+      isError: true,
+      data: { code: 'BAD_REQUEST', message: expect.stringMatching(/existe déjà/u) },
+    })
+    expect(await call('add_race', { name: 'Sans GPX', date: '2027-01-01' })).toMatchObject({
+      isError: true,
+      data: { code: 'BAD_REQUEST', message: expect.stringMatching(/gpx is required/u) },
+    })
+    expect(
+      await call('add_race', { name: 'Faux', date: '2027-01-01', gpx: '<html/>' })
+    ).toMatchObject({
+      isError: true,
+      data: { message: "pas un fichier GPX (pas d'élément <gpx>)" },
+    })
+
+    const planned = await call('plan_race', {
+      slug: 'trail-du-test-2027',
+      carbs_g_per_h: 70,
+      segments: [
+        { segment: 2, pace: "11'00/km", hr: { low: 145, high: 158 }, fuel: '1 gel au pied' },
+      ],
+    })
+    expect(planned).toMatchObject({
+      isError: false,
+      data: {
+        planned: true,
+        fuel: { carbs_g_per_h: 70 },
+        segments: [{ plan: null }, { plan: { pace_s: 660 } }, { plan: null }],
+      },
+    })
+    expect(
+      await call('plan_race', { slug: 'trail-du-test-2027', segments: [{ segment: 7 }] })
+    ).toMatchObject({
+      isError: true,
+      data: { message: 'segment 7 : le parcours en a 3' },
+    })
+
+    // The facts replaced, the course and the plan kept
+    expect(
+      await call('add_race', {
+        slug: 'trail-du-test-2027',
+        name: 'Trail du Test',
+        date: '2027-09-25',
+        aid_stations: [{ km: 4.5, name: 'Refuge', offers: 'eau' }],
+      })
+    ).toMatchObject({
+      isError: false,
+      data: { planned: true, facts: { aid_stations: [{ name: 'Refuge' }] } },
+    })
+
+    expect(await call('list_races', {})).toMatchObject({
+      isError: false,
+      data: {
+        races: [{ _tag: 'Race', slug: 'trail-du-test-2027', planned: true, predicted_s: null }],
+      },
+    })
+    expect(await call('get_race', { slug: 'nope-2027' })).toMatchObject({
+      isError: true,
+      data: { code: 'NOT_FOUND', message: 'No race nope-2027.' },
+    })
+    expect(await call('get_race', { slug: '../garmin' })).toMatchObject({ isError: true })
   })
 })
 

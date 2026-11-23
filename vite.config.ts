@@ -11,6 +11,8 @@ export default defineConfig({
     react(),
     nitro({ plugins: ['./src/server/nitro.ts'] }),
   ],
+  // MapLibre's worker (the race page's map) imports a shared chunk: an ES module worker
+  worker: { format: 'es' },
   server: {
     port: 3000,
     // Vite's own list, then the health data and the secrets: `vite dev` serves the project's files

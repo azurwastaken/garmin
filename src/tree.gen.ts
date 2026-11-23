@@ -32,7 +32,10 @@ import { Route as OauthAuthorizeRouteImport } from './routes/oauth/authorize.ts'
 import { Route as OauthRegisterRouteImport } from './routes/oauth/register.ts'
 import { Route as OauthRevokeRouteImport } from './routes/oauth/revoke.ts'
 import { Route as OauthTokenRouteImport } from './routes/oauth/token.ts'
+import { Route as RacesIndexRouteImport } from './routes/races.index.tsx'
+import { Route as RacesSlugRouteImport } from './routes/races.$slug.tsx'
 import { Route as RpcSplatRouteImport } from './routes/rpc.$.ts'
+import { Route as TerrainSplatRouteImport } from './routes/terrain.$.ts'
 import { Route as WithingsCallbackRouteImport } from './routes/withings/callback.ts'
 import { Route as WithingsConnectRouteImport } from './routes/withings/connect.ts'
 
@@ -151,9 +154,24 @@ const OauthTokenRoute = OauthTokenRouteImport.update({
   path: '/oauth/token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RacesIndexRoute = RacesIndexRouteImport.update({
+  id: '/races/',
+  path: '/races/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RacesSlugRoute = RacesSlugRouteImport.update({
+  id: '/races/$slug',
+  path: '/races/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RpcSplatRoute = RpcSplatRouteImport.update({
   id: '/rpc/$',
   path: '/rpc/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TerrainSplatRoute = TerrainSplatRouteImport.update({
+  id: '/terrain/$',
+  path: '/terrain/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WithingsCallbackRoute = WithingsCallbackRouteImport.update({
@@ -190,10 +208,13 @@ export interface FileRoutesByFullPath {
   '/oauth/register': typeof OauthRegisterRoute
   '/oauth/revoke': typeof OauthRevokeRoute
   '/oauth/token': typeof OauthTokenRoute
+  '/races/$slug': typeof RacesSlugRoute
   '/rpc/$': typeof RpcSplatRoute
+  '/terrain/$': typeof TerrainSplatRoute
   '/withings/callback': typeof WithingsCallbackRoute
   '/withings/connect': typeof WithingsConnectRoute
   '/activities/': typeof ActivitiesIndexRoute
+  '/races/': typeof RacesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -218,10 +239,13 @@ export interface FileRoutesByTo {
   '/oauth/register': typeof OauthRegisterRoute
   '/oauth/revoke': typeof OauthRevokeRoute
   '/oauth/token': typeof OauthTokenRoute
+  '/races/$slug': typeof RacesSlugRoute
   '/rpc/$': typeof RpcSplatRoute
+  '/terrain/$': typeof TerrainSplatRoute
   '/withings/callback': typeof WithingsCallbackRoute
   '/withings/connect': typeof WithingsConnectRoute
   '/activities': typeof ActivitiesIndexRoute
+  '/races': typeof RacesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -247,10 +271,13 @@ export interface FileRoutesById {
   '/oauth/register': typeof OauthRegisterRoute
   '/oauth/revoke': typeof OauthRevokeRoute
   '/oauth/token': typeof OauthTokenRoute
+  '/races/$slug': typeof RacesSlugRoute
   '/rpc/$': typeof RpcSplatRoute
+  '/terrain/$': typeof TerrainSplatRoute
   '/withings/callback': typeof WithingsCallbackRoute
   '/withings/connect': typeof WithingsConnectRoute
   '/activities/': typeof ActivitiesIndexRoute
+  '/races/': typeof RacesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -277,10 +304,13 @@ export interface FileRouteTypes {
     | '/oauth/register'
     | '/oauth/revoke'
     | '/oauth/token'
+    | '/races/$slug'
     | '/rpc/$'
+    | '/terrain/$'
     | '/withings/callback'
     | '/withings/connect'
     | '/activities/'
+    | '/races/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -305,10 +335,13 @@ export interface FileRouteTypes {
     | '/oauth/register'
     | '/oauth/revoke'
     | '/oauth/token'
+    | '/races/$slug'
     | '/rpc/$'
+    | '/terrain/$'
     | '/withings/callback'
     | '/withings/connect'
     | '/activities'
+    | '/races'
   id:
     | '__root__'
     | '/'
@@ -333,10 +366,13 @@ export interface FileRouteTypes {
     | '/oauth/register'
     | '/oauth/revoke'
     | '/oauth/token'
+    | '/races/$slug'
     | '/rpc/$'
+    | '/terrain/$'
     | '/withings/callback'
     | '/withings/connect'
     | '/activities/'
+    | '/races/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -362,10 +398,13 @@ export interface RootRouteChildren {
   OauthRegisterRoute: typeof OauthRegisterRoute
   OauthRevokeRoute: typeof OauthRevokeRoute
   OauthTokenRoute: typeof OauthTokenRoute
+  RacesSlugRoute: typeof RacesSlugRoute
   RpcSplatRoute: typeof RpcSplatRoute
+  TerrainSplatRoute: typeof TerrainSplatRoute
   WithingsCallbackRoute: typeof WithingsCallbackRoute
   WithingsConnectRoute: typeof WithingsConnectRoute
   ActivitiesIndexRoute: typeof ActivitiesIndexRoute
+  RacesIndexRoute: typeof RacesIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -531,11 +570,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OauthTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/races/': {
+      id: '/races/'
+      path: '/races'
+      fullPath: '/races/'
+      preLoaderRoute: typeof RacesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/races/$slug': {
+      id: '/races/$slug'
+      path: '/races/$slug'
+      fullPath: '/races/$slug'
+      preLoaderRoute: typeof RacesSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/rpc/$': {
       id: '/rpc/$'
       path: '/rpc/$'
       fullPath: '/rpc/$'
       preLoaderRoute: typeof RpcSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terrain/$': {
+      id: '/terrain/$'
+      path: '/terrain/$'
+      fullPath: '/terrain/$'
+      preLoaderRoute: typeof TerrainSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/withings/callback': {
@@ -578,10 +638,13 @@ const rootRouteChildren: RootRouteChildren = {
   OauthRegisterRoute: OauthRegisterRoute,
   OauthRevokeRoute: OauthRevokeRoute,
   OauthTokenRoute: OauthTokenRoute,
+  RacesSlugRoute: RacesSlugRoute,
   RpcSplatRoute: RpcSplatRoute,
+  TerrainSplatRoute: TerrainSplatRoute,
   WithingsCallbackRoute: WithingsCallbackRoute,
   WithingsConnectRoute: WithingsConnectRoute,
   ActivitiesIndexRoute: ActivitiesIndexRoute,
+  RacesIndexRoute: RacesIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

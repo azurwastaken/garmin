@@ -10,6 +10,8 @@ import { Ingest, Storage } from './ingest.ts'
 import { Journal } from './journal/log.ts'
 import { Platform } from './main.ts'
 import { OAuth } from './oauth/oauth.ts'
+import { Races } from './races/races.ts'
+import { Terrain } from './races/terrain.ts'
 import { Reader } from './reader.ts'
 import { Stats } from './stats.ts'
 import { Tools } from './tools.ts'
@@ -40,7 +42,7 @@ export const Withings = WithingsSync.layer.pipe(
 )
 
 // Everything the server runs: Garmin, Withings, the MCP's and the web pages' queries, the journal,
-// the password and the MCP's OAuth server. A layer is built once however many parts use it: Storage
+// the races (their files and the elevation tiles), the password and the MCP's OAuth server. A layer is built once however many parts use it: Storage
 // is one SQLite connection, the only writer.
 export const Services = Layer.mergeAll(
   Garmin,
@@ -48,6 +50,7 @@ export const Services = Layer.mergeAll(
   Reader.layer,
   Tools.layer,
   Journal.layer,
+  Races.layer.pipe(Layer.provideMerge(Terrain.layer)),
   Stats.layer,
   Auth.layer,
   OAuth.layer

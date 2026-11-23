@@ -1,11 +1,13 @@
 import { ORPCError } from '@orpc/server'
-import { Effect, Schema } from 'effect'
+import { Effect, Option, Schema } from 'effect'
 
 import { GarminLogin } from '../garmin/login.ts'
 import { findExercises, WorkoutSchema } from '../garmin/workout-builder.ts'
 import { GarminWorkouts } from '../garmin/workouts.ts'
 import { Journal } from '../journal/log.ts'
 import { JournalNoteJson } from '../journal/note.ts'
+import { FactsInputSchema, PlanInputSchema, SlugSchema } from '../races/race.ts'
+import { Races } from '../races/races.ts'
 import { MAX_ROWS, Reader } from '../reader.ts'
 import { Tools } from '../tools.ts'
 import { withingsStatus } from '../withings/sync.ts'
@@ -15,7 +17,7 @@ import { Day, standard, tool } from './base.ts'
 // The Garmin data and the watch's workouts: each procedure an MCP tool (its name), an OpenAPI
 // operation (under /api) and an RPC call (under /rpc). The tools' names and inputs are the MCP's.
 
-const DATA_MODEL = `Data: the user's Garmin history (watch, scale): every activity from its FIT file (laps, per-second samples) and Garmin Connect's summary, plus daily wellness (sleep, HRV, resting HR, body battery, readiness), weigh-ins and the Garmin calendar's planned workouts. Synced from Garmin Connect every 3 hours (sync_status tells when). The SQL is read-only; the workout tools (create_workout, schedule_workout, unschedule_workout, delete_workout) write to the Garmin calendar and refresh planned_workouts right after; log_note adds a note to the user's journal.
+const DATA_MODEL = `Data: the user's Garmin history (watch, scale): every activity from its FIT file (laps, per-second samples) and Garmin Connect's summary, plus daily wellness (sleep, HRV, resting HR, body battery, readiness), weigh-ins and the Garmin calendar's planned workouts. Synced from Garmin Connect every 3 hours (sync_status tells when). The SQL is read-only; the workout tools (create_workout, schedule_workout, unschedule_workout, delete_workout) write to the Garmin calendar and refresh planned_workouts right after; log_note adds a note to the user's journal; add_race and plan_race write the user's target races and their plans.
 Conventions: timestamps ISO 8601 UTC text, start_local local wall time, day YYYY-MM-DD (local). Metres, seconds, m/s, bpm, kg. Cadence is steps/min on foot, rpm on a bike.
 Tables and views:
 - activities: one row per Garmin Connect activity (id = its activity id). sport (Connect's type: running, trail_running, cycling, lap_swimming, hiking, strength_training…), name, start_time, start_local, day, elapsed_s, moving_s, distance_m, ascent_m, descent_m, avg_hr, max_hr, avg_speed, max_speed, avg_cadence, max_cadence, avg_power, max_power, norm_power, calories, training_load (Garmin's EPOC load), aerobic_te / anaerobic_te (training effect 0-5), te_label (TEMPO, BASE…), vo2max, rpe (0-10) and feel (0-100) entered after it, hr_z1_s…hr_z5_s (seconds in the watch's HR zones), hr_zone_bounds (JSON: the zones' top bounds [z0, z1…z5]), workout_name (the structured workout run, as in planned_workouts.name), gear, device, start_lat/start_lon, polyline (Google encoded, precision 5).
@@ -27,6 +29,7 @@ Tables and views:
 - body: weigh-ins: time, day, weight_kg, bmi, body_fat_pct, body_water_pct, muscle_mass_kg, bone_mass_kg, visceral_fat, source ('WITHINGS' for the Withings scale, synced on its own every 3 hours; else Garmin's source type, e.g. INDEX_SCALE, MANUAL).
 - planned_workouts: the Garmin calendar's scheduled workouts: id (the calendar entry: unschedule_workout's schedule_id), day, workout_id (the library's workout: schedule_workout, delete_workout), name, sport, description, estimated_duration_s, estimated_distance_m, steps (one readable line per step: "interval 3:00 HR 165-172", "5× [...]").
 - journal: the user's notes (log_note): time (the instant written, its key), day (the day it is about), text; one file each in data/journal/.
+- races are not in SQL: list_races, get_race (files in data/races/: <slug>.gpx, <slug>.json, <slug>.plan.json).
 - raw_files: the source files ingested (path, error).
 - sync_runs: each sync with Garmin Connect: started_at, finished_at, ok, logged_out, account, since, files_written, warnings (JSON), error.`
 
@@ -299,6 +302,108 @@ const logNote = tool({
   )
   .handler(({ input, context }) => context.run(Journal.use((journal) => journal.log(input))))
 
+// --- The races the user prepares: a course (GPX), its facts, and the plan per segment
+
+const RACE_MODEL = `A race is its GPX course (data/races/<slug>.gpx), its facts (name, date, start time, aid stations, cutoffs) and the plan written by plan_race. The course is resampled every 25 m (altitudes smoothed over ±50 m) and cut into climbs (≥ +3 %), descents (≤ −3 %) and flats, 5 km at most, numbered from 1. km_effort = km + D+/100. The prediction carries the user's best run of the last year (least moving time once scaled with Riegel 1.06, on its grade-adjusted distance) to the race's grade-adjusted distance (Strava's 2017 GAP curve: −9 % ≈ 0.88, +10 % ≈ 1.45), then splits it over the segments by effort; a planned pace replaces its segment's time. It knows nothing of technical terrain, walking or heat: adjust with planned paces. Gels: one every gel_carbs_g / carbs_g_per_h hours.`
+
+const SlugInput = SlugSchema.annotate({ description: 'The race (list_races)' })
+
+const listRaces = tool({
+  name: 'list_races',
+  title: 'List the races',
+  description: `The user's target races, by date: slug, name, date, km, D+, D−, km-effort, whether a plan exists, the predicted finish (seconds). A race whose files cannot be read is listed with its problem. ${RACE_MODEL}`,
+  method: 'GET',
+  path: '/races',
+  tags: ['races'],
+  readOnly: true,
+  openWorld: false,
+}).handler(async ({ context }) => ({
+  races: await context.run(Races.use((races) => races.list)),
+}))
+
+const getRace = tool({
+  name: 'get_race',
+  title: 'Get a race and its plan',
+  description: `One race in full: its facts, totals (km, D+, D−, km-effort, lowest and highest point), its segments (km from–to, D+/D−, net grade, km-effort, equivalent flat km) each with its plan entry, the fuel numbers, and the prediction: the reference run, per segment its time, start and end (seconds from the start, clock times with a start time), gels and water; the passing times at aid stations and cutoffs (with the margin to each cutoff); the gels on the timeline. warnings: plan entries whose segment changed (not applied), points past the finish. prediction is null without a run of 3 km or more in the last year. ${RACE_MODEL}`,
+  method: 'GET',
+  path: '/races/{slug}',
+  tags: ['races'],
+  readOnly: true,
+  openWorld: false,
+})
+  .input(standard(Schema.Struct({ slug: SlugInput })))
+  .handler(async ({ input, context }) => {
+    const race = await context.run(Races.use((races) => races.get(input.slug)))
+    if (Option.isNone(race)) throw new ORPCError('NOT_FOUND', { message: `No race ${input.slug}.` })
+    return race.value.view
+  })
+
+const addRace = tool({
+  name: 'add_race',
+  title: 'Add or update a race',
+  description: `Add a target race from its GPX text (a track or a route; without altitudes they are read from the elevation tiles: IGN in Chamonix and Paris, else AWS Terrain Tiles), with its facts: name, date, start time, aid stations (km, name, what they offer) and cutoffs (km, clock time). Its slug is its name and year; a taken slug is refused. With slug: that race's facts are replaced (send them all), and its course too when gpx is given (a plan whose segments then moved is not applied until plan_race again). Returns the race as get_race.`,
+  method: 'POST',
+  path: '/races',
+  tags: ['races'],
+  readOnly: false,
+  destructive: true,
+  openWorld: true,
+})
+  .input(
+    standard(
+      Schema.Struct({
+        slug: opt(SlugInput.annotate({ description: 'An existing race to update' })),
+        ...FactsInputSchema.fields,
+        gpx: opt(
+          Schema.String.check(Schema.isMaxLength(20 * 1024 * 1024)).annotate({
+            description: "The GPX file's text (20 MB at most); required for a new race",
+          })
+        ),
+      })
+    )
+  )
+  .handler(async ({ input: { slug, gpx, ...fields }, context }) => {
+    const facts = await context.run(Schema.decodeUnknownEffect(FactsInputSchema)(fields))
+    const saved = await context.run(
+      Races.use((races) =>
+        slug === undefined
+          ? gpx === undefined
+            ? Effect.fail(
+                new Error('gpx is required for a new race (or give the slug to update one).')
+              )
+            : races.add({ facts, gpx })
+          : races.update(slug, { facts, gpx })
+      )
+    )
+    const race = await context.run(Races.use((races) => races.get(saved)))
+    if (Option.isNone(race)) throw new ORPCError('NOT_FOUND', { message: `No race ${saved}.` })
+    return race.value.view
+  })
+
+const planRace = tool({
+  name: 'plan_race',
+  title: 'Write the plan of a race',
+  description: `Write the user's plan for a race, replacing the last one: per segment (get_race's numbers) a target pace ("6'05/km" or 365 s/km, 2'00 to 20'00 a km; its time then replaces the model's) or heart-rate band, what to eat and drink there, notes; and the race's carbs per hour, grams per gel and water per hour. Write it once agreed with the user. Returns the race as get_race, with the new times.`,
+  method: 'POST',
+  path: '/races/{slug}/plan',
+  tags: ['races'],
+  readOnly: false,
+  destructive: true,
+  idempotent: true,
+  openWorld: false,
+})
+  .input(
+    standard(
+      Schema.Struct({
+        slug: SlugInput,
+        ...PlanInputSchema.fields,
+      })
+    )
+  )
+  .handler(({ input: { slug, ...plan }, context }) =>
+    context.run(Races.use((races) => races.plan(slug, plan)))
+  )
+
 // --- The workouts on the watch: these change the user's real Garmin Connect account
 
 const createWorkout = tool({
@@ -466,6 +571,7 @@ export const garmin = {
   schema,
   sql,
   journal: { log: logNote },
+  races: { list: listRaces, get: getRace, add: addRace, plan: planRace },
   workouts: {
     create: createWorkout,
     schedule: scheduleWorkout,

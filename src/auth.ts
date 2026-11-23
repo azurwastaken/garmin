@@ -308,18 +308,25 @@ const OAUTH_OPEN: ReadonlySet<string> = new Set([
 export const sessionCookie = (request: Request, session: Session) =>
   `${SESSION_COOKIE}=${session.value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${session.maxAge}${secureCookie(request)}`
 
-// A small form's fields (a password or two and a path), or 413 past MAX_FORM bytes, unread
+// A form's fields, or 413 past `max` bytes, unread: by default a small form (a password or two and
+// a path); a bigger cap for a file (the race upload), read with `file`
 const MAX_FORM = 4096
-export const readForm = async (request: Request) => {
+export const readForm = async (request: Request, max = MAX_FORM) => {
   const length = Number(request.headers.get('content-length'))
-  if (!Number.isInteger(length) || length <= 0 || length > MAX_FORM) {
+  if (!Number.isInteger(length) || length <= 0 || length > max) {
     return new Response('Payload too large\n', { status: 413 })
   }
   const form = await request.formData()
-  return (name: string) => {
+  const field = (name: string) => {
     const value = form.get(name)
     return typeof value === 'string' ? value : null
   }
+  return Object.assign(field, {
+    file: (name: string) => {
+      const value = form.get(name)
+      return value instanceof File ? value : null
+    },
+  })
 }
 
 export const seeOther = (location: string, headers: Record<string, string> = {}) =>

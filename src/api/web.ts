@@ -1,8 +1,10 @@
-import { Effect, Schema } from 'effect'
+import { Effect, Option, Schema } from 'effect'
 
 import { explain, GarminLogin } from '../garmin/login.ts'
 import { GarminSync } from '../garmin/sync.ts'
 import { type GrantView, OAuth } from '../oauth/oauth.ts'
+import { SlugSchema } from '../races/race.ts'
+import { Races } from '../races/races.ts'
 import { Stats } from '../stats.ts'
 import { WithingsSession } from '../withings/session.ts'
 import { type WithingsStatus, withingsStatus, WithingsSync } from '../withings/sync.ts'
@@ -184,6 +186,34 @@ export const web = {
   sleep: base
     .input(standard(Schema.Struct({ days: Schema.Literals(SLEEP_PERIODS) })))
     .handler(({ input, context }) => context.run(Stats.use((stats) => stats.sleep(input.days)))),
+
+  races: base.handler(({ context }) => context.run(Races.use((races) => races.list))),
+
+  // A race: get_race's view, its course point by point (every 25 m: lon, lat, altitude, metres
+  // from the start) for the map and the profile, and the elevation tiles to draw it on
+  race: base.input(standard(Schema.Struct({ slug: SlugSchema }))).handler(({ input, context }) =>
+    context.run(
+      Effect.map(
+        Races.use((races) => races.get(input.slug)),
+        Option.match({
+          onNone: () => null,
+          onSome: ({ view, course, dem }) => ({
+            view,
+            dem,
+            track: course.map(
+              (p) =>
+                [
+                  Math.round(p.lon * 1e6) / 1e6,
+                  Math.round(p.lat * 1e6) / 1e6,
+                  Math.round(p.ele * 10) / 10,
+                  Math.round(p.d),
+                ] as const
+            ),
+          }),
+        })
+      )
+    )
+  ),
 
   // The applications allowed on the MCP through OAuth (see oauth/oauth.ts)
   access: base.handler(({ context }) =>
