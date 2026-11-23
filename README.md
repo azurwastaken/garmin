@@ -23,9 +23,10 @@ it and write workouts to your watch.
 | 🔄  | **Syncs Garmin Connect by itself.** Logs in like the mobile app (SSO + MFA), keeps only its tokens, and pulls activities, sleep, HRV, readiness, weigh-ins and the calendar every 3 hours. The whole history on demand.                                                                           |
 | 📊  | **A web app to look at it.** Today first: the night against your own 28-day normal (green, orange, red, and why), the planned workout, the day's planned burn, your notes. Then stats, runs, every activity with its route and its curves, sleep night by night. Plain SVG charts, on a dark HUD. |
 | ⚖️  | **Withings weigh-ins too.** Connect a Withings scale once (OAuth): its weight, fat, muscle, water, bone mass and visceral fat land in the same `body` table every 3 hours, on a loop of their own.                                                                                                |
-| 🤖  | **An MCP for Claude.** 16 tools: list and compare runs, a morning readiness check, training load, the planned workouts, a journal of your notes, and read-only SQL on everything.                                                                                                                 |
+| 🤖  | **An MCP for Claude.** 17 tools: list and compare runs, a morning readiness check, training load, the planned workouts, a journal of your notes, the pains you pinned on the body map, and read-only SQL on everything.                                                                           |
 | 🏃  | **Workouts on the watch.** Claude creates, schedules, moves and deletes structured workouts: paces like `"6'05/km"`, HR in bpm, repeat groups, strength circuits from Garmin's catalog. Every write has a dry run.                                                                                |
 | 🧩  | **One API, three faces.** One [oRPC](https://orpc.dev) router serves the MCP (`/mcp`), OpenAPI (`/api`) and a typed RPC client (`/rpc`).                                                                                                                                                          |
+| 🫀  | **A 3D body map.** Click a 3D anatomical model (lower body and trunk) exactly where it hurts: the pain goes to your journal with its structure, and Claude reads it back (`body_history`) to triage it.                                                                                           |
 | 🔐  | **Private by design.** One password, or OAuth 2.1 for MCP clients. Raw files and SQLite on your disk, never in git; every secret in its own 0600 file.                                                                                                                                            |
 
 TypeScript and [Effect](https://effect.website) end to end, with no Python. The web app runs on
@@ -112,7 +113,7 @@ apps you allowed and revokes any of them. You can also pass the app's password a
 token: `--header "Authorization: Bearer <password>"`.
 
 <details>
-<summary><b>The 16 tools</b></summary>
+<summary><b>The 17 tools</b></summary>
 
 **Your data (read-only)**
 
@@ -128,7 +129,12 @@ token: `--header "Authorization: Bearer <password>"`.
 **Your journal**
 
 - `log_note`: a note in your words (a pain, how a run felt, a meal), on a day. One file each in
-  `data/journal/`, shown on the home page for 14 days, in the `journal` table for the SQL.
+  `data/journal/`, shown on the home page for 14 days, in the `journal` table for the SQL. A pain
+  can carry a `body`: the structure of the anatomy model (e.g. `vastus_lateralis_r`), its side,
+  the point clicked, the intensity 0-10, its kind, when it hurts and since when. It is checked
+  against the model's catalog when written.
+- `body_history`: the pains pinned over a period, with their structures' French, English and
+  Latin names, and per structure the intensity day by day and its trend.
 
 **The watch** (these change the real Garmin account)
 
@@ -267,6 +273,7 @@ GarminWorkouts.use((workouts) => workouts.library({ limit: 10 })).pipe(
 | `withings/YYYY-MM.json`                    | a month of Withings measure groups, as getmeas returned them             | sync         |
 | `connect/calendar/YYYY-MM.json`            | a month of the Garmin calendar (scheduled workouts)                      | sync         |
 | `journal/YYYY/<instant>.json`              | one note of your journal                                                 | `log_note`   |
+| `anatomy/runner.glb`, `structures.json`    | the body map's 3D model and its catalog (CC BY-SA 4.0, see its README)   | by hand      |
 | `connect/workouts/<workoutId>.json`        | a workout's steps                                                        | sync         |
 | `export/<zip>/…`                           | the export's wellness JSON files, as extracted                           | export       |
 | `garmin.db`                                | SQLite, rebuilt from the above                                           | ingest       |
@@ -300,7 +307,8 @@ Tables and views:
 - `body`: weigh-ins with body composition, Garmin's and Withings' (`source = 'WITHINGS'`, which
   wins a weigh-in both have).
 - `planned_workouts`: the Garmin calendar, with each entry's id, its workout's id and its steps.
-- `journal`: your notes (`log_note`), one file each in `data/journal/`.
+- `journal`: your notes (`log_note`), one file each in `data/journal/`; `body` (JSON) for a pain
+  pinned on the body map.
 - `raw_files`, `sync_runs`: what was ingested, and each sync with Garmin Connect.
 - Views: `activity_summary` (paces, minutes, zones in minutes), `weekly` (per ISO week and sport).
 
@@ -331,8 +339,12 @@ src/
   reader.ts             the MCP's read-only SQL, in a child process killed past 30 s
   tools.ts, stats.ts    the MCP's and the web pages' queries
   auth.ts               the password, the session cookie, the gate in front of everything
+  journal/              the journal: a note and its pinned pain (note.ts), the writer (log.ts),
+                        the body history (history.ts)
+  anatomy/              the body map's model: its catalog, search and checks (catalog.ts), the
+                        files in DATA_DIR/anatomy served read-only (anatomy.ts)
   routes/               TanStack Start pages and endpoints
-  components/           the pages' charts (plain SVG) and formats
+  components/           the pages' charts (plain SVG) and formats, the body map's 3D scene
 ```
 
 </details>
@@ -357,6 +369,15 @@ src/
   - The period against the one before.
   - The stages and the schedule night by night.
   - HRV against its baseline, and body battery.
+- `/body`: the body map, a 3D anatomical model (react-three-fiber) to click where it hurts.
+  - Hover names a structure in French, a click pins a pain at that point: intensity, kind, when,
+    since when, a note. It goes to the journal.
+  - Layers peel off (fascias, muscles, tendons, ligaments, bones) and a side can be hidden, to
+    reach the deep structures; a search and a list do the same without the 3D view.
+  - The pains of the last 7, 30 or 90 days glow on their structures, by intensity.
+  - The model (`data/anatomy/`, outside git) is served by `/anatomy/runner.glb` and
+    `/anatomy/structures.json`; without it the page says so. Its credits (CC BY-SA) are on the
+    page.
 - `/garmin`: the connection, the login, sync now, the whole history, and the last syncs.
 - `/access`: the apps allowed on the MCP, each revocable.
 - `/setup`, `/login`, `/password`: the app's password.

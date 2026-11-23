@@ -2,7 +2,7 @@ import { createRouterClient, ORPCError } from '@orpc/server'
 import { ManagedRuntime } from 'effect'
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { testLayer } from '../../test/fixtures.ts'
+import { anatomyCatalog, put, testLayer } from '../../test/fixtures.ts'
 import { Services } from '../app.ts'
 
 import { makeHandlers, makeRun } from './handlers.ts'
@@ -63,6 +63,7 @@ describe('the MCP', () => {
     const { tools } = (await mcp('tools/list')) as { tools: Array<ListedTool> }
     const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]))
     expect(Object.keys(byName).toSorted()).toEqual([
+      'body_history',
       'compare_runs',
       'create_workout',
       'daily_readiness',
@@ -104,6 +105,24 @@ describe('the MCP', () => {
       openWorldHint: true,
     })
     expect(byName['sql']?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
+    // A pinned pain, as the body map writes it: plain JSON Schema the model can fill
+    const body = byName['log_note']?.inputSchema.properties?.['body'] as {
+      properties: Record<string, unknown>
+      required: Array<string>
+    }
+    expect(Object.keys(body.properties)).toEqual([
+      'structure',
+      'side',
+      'point',
+      'pain',
+      'kind',
+      'when',
+      'since',
+    ])
+    expect(body.required).toEqual(['structure', 'side', 'pain', 'kind', 'when'])
+    expect(body.properties['side']).toMatchObject({ enum: ['left', 'right', 'midline'] })
+    expect(body.properties['pain']).toMatchObject({ type: 'integer', minimum: 0, maximum: 10 })
+    expect(byName['body_history']?.annotations).toMatchObject({ readOnlyHint: true })
     // Plain JSON Schema numbers for the model
     expect(byName['list_activities']?.inputSchema.properties?.['limit']).toMatchObject({
       type: 'integer',
@@ -143,6 +162,61 @@ describe('the MCP', () => {
       isError: true,
       data: { code: 'BAD_REQUEST', message: 'Input validation failed' },
     })
+  })
+})
+
+describe("the body map's pains", () => {
+  it('logs a pain on a structure, then reads it back named, with its trend', async () => {
+    await runtime.runPromise(put('anatomy/structures.json', anatomyCatalog))
+    const body = {
+      structure: 'vastus_lateralis_r',
+      side: 'right',
+      point: [-0.12, 0.62, 0.03],
+      pain: 6,
+      kind: 'vive',
+      when: ['descente', 'escaliers'],
+      since: '2026-11-16',
+    }
+    const logged = await call('log_note', { text: 'Douleur vive 6/10 après le semi', body })
+    expect(logged).toMatchObject({ isError: false, data: { body } })
+    expect(
+      await call('log_note', { text: 'x', body: { ...body, structure: 'vastus_lateralis' } })
+    ).toMatchObject({
+      isError: true,
+      data: {
+        code: 'BAD_REQUEST',
+        message: expect.stringMatching(
+          /^Unknown structure "vastus_lateralis"; closest: vastus_lateralis_r/u
+        ),
+      },
+    })
+    expect(await call('log_note', { text: 'x', body: { ...body, pain: 11 } })).toMatchObject({
+      isError: true,
+      data: { code: 'BAD_REQUEST', data: { issues: [{ path: ['body', 'pain'] }] } },
+    })
+
+    const history = await call('body_history', { days: 7 })
+    expect(history.isError).toBe(false)
+    expect(history.data).toMatchObject({
+      pins: [
+        {
+          text: 'Douleur vive 6/10 après le semi',
+          body,
+          names: {
+            french: 'vaste latéral (quadriceps)',
+            english: 'Vastus lateralis (quadriceps)',
+            latin: 'Musculus vastus lateralis',
+            label: 'vaste latéral (quadriceps), côté droit',
+          },
+          tissue: 'muscle',
+          region: 'thigh',
+        },
+      ],
+      structures: [
+        { structure: 'vastus_lateralis_r', side: 'right', count: 1, latest_pain: 6, change: 0 },
+      ],
+    })
+    expect(await call('body_history', { days: 0 })).toMatchObject({ isError: true })
   })
 })
 

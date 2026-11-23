@@ -670,3 +670,199 @@ td a:hover {
   align-items: flex-start;
   gap: 2px;
 }
+
+/* --- /body: the body map (routes/body.tsx), a hologram on the sheet's variables. Only .body-*
+   classes. --- */
+.body-page .body-label,
+.body-page legend,
+.body-page .body-readout,
+.body-tip {
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+}
+.body-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 820px) {
+  .body-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.body-stage {
+  position: sticky;
+  top: 12px;
+  height: min(78vh, 720px);
+  min-height: 420px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--page);
+  box-shadow:
+    0 0 0 1px var(--ring),
+    inset 0 0 60px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+/* Scan lines over the stage, and its corner brackets */
+.body-stage::before,
+.body-stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.body-stage::before {
+  background: repeating-linear-gradient(
+    0deg,
+    color-mix(in srgb, var(--accent) 5%, transparent) 0 1px,
+    transparent 1px 4px
+  );
+}
+.body-stage::after {
+  inset: 10px;
+  --bracket: color-mix(in srgb, var(--accent) 55%, transparent);
+  background:
+    linear-gradient(var(--bracket), var(--bracket)) left top / 24px 1px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) left top / 1px 24px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) right top / 24px 1px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) right top / 1px 24px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) left bottom / 24px 1px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) left bottom / 1px 24px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) right bottom / 24px 1px no-repeat,
+    linear-gradient(var(--bracket), var(--bracket)) right bottom / 1px 24px no-repeat;
+}
+.body-stage canvas {
+  cursor: crosshair;
+}
+.body-stage-note {
+  padding: 16px;
+}
+.body-readout {
+  position: absolute;
+  left: 20px;
+  bottom: 14px;
+  margin: 0;
+  color: var(--accent);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+  pointer-events: none;
+}
+.body-readout .body-label {
+  color: var(--muted);
+}
+.body-tip {
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 4px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--page) 80%, transparent);
+  box-shadow: 0 0 0 1px var(--accent);
+  transform: translate(10px, -50%);
+}
+.body-side {
+  display: grid;
+  gap: 12px;
+}
+.body-side .card {
+  margin: 0;
+}
+.body-page fieldset {
+  border: 0;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.body-page legend {
+  color: var(--muted);
+  padding: 0;
+  margin-bottom: 4px;
+}
+.body-page label.body-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.body-page .body-check input {
+  padding: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.body-page input[type='range'] {
+  padding: 0;
+  accent-color: var(--accent);
+}
+.body-page select,
+.body-page textarea {
+  font: inherit;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--axis);
+  background: var(--page);
+  color: var(--ink);
+}
+.body-page form.stack {
+  max-width: none;
+}
+.body-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.body-panel-head h2 {
+  margin: 0;
+  text-transform: none;
+}
+.body-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.body-list button {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+.body-list button:hover,
+.body-list button:focus-visible {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  outline: 1px solid var(--accent);
+}
+.body-structures {
+  max-height: 320px;
+  overflow-y: auto;
+}
+.body-credits {
+  margin-top: 20px;
+}
+.body-credits p {
+  margin: 2px 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .body-stage::before {
+    animation: body-scan 6s linear infinite;
+  }
+}
+@keyframes body-scan {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 40px;
+  }
+}
+/* --- end /body --- */

@@ -1,11 +1,13 @@
 import { ORPCError } from '@orpc/server'
 import { Effect, Schema } from 'effect'
 
+import { Anatomy, readableCatalog } from '../anatomy/anatomy.ts'
 import { GarminLogin } from '../garmin/login.ts'
 import { findExercises, WorkoutSchema } from '../garmin/workout-builder.ts'
 import { GarminWorkouts } from '../garmin/workouts.ts'
+import { bodyHistory } from '../journal/history.ts'
 import { Journal } from '../journal/log.ts'
-import { JournalNoteJson } from '../journal/note.ts'
+import { JournalNoteJson, NoteBodyJson } from '../journal/note.ts'
 import { MAX_ROWS, Reader } from '../reader.ts'
 import { Tools } from '../tools.ts'
 import { withingsStatus } from '../withings/sync.ts'
@@ -15,7 +17,7 @@ import { Day, standard, tool } from './base.ts'
 // The Garmin data and the watch's workouts: each procedure an MCP tool (its name), an OpenAPI
 // operation (under /api) and an RPC call (under /rpc). The tools' names and inputs are the MCP's.
 
-const DATA_MODEL = `Data: the user's Garmin history (watch, scale): every activity from its FIT file (laps, per-second samples) and Garmin Connect's summary, plus daily wellness (sleep, HRV, resting HR, body battery, readiness), weigh-ins and the Garmin calendar's planned workouts. Synced from Garmin Connect every 3 hours (sync_status tells when). The SQL is read-only; the workout tools (create_workout, schedule_workout, unschedule_workout, delete_workout) write to the Garmin calendar and refresh planned_workouts right after; log_note adds a note to the user's journal.
+const DATA_MODEL = `Data: the user's Garmin history (watch, scale): every activity from its FIT file (laps, per-second samples) and Garmin Connect's summary, plus daily wellness (sleep, HRV, resting HR, body battery, readiness), weigh-ins and the Garmin calendar's planned workouts. Synced from Garmin Connect every 3 hours (sync_status tells when). The SQL is read-only; the workout tools (create_workout, schedule_workout, unschedule_workout, delete_workout) write to the Garmin calendar and refresh planned_workouts right after; log_note adds a note to the user's journal, body_history reads the pains pinned on the web app's 3D body map.
 Conventions: timestamps ISO 8601 UTC text, start_local local wall time, day YYYY-MM-DD (local). Metres, seconds, m/s, bpm, kg. Cadence is steps/min on foot, rpm on a bike.
 Tables and views:
 - activities: one row per Garmin Connect activity (id = its activity id). sport (Connect's type: running, trail_running, cycling, lap_swimming, hiking, strength_training…), name, start_time, start_local, day, elapsed_s, moving_s, distance_m, ascent_m, descent_m, avg_hr, max_hr, avg_speed, max_speed, avg_cadence, max_cadence, avg_power, max_power, norm_power, calories, training_load (Garmin's EPOC load), aerobic_te / anaerobic_te (training effect 0-5), te_label (TEMPO, BASE…), vo2max, rpe (0-10) and feel (0-100) entered after it, hr_z1_s…hr_z5_s (seconds in the watch's HR zones), hr_zone_bounds (JSON: the zones' top bounds [z0, z1…z5]), workout_name (the structured workout run, as in planned_workouts.name), gear, device, start_lat/start_lon, polyline (Google encoded, precision 5).
@@ -26,7 +28,7 @@ Tables and views:
 - weekly (view): per ISO week (week = Monday) and sport: activities, distance_km, moving_h, ascent_m, training_load, longest_km, z4_z5_min.
 - body: weigh-ins: time, day, weight_kg, bmi, body_fat_pct, body_water_pct, muscle_mass_kg, bone_mass_kg, visceral_fat, source ('WITHINGS' for the Withings scale, synced on its own every 3 hours; else Garmin's source type, e.g. INDEX_SCALE, MANUAL).
 - planned_workouts: the Garmin calendar's scheduled workouts: id (the calendar entry: unschedule_workout's schedule_id), day, workout_id (the library's workout: schedule_workout, delete_workout), name, sport, description, estimated_duration_s, estimated_distance_m, steps (one readable line per step: "interval 3:00 HR 165-172", "5× [...]").
-- journal: the user's notes (log_note): time (the instant written, its key), day (the day it is about), text; one file each in data/journal/.
+- journal: the user's notes (log_note): time (the instant written, its key), day (the day it is about), text, body (JSON, NULL unless the note is a pain pinned on the body map: structure (the anatomy model's id, e.g. vastus_lateralis_r), side, point [x, y, z] (metres on the model, Y up, origin between the feet, right side at -x), pain 0-10, kind, when (array), since; read it with json_extract(body, '$.pain'), body_history names the structures); one file each in data/journal/.
 - raw_files: the source files ingested (path, error).
 - sync_runs: each sync with Garmin Connect: started_at, finished_at, ok, logged_out, account, since, files_written, warnings (JSON), error.`
 
@@ -274,11 +276,14 @@ const sql = tool({
 
 // --- The user's journal: what the data does not say (a pain, a feeling, a meal)
 
+const PAIN_CODES =
+  'kind: vive = sharp, sourde = dull ache, brulure = burning, raideur = stiffness, tiraillement = pulling or tightness, pointe = stabbing point. when: effort = while running, descente = downhill, cote = uphill, repos = at rest, nuit = at night, reveil = on waking, escaliers = on stairs, palpation = when pressed.'
+
 const logNote = tool({
   name: 'log_note',
   title: "Add a note to the user's journal",
   description:
-    "Keep a note in the user's journal, in their words: a pain and where, how a run felt, sleep, food, alcohol, an injury's progress. It is written to its own file in data/journal/ (kept across rebuilds) and shows on the web app's home page for 14 days; the journal table holds them all for the SQL. Returns the note as saved.",
+    "Keep a note in the user's journal, in their words: a pain and where, how a run felt, sleep, food, alcohol, an injury's progress. It is written to its own file in data/journal/ (kept across rebuilds) and shows on the web app's home page for 14 days; the journal table holds them all for the SQL. A pain on a body structure can carry `body`, as the web app's body map (/body) writes it: it then shows on the map and in body_history. Returns the note as saved.",
   method: 'POST',
   path: '/journal',
   tags: ['journal'],
@@ -294,10 +299,46 @@ const logNote = tool({
         text: JournalNoteJson.fields.text.annotate({
           description: "The note, in the user's words (at most 2000 characters)",
         }),
+        body: opt(
+          NoteBodyJson.annotate({
+            description: `A pain on one structure of the anatomy model. structure: the model's id, its structure's name in snake_case with _l or _r for a side and no suffix on the midline (e.g. vastus_lateralis_r, calcaneal_tendon_l, patellar_ligament_r, iliotibial_tract_l, linea_alba); an unknown id is refused with the closest ones. side: left, right or midline, the structure's own (a midline structure takes left or right too). pain: 0-10. point: [x, y, z] in metres on the model, only when clicked on it. since: YYYY-MM-DD, the day it started. ${PAIN_CODES}`,
+          })
+        ),
       })
     )
   )
   .handler(({ input, context }) => context.run(Journal.use((journal) => journal.log(input))))
+
+const bodyHistoryTool = tool({
+  name: 'body_history',
+  title: 'Body pain history',
+  description: `The pains the user pinned on the web app's 3D body map (/body) or logged with log_note's body, over the last \`days\` days (default 30, ending today in Paris). pins, by day: the day, the structure's id and its French, English and Latin names (label: the French name with the side), tissue (muscle, tendon, ligament, bone, fascia, cartilage, bursa, fat_pad), region, side, pain 0-10, kind, when, since, the note's text, the point clicked. structures, the worst now first: per structure and side, the pain series by day, its first and last day, latest, max and change (latest minus first: above 0 it is getting worse). ${PAIN_CODES} Use it to triage a pain (which structure, how it evolves, what brings it on) before suggesting rest or exercises; it is not a diagnosis.`,
+  method: 'GET',
+  path: '/body/history',
+  tags: ['journal'],
+  readOnly: true,
+  openWorld: false,
+})
+  .input(
+    standard(
+      Schema.Struct({
+        days: opt(
+          Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3650 })).annotate({
+            description: 'Days back from today, default 30',
+          })
+        ),
+      })
+    )
+  )
+  .handler(({ input, context }) =>
+    context.run(
+      Effect.gen(function* () {
+        const { from, to, notes } = yield* Tools.use((tools) => tools.bodyNotes(input.days ?? 30))
+        const catalog = yield* Anatomy.use(readableCatalog)
+        return bodyHistory({ from, to }, notes, catalog)
+      })
+    )
+  )
 
 // --- The workouts on the watch: these change the user's real Garmin Connect account
 
@@ -466,6 +507,7 @@ export const garmin = {
   schema,
   sql,
   journal: { log: logNote },
+  body: { history: bodyHistoryTool },
   workouts: {
     create: createWorkout,
     schedule: scheduleWorkout,

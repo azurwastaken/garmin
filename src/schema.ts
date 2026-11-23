@@ -9,6 +9,8 @@ import {
   text,
 } from 'drizzle-orm/sqlite-core'
 
+import type { NoteBody } from './journal/note.ts'
+
 // The schema; `pnpm db:generate <name>` writes its next migration into drizzle/. Every row is
 // rebuilt from the raw files of data/ (see ingest.ts), so a column can always be added and filled
 // by `pnpm ingest --rebuild`. Timestamps are ISO 8601 UTC text, local times
@@ -237,6 +239,8 @@ export const journal = sqliteTable(
     // The day it is about
     day: text().notNull(),
     text: text().notNull(),
+    // A pain pinned on the body map, as JSON (see journal/note.ts's NoteBody); NULL otherwise
+    body: text({ mode: 'json' }).$type<NoteBody>(),
   },
   (table) => [index('journal_day').on(table.day)]
 )

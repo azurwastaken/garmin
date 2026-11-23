@@ -279,7 +279,14 @@ function JournalCard({ notes }: { notes: Morning['notes'] }) {
         <ul>
           {notes.map((note) => (
             <li key={note.time}>
-              <strong>{dayLabel(note.day)}</strong> : {note.text}
+              <strong>{dayLabel(note.day)}</strong>
+              {note.where === null ? null : (
+                <>
+                  {' · '}
+                  <Link to="/body">{note.where}</Link>
+                </>
+              )}{' '}
+              : {note.text}
             </li>
           ))}
         </ul>
