@@ -203,7 +203,7 @@ export function RaceMap({
               layout: { 'line-join': 'round', 'line-cap': 'round' },
               paint: {
                 'line-width': 4,
-                // Down blue, flat the accent, up amber, steep red
+                // Down blue, flat green, up amber, steep red
                 'line-color': [
                   'interpolate',
                   ['linear'],
@@ -211,9 +211,9 @@ export function RaceMap({
                   -12,
                   color('--series-1', '#3b82f6'),
                   -3,
-                  accent,
+                  color('--series-3', '#10b981'),
                   3,
-                  accent,
+                  color('--series-3', '#10b981'),
                   10,
                   color('--series-4', '#f59e0b'),
                   20,
@@ -366,7 +366,7 @@ export function RaceMap({
         </button>
         <span className="hud-legend" aria-hidden="true">
           <i style={{ background: 'var(--series-1)' }} /> descente
-          <i style={{ background: 'var(--accent)' }} /> plat
+          <i style={{ background: 'var(--series-3)' }} /> plat
           <i style={{ background: 'var(--series-4)' }} /> montée
           <i style={{ background: 'var(--critical)' }} /> raide
         </span>

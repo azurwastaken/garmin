@@ -383,7 +383,7 @@ const addRace = tool({
 const planRace = tool({
   name: 'plan_race',
   title: 'Write the plan of a race',
-  description: `Write the user's plan for a race, replacing the last one: per segment (get_race's numbers) a target pace ("6'05/km" or 365 s/km, 2'00 to 20'00 a km; its time then replaces the model's) or heart-rate band, what to eat and drink there, notes; and the race's carbs per hour, grams per gel and water per hour. Write it once agreed with the user. Returns the race as get_race, with the new times.`,
+  description: `Write the user's plan for a race, replacing the last one: per segment (get_race's numbers) a target pace ("6'05/km" or 365 s/km, 2'00 to 60'00 a km; its time then replaces the model's) or heart-rate band, what to eat and drink there, notes; and the race's carbs per hour, grams per gel and water per hour. Write it once agreed with the user. Returns the race as get_race, with the new times.`,
   method: 'POST',
   path: '/races/{slug}/plan',
   tags: ['races'],

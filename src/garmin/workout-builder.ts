@@ -120,8 +120,9 @@ export const parseDuration = (input: number | string): number | undefined => {
   return seconds === undefined ? undefined : parseDuration(seconds)
 }
 
-// Seconds per km, from 365, "6'05/km", "6'05", "6:05", "6'05\"/km", "6:05 min/km"
-export const parsePace = (input: number | string): number | undefined => {
+// Seconds per km, from 365, "6'05/km", "6'05", "6:05", "6'05\"/km", "6:05 min/km"; 2'00 to
+// `slowest` (the watch's 20'00 by default; a race plan's steep climb is slower)
+export const parsePace = (input: number | string, slowest = 1200): number | undefined => {
   const seconds =
     typeof input === 'number'
       ? input
@@ -135,8 +136,7 @@ export const parsePace = (input: number | string): number | undefined => {
           const match = /^(\d{1,2})\s*(?:'|:)\s*([0-5]\d)\s*(?:"|'')?$/u.exec(value)
           return match === null ? undefined : Number(match[1]) * 60 + Number(match[2])
         })()
-  // 2'00 to 20'00 per km
-  return seconds !== undefined && Number.isFinite(seconds) && seconds >= 120 && seconds <= 1200
+  return seconds !== undefined && Number.isFinite(seconds) && seconds >= 120 && seconds <= slowest
     ? seconds
     : undefined
 }

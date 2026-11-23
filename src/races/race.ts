@@ -87,6 +87,9 @@ export const RaceFactsJson = Schema.Struct({
 })
 export type RaceFacts = typeof RaceFactsJson.Type
 
+// A plan's slowest pace: a steep climb walked, 60'00 a km
+const SLOWEST_PACE_S = 3600
+
 const Hr = Schema.Struct({ low: Between(40, 230), high: Between(40, 230) })
 
 const planFields = {
@@ -110,7 +113,7 @@ export const RacePlanJson = Schema.Struct({
       ...entryFields,
       from_km: Km,
       to_km: Km,
-      pace_s: Schema.optionalKey(Between(120, 1200)),
+      pace_s: Schema.optionalKey(Between(120, SLOWEST_PACE_S)),
     })
   ),
 })
@@ -125,7 +128,7 @@ export const PlanInputSchema = Schema.Struct({
       ...entryFields,
       pace: Schema.optionalKey(
         Schema.Union([Schema.Finite, Schema.String]).annotate({
-          description: `Seconds per km (365) or "6'05/km", 2'00 to 20'00`,
+          description: `Seconds per km (365) or "6'05/km", 2'00 to 60'00 (a steep climb walked)`,
         })
       ),
     })
@@ -152,7 +155,7 @@ export const planFile = (
     }
     if (seen.has(entry.segment)) return Result.fail(`segment ${entry.segment} donné deux fois`)
     seen.add(entry.segment)
-    const paceS = pace === undefined ? undefined : parsePace(pace)
+    const paceS = pace === undefined ? undefined : parsePace(pace, SLOWEST_PACE_S)
     if (pace !== undefined && paceS === undefined) {
       return Result.fail(`segment ${entry.segment} : allure ${JSON.stringify(pace)} illisible`)
     }

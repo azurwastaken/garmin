@@ -97,6 +97,13 @@ describe('the race files', () => {
     expect(planFile({ segments: [{ segment: 1 }, { segment: 1 }] }, segments)).toEqual(
       Result.fail('segment 1 donné deux fois')
     )
+    // A steep climb walked: slower than a watch's 20'00
+    expect(planFile({ segments: [{ segment: 2, pace: "25'00/km" }] }, segments)).toMatchObject(
+      Result.succeed({ segments: [{ segment: 2, pace_s: 1500 }] })
+    )
+    expect(planFile({ segments: [{ segment: 2, pace: "61'00/km" }] }, segments)).toEqual(
+      Result.fail('segment 2 : allure "61\'00/km" illisible')
+    )
     expect(planFile({ segments: [{ segment: 1, pace: 'vite' }] }, segments)).toEqual(
       Result.fail('segment 1 : allure "vite" illisible')
     )

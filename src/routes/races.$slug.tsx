@@ -73,21 +73,25 @@ function Race() {
   const [hover, setHover] = useState<number | null>(null)
   const prediction = view.prediction
   const start = view.facts.start_time
-  const marks = useMemo<ReadonlyArray<MapMark>>(
-    () => [
-      ...(view.facts.aid_stations ?? []).map((aid) => ({
-        km: aid.km,
-        label: aid.name,
-        kind: 'aid' as const,
-      })),
-      ...(view.facts.cutoffs ?? []).map((cutoff) => ({
-        km: cutoff.km,
-        label: `⏱ ${cutoff.time}`,
-        kind: 'cutoff' as const,
-      })),
-    ],
-    [view]
-  )
+  // One marker a place: an aid station and its cutoff at the same km share it
+  const marks = useMemo<ReadonlyArray<MapMark>>(() => {
+    const cutoffs = view.facts.cutoffs ?? []
+    const aids = view.facts.aid_stations ?? []
+    const at = (km: number) => (cutoff: { readonly km: number }) => Math.abs(cutoff.km - km) < 0.05
+    return [
+      ...aids.map((aid) => {
+        const cutoff = cutoffs.find(at(aid.km))
+        return {
+          km: aid.km,
+          label: cutoff === undefined ? aid.name : `${aid.name} ⏱ ${cutoff.time}`,
+          kind: cutoff === undefined ? ('aid' as const) : ('cutoff' as const),
+        }
+      }),
+      ...cutoffs
+        .filter((cutoff) => !aids.some(at(cutoff.km)))
+        .map((cutoff) => ({ km: cutoff.km, label: `⏱ ${cutoff.time}`, kind: 'cutoff' as const })),
+    ]
+  }, [view])
   const cuts = useMemo(
     () => view.segments.slice(1).map((s) => Math.max(0, pointAt(track, s.from_km))),
     [view, track]
@@ -114,7 +118,9 @@ function Race() {
       <p className="note">
         <Link to="/races">← Courses</Link>
       </p>
-      <p className="hud-kicker">Préparateur de course · {longDay(view.date)}</p>
+      <p className="hud-kicker">
+        Préparateur de course · {longDay(view.date)} {view.date.slice(0, 4)}
+      </p>
       <h1>{view.name}</h1>
 
       <section className="hud-panel hud-facts">

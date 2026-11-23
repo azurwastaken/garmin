@@ -833,6 +833,9 @@ td a:hover {
   font-family: var(--hud-mono);
   font-size: 12px;
 }
+.hud-table td.num {
+  white-space: nowrap;
+}
 .hud-table .hud-notes {
   font-family: inherit;
   color: var(--ink-2);
@@ -853,7 +856,7 @@ td a:hover {
   color: var(--series-1);
 }
 .hud-kind.flat {
-  color: var(--accent);
+  color: var(--series-3);
 }
 .hud-warnings {
   color: var(--warning-ink);

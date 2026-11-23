@@ -23,7 +23,7 @@ it and write workouts to your watch.
 | 🔄  | **Syncs Garmin Connect by itself.** Logs in like the mobile app (SSO + MFA), keeps only its tokens, and pulls activities, sleep, HRV, readiness, weigh-ins and the calendar every 3 hours. The whole history on demand.                                                                           |
 | 📊  | **A web app to look at it.** Today first: the night against your own 28-day normal (green, orange, red, and why), the planned workout, the day's planned burn, your notes. Then stats, runs, every activity with its route and its curves, sleep night by night. Plain SVG charts, on a dark HUD. |
 | ⚖️  | **Withings weigh-ins too.** Connect a Withings scale once (OAuth): its weight, fat, muscle, water, bone mass and visceral fat land in the same `body` table every 3 hours, on a loop of their own.                                                                                                |
-| 🤖  | **An MCP for Claude.** 16 tools: list and compare runs, a morning readiness check, training load, the planned workouts, a journal of your notes, and read-only SQL on everything.                                                                                                                 |
+| 🤖  | **An MCP for Claude.** 20 tools: list and compare runs, a morning readiness check, training load, the planned workouts, a journal of your notes, your target races and their plans, and read-only SQL on everything.                                                                              |
 | 🏃  | **Workouts on the watch.** Claude creates, schedules, moves and deletes structured workouts: paces like `"6'05/km"`, HR in bpm, repeat groups, strength circuits from Garmin's catalog. Every write has a dry run.                                                                                |
 | 🧩  | **One API, three faces.** One [oRPC](https://orpc.dev) router serves the MCP (`/mcp`), OpenAPI (`/api`) and a typed RPC client (`/rpc`).                                                                                                                                                          |
 | 🔐  | **Private by design.** One password, or OAuth 2.1 for MCP clients. Raw files and SQLite on your disk, never in git; every secret in its own 0600 file.                                                                                                                                            |
@@ -112,7 +112,7 @@ apps you allowed and revokes any of them. You can also pass the app's password a
 token: `--header "Authorization: Bearer <password>"`.
 
 <details>
-<summary><b>The 16 tools</b></summary>
+<summary><b>The 20 tools</b></summary>
 
 **Your data (read-only)**
 
@@ -129,6 +129,17 @@ token: `--header "Authorization: Bearer <password>"`.
 
 - `log_note`: a note in your words (a pain, how a run felt, a meal), on a day. One file each in
   `data/journal/`, shown on the home page for 14 days, in the `journal` table for the SQL.
+
+**Your races** (files in `data/races/`, read on each call)
+
+- `add_race`: a target race from its GPX (a track or a route; without altitudes, they are read
+  from the elevation tiles), with its start time, aid stations and cutoffs; with its slug, its
+  facts or course replaced.
+- `list_races`, `get_race`: the course cut into climbs, descents and flats (km-effort, grades), and
+  the predicted times: your best run of the year carried to the race's grade-adjusted distance,
+  then the passing times at each aid station and cutoff, and the gels on the timeline.
+- `plan_race`: the plan agreed with Claude: a pace or HR target, food and notes per segment, carbs
+  and water per hour.
 
 **The watch** (these change the real Garmin account)
 
@@ -256,20 +267,22 @@ GarminWorkouts.use((workouts) => workouts.library({ limit: 10 })).pipe(
 <details>
 <summary><b>🗂️ <code>data/</code> layout</b></summary>
 
-| Path                                       | What                                                                     | From         |
-| ------------------------------------------ | ------------------------------------------------------------------------ | ------------ |
-| `fit/YYYY/<activityId>.fit`                | the activity's original FIT file                                         | sync, export |
-| `fit/unmatched/<file>.fit`                 | export FIT files no Garmin Connect activity matches (kept, not ingested) | export       |
-| `connect/activities/YYYY/<id>.json`        | Garmin Connect's activity summary (name, load, training effect, gear)    | sync         |
-| `connect/activities/YYYY/<id>.export.json` | the export's summary of the activity, used when the API's is missing     | export       |
-| `connect/daily/YYYY/<date>.json`           | one day: stats, sleep, HRV, training readiness, max metrics              | sync         |
-| `connect/body/YYYY-MM.json`                | a month of weigh-ins and body composition                                | sync         |
-| `withings/YYYY-MM.json`                    | a month of Withings measure groups, as getmeas returned them             | sync         |
-| `connect/calendar/YYYY-MM.json`            | a month of the Garmin calendar (scheduled workouts)                      | sync         |
-| `journal/YYYY/<instant>.json`              | one note of your journal                                                 | `log_note`   |
-| `connect/workouts/<workoutId>.json`        | a workout's steps                                                        | sync         |
-| `export/<zip>/…`                           | the export's wellness JSON files, as extracted                           | export       |
-| `garmin.db`                                | SQLite, rebuilt from the above                                           | ingest       |
+| Path                                       | What                                                                           | From         |
+| ------------------------------------------ | ------------------------------------------------------------------------------ | ------------ |
+| `fit/YYYY/<activityId>.fit`                | the activity's original FIT file                                               | sync, export |
+| `fit/unmatched/<file>.fit`                 | export FIT files no Garmin Connect activity matches (kept, not ingested)       | export       |
+| `connect/activities/YYYY/<id>.json`        | Garmin Connect's activity summary (name, load, training effect, gear)          | sync         |
+| `connect/activities/YYYY/<id>.export.json` | the export's summary of the activity, used when the API's is missing           | export       |
+| `connect/daily/YYYY/<date>.json`           | one day: stats, sleep, HRV, training readiness, max metrics                    | sync         |
+| `connect/body/YYYY-MM.json`                | a month of weigh-ins and body composition                                      | sync         |
+| `withings/YYYY-MM.json`                    | a month of Withings measure groups, as getmeas returned them                   | sync         |
+| `connect/calendar/YYYY-MM.json`            | a month of the Garmin calendar (scheduled workouts)                            | sync         |
+| `journal/YYYY/<instant>.json`              | one note of your journal                                                       | `log_note`   |
+| `connect/workouts/<workoutId>.json`        | a workout's steps                                                              | sync         |
+| `races/<slug>.gpx`, `.json`, `.plan.json`  | a race's course, its facts, its plan (read on each request, not in SQL)        | `add_race`   |
+| `terrain/<area>/{z}/{x}/{y}.png`           | local elevation tiles (terrarium) and their `tiles.json`, served at `/terrain` | by hand      |
+| `export/<zip>/…`                           | the export's wellness JSON files, as extracted                                 | export       |
+| `garmin.db`                                | SQLite, rebuilt from the above                                                 | ingest       |
 
 </details>
 
@@ -323,6 +336,9 @@ src/
   api/                  oRPC: garmin.ts (public procedures = MCP tools), web.ts (the pages'),
                         handlers.ts (/mcp, /api, /rpc), client.ts (the pages' typed client)
   oauth/                the MCP's OAuth server: schema, service, consent page, metadata
+  races/                the races: gpx.ts, course.ts (profile, segments), pacing.ts, race.ts (the
+                        files and get_race's view), terrarium.ts (elevation tiles), all without
+                        I/O; races.ts and terrain.ts (data/races, data/terrain, AWS tiles)
   app.ts                the app's layers, composed once: Storage, Garmin, Withings, Services, App
   main.ts               the Node platform and runMain, for the CLIs and one-off scripts
   schema.ts, db.ts      drizzle schema and the SQLite connection, migrated at startup
@@ -332,7 +348,7 @@ src/
   tools.ts, stats.ts    the MCP's and the web pages' queries
   auth.ts               the password, the session cookie, the gate in front of everything
   routes/               TanStack Start pages and endpoints
-  components/           the pages' charts (plain SVG) and formats
+  components/           the pages' charts (plain SVG) and formats, the race's 3D map (MapLibre)
 ```
 
 </details>
@@ -357,6 +373,11 @@ src/
   - The period against the one before.
   - The stages and the schedule night by night.
   - HRV against its baseline, and body battery.
+- `/races`, `/races/$slug`: the races you prepare, a GPX upload, then one race:
+  - Its course in 3D on its relief (MapLibre, the elevation tiles of `data/terrain/` or AWS
+    Terrain Tiles, no basemap vendor), colored by grade, with a flight along it.
+  - Its profile, one cursor with the map.
+  - The plan per segment, the passing times, the cutoffs' margins and the gels.
 - `/garmin`: the connection, the login, sync now, the whole history, and the last syncs.
 - `/access`: the apps allowed on the MCP, each revocable.
 - `/setup`, `/login`, `/password`: the app's password.

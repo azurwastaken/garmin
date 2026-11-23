@@ -111,7 +111,9 @@ function RacesPage() {
                           {race.name}
                         </Link>
                       </td>
-                      <td>{longDay(race.date)}</td>
+                      <td>
+                        {longDay(race.date)} {race.date.slice(0, 4)}
+                      </td>
                       <td className="num">{fmt(race.km, 1)} km</td>
                       <td className="num">
                         {fmt(race.d_plus)} / {fmt(race.d_minus)} m
