@@ -17,7 +17,15 @@ import { addDays, parisToday } from '../days.ts'
 import { Database, type DatabaseError } from '../db.ts'
 import { writeAtomic } from '../files.ts'
 
-import { type Course, courseOf, equivalentM, profileOf, segmentCourse, totals } from './course.ts'
+import {
+  type Course,
+  courseOf,
+  equivalentM,
+  plausible,
+  profileOf,
+  segmentCourse,
+  totals,
+} from './course.ts'
 import { type Fix, gpxOf, parseGpx } from './gpx.ts'
 import { bestEffort, type Run, type Timeline } from './pacing.ts'
 import {
@@ -248,16 +256,18 @@ export class Races extends Context.Service<
 
       // A GPX's text as stored, and where its altitudes come from: as given when it has some,
       // else from the DEM (the file rewritten with them)
-      const prepared = (path: string, text: string) =>
+      // A GPX refused before its altitudes are fetched; and read back as stored
+      const prepared = (text: string) =>
         Effect.gen(function* () {
-          const fixes = parseGpx(text)
+          const fixes = Result.flatMap(parseGpx(text), plausible)
           if (Result.isFailure(fixes)) {
             return yield* new RaceError({ reason: 'gpx', message: fixes.failure })
           }
           const stored = yield* withAltitudes(fixes.success)
-          yield* courseIn(path, stored.text ?? text).pipe(
-            Effect.mapError((error) => new RaceError({ reason: 'gpx', message: error.message }))
-          )
+          const course = Result.flatMap(parseGpx(stored.text ?? text), courseOf)
+          if (Result.isFailure(course)) {
+            return yield* new RaceError({ reason: 'gpx', message: course.failure })
+          }
           return stored
         })
 
@@ -274,7 +284,7 @@ export class Races extends Context.Service<
       const save = (slug: Slug, facts: FactsInput, gpx: string | undefined) =>
         Effect.gen(function* () {
           const paths = racePaths(slug)
-          const stored = gpx === undefined ? null : yield* prepared(paths.gpx, gpx)
+          const stored = gpx === undefined ? null : yield* prepared(gpx)
           const elevation = stored?.elevation ?? (yield* storedElevation(slug))
           if (stored !== null) yield* write(paths.gpx, stored.text ?? gpx ?? '')
           const file: RaceFacts = { ...facts, elevation }

@@ -1,7 +1,7 @@
 import type { GeoJSONSource } from 'maplibre-gl'
 import { useEffect, useRef, useState } from 'react'
 
-import type { Dem } from '../races/terrarium.ts'
+import type { Bounds, Dem } from '../races/terrarium.ts'
 
 // A race's course in 3D, on its elevation tiles (MapLibre GL, in the browser only: loaded once the
 // page is there, never during server rendering). No basemap vendor, no key: a hillshade of the
@@ -99,10 +99,13 @@ export function RaceMap({
   cuts,
   marks,
   dem,
+  bounds,
   hover,
   onHover,
 }: {
   readonly track: ReadonlyArray<TrackPoint>
+  // West, south, east, north: the course's box, the first view
+  readonly bounds: Bounds
   // The course points where a segment starts
   readonly cuts: ReadonlyArray<number>
   readonly marks: ReadonlyArray<MapMark>
@@ -146,16 +149,6 @@ export function RaceMap({
           ? {}
           : { bounds: [...dem.bounds] as [number, number, number, number] }),
       }
-      // West, south, east, north (a fold: no spread of every point into Math.min)
-      const [west, south, east, north] = track.reduce<readonly [number, number, number, number]>(
-        ([w, s, e, n], [lon, lat]) => [
-          Math.min(w, lon),
-          Math.min(s, lat),
-          Math.max(e, lon),
-          Math.max(n, lat),
-        ],
-        [180, 90, -180, -90]
-      )
       const accent = color('--accent', '#22d3ee')
       created = new maplibre.Map({
         container: element,
@@ -163,8 +156,8 @@ export function RaceMap({
         pitch: 62,
         bearing: -20,
         bounds: [
-          [west, south],
-          [east, north],
+          [bounds[0], bounds[1]],
+          [bounds[2], bounds[3]],
         ],
         fitBoundsOptions: { padding: 48 },
         attributionControl: { compact: true },
@@ -301,7 +294,7 @@ export function RaceMap({
       created?.remove()
       map.current = null
     }
-  }, [track, cuts, marks, dem])
+  }, [track, cuts, marks, dem, bounds])
 
   // The cursor where the profile (or the flight) points
   useEffect(() => {

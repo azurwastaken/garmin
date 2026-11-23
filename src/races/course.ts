@@ -138,14 +138,24 @@ export const profileOf = (
   return makeProfile(at.map((x, i) => ({ d: x, ele: smoothed[i] ?? 0 })))
 }
 
-// The race's fixes → its course: the profile, with lat/lon at the same steps; or why not
-export const courseOf = (fixes: ReadonlyArray<Fix>): Result.Result<Course, string> => {
+// The fixes, when they can be a race: no hop over MAX_HOP_M, MAX_COURSE_M in all. Checked before
+// anything is resampled or fetched for them (the DEM's tiles)
+export const plausible = (fixes: ReadonlyArray<Fix>): Result.Result<ReadonlyArray<Fix>, string> => {
   const d = cumulative(fixes)
   const hop = d.reduce((most, value, i) => Math.max(most, value - (d[i - 1] ?? value)), 0)
   if (hop > MAX_HOP_M) {
     return Result.fail(`un saut de ${Math.round(hop / 1000)} km entre deux points`)
   }
-  if ((d.at(-1) ?? 0) > MAX_COURSE_M) return Result.fail('un parcours de plus de 1 000 km')
+  return (d.at(-1) ?? 0) > MAX_COURSE_M
+    ? Result.fail('un parcours de plus de 1 000 km')
+    : Result.succeed(fixes)
+}
+
+// The race's fixes → its course: the profile, with lat/lon at the same steps; or why not
+export const courseOf = (fixes: ReadonlyArray<Fix>): Result.Result<Course, string> => {
+  const refused = plausible(fixes)
+  if (Result.isFailure(refused)) return Result.fail(refused.failure)
+  const d = cumulative(fixes)
   const profile = profileOf(
     d,
     fixes.map((fix) => fix.ele)

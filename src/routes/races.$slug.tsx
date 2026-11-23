@@ -59,7 +59,7 @@ function Fact({ label, value }: { readonly label: string; readonly value: string
 }
 
 function Race() {
-  const { view, track, dem } = Route.useLoaderData()
+  const { view, track, dem, bounds } = Route.useLoaderData()
   const [hover, setHover] = useState<number | null>(null)
   const prediction = view.prediction
   const start = view.facts.start_time
@@ -128,6 +128,7 @@ function Race() {
           cuts={cuts}
           marks={marks}
           dem={dem}
+          bounds={bounds}
           hover={hover}
           onHover={setHover}
         />

@@ -5,6 +5,7 @@ import { GarminSync } from '../garmin/sync.ts'
 import { type GrantView, OAuth } from '../oauth/oauth.ts'
 import { SlugSchema } from '../races/race.ts'
 import { Races } from '../races/races.ts'
+import { boundsOf } from '../races/terrarium.ts'
 import { Stats } from '../stats.ts'
 import { WithingsSession } from '../withings/session.ts'
 import { type WithingsStatus, withingsStatus, WithingsSync } from '../withings/sync.ts'
@@ -201,6 +202,7 @@ export const web = {
           onSome: ({ view, course, dem, times }) => ({
             view,
             dem,
+            bounds: boundsOf(course),
             track: course.map(
               (p, i) =>
                 [

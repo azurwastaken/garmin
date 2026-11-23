@@ -70,6 +70,18 @@ layer(TestLayer, { excludeTestServices: true })('Races', (it) => {
     })
   )
 
+  it.effect('refuses a stray fix before fetching a single tile for it', () =>
+    Effect.gen(function* () {
+      const races = yield* Races
+      const before = aws.log.length
+      const points = course.points.map(({ lat, lon }) => ({ lat, lon }))
+      const stray = gpxText([...points.slice(0, 50), { lat: 0, lon: 0 }, ...points.slice(50)])
+      const refused = yield* races.add({ facts: facts('Île nulle'), gpx: stray }).pipe(Effect.flip)
+      expect(refused.message).toMatch(/^un saut de \d+ km entre deux points$/u)
+      expect(aws.log.length).toBe(before)
+    })
+  )
+
   it.effect('prefers a local area of data/terrain that holds the race', () =>
     Effect.gen(function* () {
       const tiles = {
