@@ -52,6 +52,16 @@ export const PAIN_WHEN_LABEL: Record<PainWhen, string> = {
   palpation: 'à la palpation',
 }
 
+// A kind as a note opens with it
+const PAIN_KIND_PHRASE: Record<PainKind, string> = {
+  vive: 'Douleur vive',
+  sourde: 'Douleur sourde',
+  brulure: 'Brûlure',
+  raideur: 'Raideur',
+  tiraillement: 'Tiraillement',
+  pointe: 'Douleur en pointe',
+}
+
 // The note's text when the user wrote none: "Douleur vive 6/10, vaste latéral (quadriceps), côté
 // droit : en descente, dans les escaliers."
 export const painSummary = (
@@ -59,5 +69,5 @@ export const painSummary = (
   where: string
 ) => {
   const moments = body.when.map((moment) => PAIN_WHEN_LABEL[moment]).join(', ')
-  return `Douleur ${PAIN_KIND_LABEL[body.kind]} ${body.pain}/10, ${where}${moments === '' ? '' : ` : ${moments}`}.`
+  return `${PAIN_KIND_PHRASE[body.kind]} ${body.pain}/10, ${where}${moments === '' ? '' : ` : ${moments}`}.`
 }

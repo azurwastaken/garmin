@@ -82,6 +82,10 @@ const CatalogJson = Schema.Record(
   })
 )
 const decodeCatalog = Schema.decodeUnknownEffect(Schema.fromJsonString(CatalogJson))
+const parseCatalog = (text: string): Effect.Effect<Catalog, CatalogBroken> =>
+  decodeCatalog(text).pipe(
+    Effect.mapError((error) => new CatalogBroken({ message: error.message }))
+  )
 
 // If-None-Match is a list of tags, compared weakly (RFC 9110 §13.1.2)
 const matches = (ifNoneMatch: string | null, etag: string) =>
@@ -114,11 +118,7 @@ export class Anatomy extends Context.Service<
         Effect.flatMap(
           Option.match({
             onNone: () => Effect.succeedNone,
-            onSome: (text) =>
-              decodeCatalog(text).pipe(
-                Effect.map(Option.some),
-                Effect.mapError((error) => new CatalogBroken({ message: error.message }))
-              ),
+            onSome: (text) => Effect.map(parseCatalog(text), Option.some),
           })
         )
       )
@@ -139,15 +139,16 @@ export class Anatomy extends Context.Service<
         })
         const etag = `"${info.value.size}-${mtime}"`
         if (matches(ifNoneMatch, etag)) return { _tag: 'NotModified', etag } as const
+        // Node reads a file into a Buffer over a plain ArrayBuffer, never a shared one
+        const bytes = (yield* fs.readFile(path).pipe(Effect.orDie)) as Uint8Array<ArrayBuffer>
+        // The catalog checked in the very bytes served
         if (name === 'structures.json') {
-          const broken = yield* catalog.pipe(
+          const broken = yield* parseCatalog(new TextDecoder().decode(bytes)).pipe(
             Effect.as(null),
             Effect.catchTag('CatalogBroken', (error) => Effect.succeed(error.message))
           )
           if (broken !== null) return { _tag: 'Broken', message: broken } as const
         }
-        // Node reads a file into a Buffer over a plain ArrayBuffer, never a shared one
-        const bytes = (yield* fs.readFile(path).pipe(Effect.orDie)) as Uint8Array<ArrayBuffer>
         return { _tag: 'Found', etag, type: ANATOMY_FILES[name], bytes } as const
       })
 
