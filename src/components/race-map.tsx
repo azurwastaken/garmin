@@ -43,9 +43,11 @@ const nearest = (track: ReadonlyArray<TrackPoint>, lon: number, lat: number) => 
   return best
 }
 
-// The course point at a distance (km)
-export const pointAt = (track: ReadonlyArray<TrackPoint>, km: number) =>
-  track.findIndex((point) => point[3] >= km * 1000)
+// The course point at a distance (km): the finish past it
+export const pointAt = (track: ReadonlyArray<TrackPoint>, km: number) => {
+  const i = track.findIndex((point) => point[3] >= km * 1000)
+  return i === -1 ? track.length - 1 : i
+}
 
 const bearing = (from: TrackPoint, to: TrackPoint) => {
   const lat1 = (from[1] * Math.PI) / 180
@@ -263,7 +265,7 @@ export function RaceMap({
       )
       created.addControl(new maplibre.FullscreenControl(), 'top-right')
       for (const mark of marks) {
-        const point = track[Math.max(0, pointAt(track, mark.km))]
+        const point = track[pointAt(track, mark.km)]
         if (point === undefined) continue
         const label = document.createElement('div')
         label.className = `race-marker ${mark.kind}`

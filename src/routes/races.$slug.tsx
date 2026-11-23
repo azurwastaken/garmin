@@ -93,7 +93,7 @@ function Race() {
     ]
   }, [view])
   const cuts = useMemo(
-    () => view.segments.slice(1).map((s) => Math.max(0, pointAt(track, s.from_km))),
+    () => view.segments.slice(1).map((s) => pointAt(track, s.from_km)),
     [view, track]
   )
   const profile = useMemo(
