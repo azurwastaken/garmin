@@ -254,8 +254,6 @@ export class Races extends Context.Service<
         ]
       })
 
-      // A GPX's text as stored, and where its altitudes come from: as given when it has some,
-      // else from the DEM (the file rewritten with them)
       // A GPX refused before its altitudes are fetched; and read back as stored
       const prepared = (text: string) =>
         Effect.gen(function* () {
@@ -271,6 +269,8 @@ export class Races extends Context.Service<
           return stored
         })
 
+      // A GPX's text as stored, and where its altitudes come from: as given when it has some,
+      // else from the DEM (the file rewritten with them)
       const withAltitudes = (
         fixes: ReadonlyArray<Fix>
       ): Effect.Effect<{ text: string | null; elevation: RaceFacts['elevation'] }, TerrainError> =>

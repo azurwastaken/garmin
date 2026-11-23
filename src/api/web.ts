@@ -191,8 +191,8 @@ export const web = {
   races: base.handler(({ context }) => context.run(Races.use((races) => races.list))),
 
   // A race: get_race's view, its course point by point (every 25 m: lon, lat, altitude, metres
-  // from the start, predicted seconds or null) for the map and the profile, and the elevation
-  // tiles to draw it on
+  // from the start, predicted seconds or null) for the map and the profile, the elevation tiles
+  // to draw it on, and the course's box for the map's first view
   race: base.input(standard(Schema.Struct({ slug: SlugSchema }))).handler(({ input, context }) =>
     context.run(
       Effect.map(
