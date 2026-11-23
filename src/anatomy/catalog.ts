@@ -1,4 +1,4 @@
-import type { Side } from '../journal/body-terms.ts'
+import { type Side, SIDE_LABEL } from '../journal/body-terms.ts'
 import type { NoteBody } from '../journal/note.ts'
 
 // The anatomy model's catalog (data/anatomy/structures.json, see its README.md), without I/O and
@@ -58,15 +58,9 @@ export const LAYERS: ReadonlyArray<{
 
 export type SideFilter = 'both' | 'left' | 'right'
 
-const SIDE_WORD: Record<Side, string> = {
-  left: 'côté gauche',
-  right: 'côté droit',
-  midline: '',
-}
-
 // "vaste latéral (quadriceps), côté droit": the side the note says (a midline structure has one too)
 export const structureLabel = (french: string, side: Side) =>
-  side === 'midline' ? french : `${french}, ${SIDE_WORD[side]}`
+  side === 'midline' ? french : `${french}, ${SIDE_LABEL[side]}`
 
 export const isShown = (
   structure: Pick<Structure, 'kind' | 'side'>,
@@ -164,35 +158,20 @@ export const PAIN_COLOR_VAR = {
 // Metres: 6 mm at 0, 18 mm at 10
 export const pinRadius = (pain: number) => 0.006 + pain * 0.0012
 
-// The 3D scene's colours, from the sheet's variables
+// The 3D scene's colours, from the sheet's variables (the HUD: a dark stage, the model glows)
 export interface ScenePalette {
   // The canvas' background
   readonly stage: string
-  // On a dark stage the hologram glows (additive light); on a light one it blends normally
-  readonly dark: boolean
   readonly base: string
   // Hovered and selected structures
   readonly highlight: string
   readonly pain: Record<PainLevel, string>
 }
 
-// A #rrggbb colour is dark under 0.4 of relative luminance; anything else counts as dark (the HUD)
-export const isDarkColor = (css: string) => {
-  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/iu.exec(css)
-  if (match === null) return true
-  const [r = 0, g = 0, b = 0] = match.slice(1).map((hex) => {
-    const channel = Number.parseInt(hex, 16) / 255
-    return channel <= 0.040_45 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
-  })
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.4
-}
-
 export const readPalette = (style: Pick<CSSStyleDeclaration, 'getPropertyValue'>): ScenePalette => {
   const read = (name: string) => style.getPropertyValue(name).trim()
-  const stage = read('--page')
   return {
-    stage,
-    dark: isDarkColor(stage),
+    stage: read('--page'),
     base: read('--accent'),
     highlight: read('--ink'),
     pain: {

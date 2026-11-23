@@ -312,7 +312,7 @@ const logNote = tool({
 const bodyHistoryTool = tool({
   name: 'body_history',
   title: 'Body pain history',
-  description: `The pains the user pinned on the web app's 3D body map (/body) or logged with log_note's body, over the last \`days\` days (default 30, ending today in Paris). pins, by day: the day, the structure's id and its French, English and Latin names (label: the French name with the side), tissue (muscle, tendon, ligament, bone, fascia, cartilage, bursa, fat_pad), region, side, pain 0-10, kind, when, since, the note's text, the point clicked. structures, the worst now first: per structure and side, the pain series by day, its first and last day, latest, max and change (latest minus first: above 0 it is getting worse). ${PAIN_CODES} Use it to triage a pain (which structure, how it evolves, what brings it on) before suggesting rest or exercises; it is not a diagnosis.`,
+  description: `The pains the user pinned on the web app's 3D body map (/body) or logged with log_note's body, over the last \`days\` days (default 30, ending today in Paris). pins, by day: the day, the structure's id and its French, English and Latin names (label: the French name with the side), tissue (muscle, tendon, ligament, bone, fascia, cartilage, bursa, fat_pad), region, side, pain 0-10, kind, when, since, the note's text, the point clicked. structures, the worst now first: per structure and side, its pains note by note in day order (series), its first and last day, latest, max and change (latest minus first: above 0 it is getting worse). ${PAIN_CODES} Use it to triage a pain (which structure, how it evolves, what brings it on) before suggesting rest or exercises; it is not a diagnosis.`,
   method: 'GET',
   path: '/body/history',
   tags: ['journal'],

@@ -34,6 +34,7 @@ describe('a journal note', () => {
     ['an unknown side', { side: 'up' }],
     ['an unknown kind', { kind: 'aiguë' }],
     ['an unknown moment', { when: ['marche'] }],
+    ['a moment twice', { when: ['nuit', 'nuit'] }],
     ['a point with two coordinates', { point: [0, 1] }],
     ['a point far off', { point: [0, 3, 0] }],
     ['a point not a number', { point: [0, Number.NaN, 0] }],

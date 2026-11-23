@@ -47,6 +47,7 @@ describe('the anatomy files', () => {
     expect(same.headers.get('etag')).toBe('"4-1"')
     expect(same.headers.get('cache-control')).toBe('private, no-cache')
     expect(anatomyResponse({ _tag: 'Missing' }).status).toBe(404)
+    expect(anatomyResponse({ _tag: 'Broken', message: 'kind' }).status).toBe(500)
   })
 })
 
@@ -88,6 +89,20 @@ layer(testLayer(Anatomy.layer.pipe(Layer.provideMerge(Storage))), { excludeTestS
           etag: found.etag,
         })
         expect((yield* anatomy.file('runner.glb', '"4-0"'))._tag).toBe('Found')
+        // A list, weak tags too
+        for (const list of [`W/${found.etag}`, `"4-0", ${found.etag}`]) {
+          expect((yield* anatomy.file('runner.glb', list))._tag).toBe('NotModified')
+        }
+      })
+    )
+
+    it.effect('never hands the page a structures.json that is not the catalog', () =>
+      Effect.gen(function* () {
+        const anatomy = yield* Anatomy
+        yield* put('anatomy/structures.json', '{"vastus_lateralis_r": {"kind": "organ"}}')
+        expect((yield* anatomy.file('structures.json', null))._tag).toBe('Broken')
+        yield* put('anatomy/structures.json', anatomyCatalog)
+        expect((yield* anatomy.file('structures.json', null))._tag).toBe('Found')
       })
     )
   }
