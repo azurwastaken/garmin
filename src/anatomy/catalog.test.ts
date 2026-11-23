@@ -6,7 +6,6 @@ import {
   bodyMismatch,
   type Catalog,
   closestIds,
-  isDarkColor,
   isShown,
   type Layer,
   painLevel,
@@ -113,13 +112,6 @@ describe('a pinned pain', () => {
 })
 
 describe('the scene palette', () => {
-  it('tells a dark stage from a light one', () => {
-    expect(isDarkColor('#03060b')).toBe(true)
-    expect(isDarkColor('#0d0d0d')).toBe(true)
-    expect(isDarkColor('#f9f9f7')).toBe(false)
-    expect(isDarkColor('')).toBe(true)
-  })
-
   it("reads the sheet's variables, trimmed", () => {
     const sheet = (page: string): Record<string, string> => ({
       '--page': page,
@@ -134,11 +126,9 @@ describe('the scene palette', () => {
     })
     expect(readPalette(style(' #03060b'))).toEqual({
       stage: '#03060b',
-      dark: true,
       base: '#3fe0ff',
       highlight: '#e8f7ff',
       pain: { low: '#a3e635', mid: '#fbbf24', high: '#ff5470' },
     })
-    expect(readPalette(style('#f9f9f7')).dark).toBe(false)
   })
 })

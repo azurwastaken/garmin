@@ -11,15 +11,13 @@ import {
 } from 'react'
 import {
   AdditiveBlending,
-  type Blending,
   type BufferGeometry,
   Color,
   DoubleSide,
   type Intersection,
   type Matrix4,
-  type Mesh,
+  Mesh,
   type Object3D,
-  NormalBlending,
   ShaderMaterial,
 } from 'three'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
@@ -33,6 +31,7 @@ import {
   readPalette,
   type ScenePalette,
   structureLabel,
+  structureOf,
   type Tissue,
 } from '#src/anatomy/catalog.ts'
 import type { BodyPin } from '#src/journal/history.ts'
@@ -41,7 +40,7 @@ import type { BodyPin } from '#src/journal/history.ts'
 // server): the anatomy model as a hologram, its structures hovered and clicked, the pains pinned.
 // The model keeps the identity transform, so a hit point is the model-space point a note stores.
 
-export const MODEL_URL = '/anatomy/runner.glb'
+const MODEL_URL = '/anatomy/runner.glb'
 
 export interface SceneProps {
   readonly catalog: Catalog
@@ -72,11 +71,10 @@ const useMediaQuery = (query: string) => {
   )
 }
 
-// One material's look: its colour, its strength, how it composes with what is behind
+// One material's look: its colour and its strength (it adds its light to what is behind)
 interface HoloLook {
   readonly color: string
   readonly opacity: number
-  readonly blending: Blending
 }
 
 const VERTEX = /* glsl */ `
@@ -111,7 +109,7 @@ const holoMaterial = (look: HoloLook, time: { value: number }) =>
     transparent: true,
     depthWrite: false,
     side: DoubleSide,
-    blending: look.blending,
+    blending: AdditiveBlending,
   })
 
 // How much each tissue shows when nothing is pinned on it: bones the brightest core
@@ -186,9 +184,12 @@ function Model({
     scene.updateMatrixWorld(true)
     const found: Array<Part> = []
     scene.traverse((object: Object3D) => {
-      if ((object as Partial<Mesh>).isMesh === true) {
-        const mesh = object as Mesh
-        found.push({ id: mesh.name, geometry: mesh.geometry, matrix: mesh.matrixWorld.clone() })
+      if (object instanceof Mesh) {
+        found.push({
+          id: object.name,
+          geometry: object.geometry,
+          matrix: object.matrixWorld.clone(),
+        })
       }
     })
     return found
@@ -202,12 +203,11 @@ function Model({
   // One material per look, made when first needed, all disposed with the palette
   const materials = useMemo(() => new Map<string, ShaderMaterial>(), [palette])
   useEffect(() => () => materials.forEach((material) => material.dispose()), [materials])
-  const blending = palette.dark ? AdditiveBlending : NormalBlending
-  const materialOf = (look: Omit<HoloLook, 'blending'>) => {
+  const materialOf = (look: HoloLook) => {
     const key = `${look.color}|${look.opacity}`
     const known = materials.get(key)
     if (known !== undefined) return known
-    const made = holoMaterial({ ...look, blending }, time)
+    const made = holoMaterial(look, time)
     materials.set(key, made)
     return made
   }
@@ -215,7 +215,7 @@ function Model({
     if (id === selected || id === hovered?.id) return { color: palette.highlight, opacity: 1 }
     const pain = heat.get(id)
     if (pain !== undefined) return { color: palette.pain[painLevel(pain)], opacity: 0.9 }
-    const kind = catalog[id]?.kind
+    const kind = structureOf(catalog, id)?.kind
     return { color: palette.base, opacity: kind === undefined ? 0.4 : TISSUE_GLOW[kind] }
   }
 
@@ -272,19 +272,17 @@ function Pins({
           <sphereGeometry args={[radius, 16, 12]} />
           <meshBasicMaterial color={color} depthTest={false} />
         </mesh>
-        {palette.dark ? (
-          <mesh scale={1.8} raycast={() => null}>
-            <sphereGeometry args={[radius, 16, 12]} />
-            <meshBasicMaterial
-              color={color}
-              transparent
-              opacity={0.35}
-              blending={AdditiveBlending}
-              depthWrite={false}
-              depthTest={false}
-            />
-          </mesh>
-        ) : null}
+        <mesh scale={1.8} raycast={() => null}>
+          <sphereGeometry args={[radius, 16, 12]} />
+          <meshBasicMaterial
+            color={color}
+            transparent
+            opacity={0.35}
+            blending={AdditiveBlending}
+            depthWrite={false}
+            depthTest={false}
+          />
+        </mesh>
       </group>,
     ]
   })
@@ -300,13 +298,9 @@ export default function BodyScene({
   onPick,
   onPin,
 }: SceneProps) {
-  const schemeDark = useMediaQuery('(prefers-color-scheme: dark)')
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)')
-  // The sheet's colours, read again when the scheme changes
-  const palette = useMemo(
-    () => readPalette(getComputedStyle(document.documentElement)),
-    [schemeDark]
-  )
+  // The sheet's colours, once
+  const [palette] = useState(() => readPalette(getComputedStyle(document.documentElement)))
   const [hovered, setHovered] = useState<{ readonly id: string; readonly point: BodyPoint } | null>(
     null
   )
@@ -314,7 +308,7 @@ export default function BodyScene({
     setHovered(next)
     onHover(next?.id ?? null)
   }
-  const tip = hovered === null ? undefined : catalog[hovered.id]
+  const tip = hovered === null ? undefined : structureOf(catalog, hovered.id)
 
   return (
     <Canvas

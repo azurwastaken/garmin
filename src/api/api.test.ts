@@ -1,10 +1,12 @@
 import { createRouterClient, ORPCError } from '@orpc/server'
-import { ManagedRuntime } from 'effect'
+import { Effect, ManagedRuntime } from 'effect'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { anatomyCatalog, put, testLayer } from '../../test/fixtures.ts'
 import { gpxText, syntheticCourse } from '../../test/races.ts'
 import { Services } from '../app.ts'
+import { addDays, parisToday } from '../days.ts'
+import { Ingest } from '../ingest.ts'
 
 import { makeHandlers, makeRun } from './handlers.ts'
 import { router } from './router.ts'
@@ -324,6 +326,30 @@ describe("the body map's pains", () => {
       ],
     })
     expect(await call('body_history', { days: 0 })).toMatchObject({ isError: true })
+  })
+
+  it('reads the `days` days ending today, the first one included', async () => {
+    const today = await runtime.runPromise(parisToday)
+    const pinned = (day: string, text: string) =>
+      put(`journal/${day.slice(0, 4)}/${day}T06-00-00.000Z.json`, {
+        time: `${day}T06:00:00.000Z`,
+        day,
+        text,
+        body: { structure: 'linea_alba', side: 'midline', pain: 2, kind: 'raideur', when: [] },
+      })
+    await runtime.runPromise(
+      Effect.all([
+        pinned(addDays(today, -7), 'hors période'),
+        pinned(addDays(today, -6), 'premier jour'),
+      ]).pipe(Effect.andThen(Ingest.use((ingest) => ingest.run())))
+    )
+    const { data } = (await call('body_history', { days: 7 })) as {
+      data: { from: string; to: string; pins: Array<{ text: string }> }
+    }
+    expect([data.from, data.to]).toEqual([addDays(today, -6), today])
+    const texts = data.pins.map((pin) => pin.text)
+    expect(texts).toContain('premier jour')
+    expect(texts).not.toContain('hors période')
   })
 })
 

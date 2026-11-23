@@ -198,7 +198,7 @@ function Atlas({
         </ClientOnly>
         <p className="body-readout" aria-live="polite">
           <span className="body-label">Cible</span>{' '}
-          {hoveredStructure === undefined || hovered === null
+          {hoveredStructure === undefined
             ? '—'
             : structureLabel(hoveredStructure.french, hoveredStructure.side)}
         </p>
@@ -352,10 +352,18 @@ function PainForm({
       ...(since === '' ? {} : { since }),
     }
     const where = structureLabel(structure.french, side)
+    const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause))
     void api.journal
       .log({ text: text.trim() === '' ? painSummary(body, where) : text.trim(), body })
-      .then(onSaved, (cause: unknown) =>
-        setError(cause instanceof Error ? cause.message : String(cause))
+      .then(
+        // Saved: a failed reload says so, never that the pain was not written
+        (note) =>
+          onSaved(note).catch((cause: unknown) => {
+            setError(`Enregistré, mais la page ne s'est pas rechargée : ${message(cause)}`)
+          }),
+        (cause: unknown) => {
+          setError(message(cause))
+        }
       )
       .finally(() => setPending(false))
   }

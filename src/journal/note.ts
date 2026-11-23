@@ -22,7 +22,7 @@ export const NoteBodyJson = Schema.Struct({
   point: Schema.optionalKey(Schema.Tuple([Coordinate, Coordinate, Coordinate])),
   pain: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 10 })),
   kind: Schema.Literals(PAIN_KINDS),
-  when: Schema.Array(Schema.Literals(PAIN_WHEN)).check(Schema.isMaxLength(PAIN_WHEN.length)),
+  when: Schema.UniqueArray(Schema.Literals(PAIN_WHEN)),
   // The day it started
   since: Schema.optionalKey(Day),
 })

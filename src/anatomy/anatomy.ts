@@ -23,6 +23,8 @@ export const anatomyFile = (name: string): AnatomyFile | null =>
 
 export type AnatomyAnswer =
   | { readonly _tag: 'Missing' }
+  // structures.json is there but is not the catalog: never handed to the page
+  | { readonly _tag: 'Broken'; readonly message: string }
   | { readonly _tag: 'NotModified'; readonly etag: string }
   | {
       readonly _tag: 'Found'
@@ -39,6 +41,11 @@ export const anatomyResponse = (answer: AnatomyAnswer): Response => {
     case 'Missing':
       return new Response('Not found\n', {
         status: 404,
+        headers: { 'content-type': 'text/plain; charset=utf-8' },
+      })
+    case 'Broken':
+      return new Response(`The anatomy catalog is unreadable: ${answer.message}\n`, {
+        status: 500,
         headers: { 'content-type': 'text/plain; charset=utf-8' },
       })
     case 'NotModified':
@@ -76,6 +83,11 @@ const CatalogJson = Schema.Record(
 )
 const decodeCatalog = Schema.decodeUnknownEffect(Schema.fromJsonString(CatalogJson))
 
+// If-None-Match is a list of tags, compared weakly (RFC 9110 §13.1.2)
+const matches = (ifNoneMatch: string | null, etag: string) =>
+  ifNoneMatch !== null &&
+  ifNoneMatch.split(',').some((tag) => tag.trim().replace(/^W\//u, '') === etag)
+
 // A missing file is none; any other failure to read data/ is a fault
 const notFound = <A>(error: PlatformError) =>
   error.reason._tag === 'NotFound' ? Effect.succeed(Option.none<A>()) : Effect.die(error)
@@ -85,7 +97,8 @@ export class Anatomy extends Context.Service<
   {
     // None: no model in DATA_DIR/anatomy
     readonly catalog: Effect.Effect<Option.Option<Catalog>, CatalogBroken>
-    // Its ETag from its size and mtime; its bytes read only when the client's copy is not current
+    // Its ETag from its size and mtime; its bytes read only when the client's copy is not current;
+    // structures.json only when it is the catalog
     readonly file: (file: AnatomyFile, ifNoneMatch: string | null) => Effect.Effect<AnatomyAnswer>
   }
 >()('garmin/Anatomy') {
@@ -125,7 +138,14 @@ export class Anatomy extends Context.Service<
           onSome: (d) => d.getTime(),
         })
         const etag = `"${info.value.size}-${mtime}"`
-        if (ifNoneMatch === etag) return { _tag: 'NotModified', etag } as const
+        if (matches(ifNoneMatch, etag)) return { _tag: 'NotModified', etag } as const
+        if (name === 'structures.json') {
+          const broken = yield* catalog.pipe(
+            Effect.as(null),
+            Effect.catchTag('CatalogBroken', (error) => Effect.succeed(error.message))
+          )
+          if (broken !== null) return { _tag: 'Broken', message: broken } as const
+        }
         // Node reads a file into a Buffer over a plain ArrayBuffer, never a shared one
         const bytes = (yield* fs.readFile(path).pipe(Effect.orDie)) as Uint8Array<ArrayBuffer>
         return { _tag: 'Found', etag, type: ANATOMY_FILES[name], bytes } as const

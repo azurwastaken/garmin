@@ -134,7 +134,7 @@ token: `--header "Authorization: Bearer <password>"`.
   the point clicked, the intensity 0-10, its kind, when it hurts and since when. It is checked
   against the model's catalog when written.
 - `body_history`: the pains pinned over a period, with their structures' French, English and
-  Latin names, and per structure the intensity day by day and its trend.
+  Latin names, and per structure its intensity note by note, in day order, and its trend.
 
 **Your races** (files in `data/races/`, read on each call)
 
