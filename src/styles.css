@@ -850,7 +850,7 @@ td a:hover {
   border: 1px solid currentColor;
 }
 .hud-kind.climb {
-  color: var(--series-4);
+  color: var(--warning-ink);
 }
 .hud-kind.descent {
   color: var(--series-1);
