@@ -34,6 +34,7 @@ import { type Account, GarminSession } from './session.ts'
 //
 //   fit/YYYY/<activityId>.fit              the activity's original FIT file, once
 //   connect/activities/YYYY/<id>.json      its summary (+ gear), again while it may still change
+//   connect/strength/YYYY/<id>.json        a strength session's exercise sets, the same way
 //   connect/daily/YYYY/<date>.json         stats, sleep, HRV, readiness, max metrics, predictions
 //   connect/body/YYYY-MM.json              weigh-ins
 //   connect/calendar/YYYY-MM.json          scheduled workouts, and connect/workouts/<id>.json
@@ -114,7 +115,11 @@ export const fitOfZip = (zip: Uint8Array) =>
     })
   })
 
-const ActivityItem = Schema.Struct({ activityId: Schema.Number, startTimeLocal: Schema.String })
+const ActivityItem = Schema.Struct({
+  activityId: Schema.Number,
+  startTimeLocal: Schema.String,
+  activityType: Schema.optional(Schema.NullOr(Schema.Struct({ typeKey: Schema.String }))),
+})
 const CalendarItem = Schema.Struct({
   itemType: Schema.optional(Schema.NullOr(Schema.String)),
   workoutId: Schema.optional(Schema.NullOr(Schema.Number)),
@@ -279,7 +284,7 @@ export class GarminSync extends Context.Service<
           for (const raw of items) {
             const item = decodeActivity(raw)
             if (Option.isNone(item)) continue
-            const { activityId: id, startTimeLocal } = item.value
+            const { activityId: id, startTimeLocal, activityType } = item.value
             const day = startTimeLocal.slice(0, 10)
             // The day names the files: a date or nothing
             if (!/^\d{4}-\d{2}-\d{2}$/u.test(day) || !Number.isSafeInteger(id)) continue
@@ -317,6 +322,19 @@ export class GarminSync extends Context.Service<
               )
               yield* pause
               yield* write(summary, { ...record(raw), gear: gear ?? [] })
+            }
+            // A strength session's sets, as Connect has them (the user corrects them there)
+            const strength = `connect/strength/${year}/${id}.json`
+            if (
+              activityType?.typeKey === 'strength_training' &&
+              (!(yield* exists(strength)) || daysBetween(day, today) <= ACTIVITY_FRESH_DAYS)
+            ) {
+              const sets = yield* call(
+                `exercise sets of ${id}`,
+                api.json(`/activity-service/activity/${id}/exerciseSets`)
+              )
+              yield* pause
+              if (sets !== null) yield* write(strength, sets)
             }
           }
           if (past || items.length < PAGE) break

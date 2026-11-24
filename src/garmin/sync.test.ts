@@ -10,6 +10,7 @@ import {
   apiSummary,
   dailyFile,
   dataDir,
+  exerciseSetsAnswer,
   fitRun,
   rows,
   sql,
@@ -67,6 +68,15 @@ const connect = (today: string, fit: Uint8Array, refuse: 'once' | 'always') => {
                 startTimeGMT: `${today} 06:12:40`,
                 gear: undefined,
               }),
+              // A strength session: its exercise sets too (no FIT file here)
+              apiSummary(43, {
+                activityName: 'Renfo A',
+                activityType: { typeId: 13, typeKey: 'strength_training' },
+                startTimeLocal: `${today} 06:00:00`,
+                startTimeGMT: `${today} 05:00:00`,
+                distance: null,
+                gear: undefined,
+              }),
             ]
           : []
       )
@@ -74,6 +84,8 @@ const connect = (today: string, fit: Uint8Array, refuse: 'once' | 'always') => {
     if (path === '/download-service/files/activity/42') {
       return new Response(Buffer.from(await zipOf('42_ACTIVITY.fit', fit)))
     }
+    if (path === '/download-service/files/activity/43') return new Response(null, { status: 404 })
+    if (path === '/activity-service/activity/43/exerciseSets') return json(exerciseSetsAnswer(43))
     if (path === '/gear-service/gear/filterGear') return json([{ displayName: 'Road Shoes' }])
     if (path === '/usersummary-service/usersummary/daily/runner-1') return json(day.stats)
     if (path === '/wellness-service/wellness/dailySleepData/runner-1') return json(day.sleep)
@@ -161,16 +173,30 @@ layer(ok.layer, { excludeTestServices: true })('GarminSync', (it) => {
         since: today,
         warnings: [],
       })
-      // FIT, summary, the day, a body month, the calendar's months, the workout once
+      // FIT, 2 summaries, the strength session's sets, the day, a body month, the calendar's
+      // months, the workout once
       const calendarMonths = months(
         `${addDays(`${today.slice(0, 7)}-01`, -1).slice(0, 7)}-01`,
         addDays(`${today.slice(0, 7)}-01`, 62)
       ).length
-      expect(outcome.files_written).toBe(5 + calendarMonths)
+      expect(outcome.files_written).toBe(7 + calendarMonths)
 
-      const [activity] = yield* rows(sql`SELECT id, day, sport, gear, distance_m FROM activities`)
+      const [activity] = yield* rows(
+        sql`SELECT id, day, sport, gear, distance_m FROM activities WHERE id = 42`
+      )
       expect(activity).toMatchObject({ id: 42, day: today, sport: 'running', gear: 'Road Shoes' })
       expect((yield* rows(sql`SELECT count(*) AS n FROM samples`))[0]).toEqual({ n: 1201 })
+      expect(
+        yield* rows(sql`SELECT activity_id, exercise_name, weight_kg, source FROM strength_sets
+          WHERE idx = 0`)
+      ).toEqual([
+        {
+          activity_id: 43,
+          exercise_name: 'DUMBBELL_BULGARIAN_SPLIT_SQUAT',
+          weight_kg: 12,
+          source: 'connect',
+        },
+      ])
       const [night] = yield* rows(sql`SELECT day, hrv, sleep_s, readiness FROM daily`)
       expect(night).toEqual({ day: today, hrv: 52, sleep_s: 26_400, readiness: 88 })
       expect(yield* rows(sql`SELECT day, name FROM planned_workouts ORDER BY day`)).toEqual([
@@ -193,7 +219,7 @@ layer(ok.layer, { excludeTestServices: true })('GarminSync', (it) => {
       // Again: the FIT file is not downloaded twice
       yield* sync.run({ since: today })
       expect(
-        ok.log.filter((request) => request.url.pathname.startsWith('/download-service/'))
+        ok.log.filter((request) => request.url.pathname === '/download-service/files/activity/42')
       ).toHaveLength(1)
     })
   )

@@ -8,6 +8,7 @@ import {
   apiSummary,
   dailyFile,
   dataDir,
+  exerciseSetsAnswer,
   fitRun,
   put,
   rows,
@@ -110,6 +111,74 @@ layer(TestLayer, { excludeTestServices: true })('Ingest', (it) => {
 
       const rebuilt = yield* run({ rebuild: true })
       expect(rebuilt).toMatchObject({ files: 5, activities: 2, days: 1 })
+    })
+  )
+
+  it.effect('files a strength session’s sets: the FIT file’s, then Connect’s over them', () =>
+    Effect.gen(function* () {
+      const strength = {
+        activityName: 'Renfo A - lun 30/11 - Lourd et lent',
+        activityType: { typeId: 13, typeKey: 'strength_training' },
+        startTimeLocal: '2026-11-30 19:00:00',
+        startTimeGMT: '2026-11-30 18:00:00',
+        distance: null,
+      }
+      yield* put(
+        'fit/2026/7001.fit',
+        fitRun({
+          start: new Date('2026-11-30T18:00:00Z'),
+          sport: 'training',
+          sets: [{ category: 'lunge', subtype: 7, reps: 10, weight: 12.5, duration: 48 }],
+        })
+      )
+      yield* put('connect/activities/2026/7001.json', apiSummary(7001, strength))
+      yield* run()
+      const sets = sql`SELECT idx, category, exercise_name, reps, weight_kg, duration_s, source
+        FROM strength_sets WHERE activity_id = 7001 ORDER BY idx`
+      expect(yield* rows(sets)).toEqual([
+        {
+          idx: 0,
+          category: 'LUNGE',
+          exercise_name: 'BARBELL_BULGARIAN_SPLIT_SQUAT',
+          reps: 10,
+          weight_kg: 12.5,
+          duration_s: 48,
+          source: 'fit',
+        },
+      ])
+      expect(yield* rows(sql`SELECT sport FROM activities WHERE id = 7001`)).toEqual([
+        { sport: 'strength_training' },
+      ])
+
+      // The sync fetched Connect's exercise sets (corrected there): they replace the watch's
+      yield* put('connect/strength/2026/7001.json', exerciseSetsAnswer(7001))
+      expect(yield* run()).toMatchObject({ files: 1, activities: 1, errors: [] })
+      expect((yield* rows(sets)).map((set) => [set['exercise_name'], set['source']])).toEqual([
+        ['DUMBBELL_BULGARIAN_SPLIT_SQUAT', 'connect'],
+        ['SIDE_PLANK_WITH_FEET_ON_BENCH', 'connect'],
+        [null, 'connect'],
+      ])
+
+      // Not Connect's answer: said so, the FIT file's sets back
+      yield* put('connect/strength/2026/7001.json', { message: 'not found' })
+      const root = yield* dataDir
+      utimesSync(
+        join(root, 'connect/strength/2026/7001.json'),
+        new Date(),
+        new Date(Date.now() + 5000)
+      )
+      expect((yield* run()).errors).toEqual(['connect/strength/2026/7001.json: not exercise sets'])
+      expect((yield* rows(sets)).map((set) => set['source'])).toEqual(['fit'])
+
+      // Rebuilt from data/ alone
+      yield* put('connect/strength/2026/7001.json', exerciseSetsAnswer(7001))
+      utimesSync(
+        join(root, 'connect/strength/2026/7001.json'),
+        new Date(),
+        new Date(Date.now() + 10_000)
+      )
+      yield* run({ rebuild: true })
+      expect(yield* rows(sql`SELECT count(*) AS n FROM strength_sets`)).toEqual([{ n: 3 }])
     })
   )
 

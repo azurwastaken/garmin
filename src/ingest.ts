@@ -31,7 +31,9 @@ import {
   plannedWorkouts,
   rawFiles,
   samples,
+  strengthSets,
 } from './schema.ts'
+import { connectSets, type StrengthSet } from './strength/sets.ts'
 import { SOURCE as WITHINGS, withingsBody } from './withings/measures.ts'
 
 // data/ → SQLite. The files are the source of truth (see README.md): each pass reads only those
@@ -52,6 +54,7 @@ export interface IngestSummary {
 type Kind =
   | { readonly kind: 'fit'; readonly id: number }
   | { readonly kind: 'summary'; readonly id: number; readonly exported: boolean }
+  | { readonly kind: 'strength'; readonly id: number }
   | { readonly kind: 'daily' }
   | { readonly kind: 'body' }
   | { readonly kind: 'withings' }
@@ -66,6 +69,8 @@ const classify = (path: string): Kind | null => {
   if (match) return { kind: 'fit', id: Number(match[1]) }
   match = /^connect\/activities\/\d{4}\/(\d+)(\.export)?\.json$/u.exec(path)
   if (match) return { kind: 'summary', id: Number(match[1]), exported: match[2] !== undefined }
+  match = /^connect\/strength\/\d{4}\/(\d+)\.json$/u.exec(path)
+  if (match) return { kind: 'strength', id: Number(match[1]) }
   if (/^connect\/daily\/\d{4}\/\d{4}-\d{2}-\d{2}\.json$/u.test(path)) return { kind: 'daily' }
   if (/^connect\/body\/\d{4}-\d{2}\.json$/u.test(path)) return { kind: 'body' }
   if (/^withings\/\d{4}-\d{2}\.json$/u.test(path)) return { kind: 'withings' }
@@ -128,7 +133,13 @@ const activityRow = (
   files: { readonly fit: string | null; readonly summary: string | null }
 ): typeof activities.$inferInsert | null => {
   if (fit === null && summary === null) return null
-  const { laps: _laps, samples: _samples, utc_offset_s: _offset, ...measures } = fit ?? {}
+  const {
+    laps: _laps,
+    samples: _samples,
+    sets: _sets,
+    utc_offset_s: _offset,
+    ...measures
+  } = fit ?? {}
   const startLocal = summary?.start_local ?? (fit === null ? null : localOf(fit))
   const startTime = fit?.start_time ?? summary?.start_time
   if (startLocal === null || startTime === undefined) return null
@@ -208,6 +219,7 @@ export class Ingest extends Context.Service<
           yield* use((db) =>
             db.transaction((tx) => {
               for (const table of [
+                strengthSets,
                 samples,
                 laps,
                 activities,
@@ -386,11 +398,18 @@ export class Ingest extends Context.Service<
           yield* done(file, Option.isNone(note) ? 'not a journal note' : null)
         }
 
-        // Activities: each one touched by a changed FIT file or summary, rebuilt from both
-        const byId = new Map<number, { fit?: string; summary?: string; exported?: string }>()
+        // Activities: each one touched by a changed FIT file, summary or exercise sets, rebuilt
+        // from all of them
+        const byId = new Map<
+          number,
+          { fit?: string; summary?: string; exported?: string; strength?: string }
+        >()
         for (const file of files) {
           const kind = file.kind
           if (kind?.kind === 'fit') byId.set(kind.id, { ...byId.get(kind.id), fit: file.path })
+          if (kind?.kind === 'strength') {
+            byId.set(kind.id, { ...byId.get(kind.id), strength: file.path })
+          }
           if (kind?.kind === 'summary') {
             byId.set(kind.id, {
               ...byId.get(kind.id),
@@ -400,7 +419,11 @@ export class Ingest extends Context.Service<
         }
         const touched = new Set(
           changed.flatMap((file) =>
-            file.kind?.kind === 'fit' || file.kind?.kind === 'summary' ? [file.kind.id] : []
+            file.kind?.kind === 'fit' ||
+            file.kind?.kind === 'summary' ||
+            file.kind?.kind === 'strength'
+              ? [file.kind.id]
+              : []
           )
         )
         let activityCount = 0
@@ -426,14 +449,30 @@ export class Ingest extends Context.Service<
             fit: fit === null ? null : (paths.fit ?? null),
             summary: summary === null ? null : summaryPath,
           })
+          // A strength session's sets: Connect's (what the user corrected there), else the FIT's
+          const connectJson =
+            paths.strength === undefined
+              ? Option.none()
+              : yield* readJson(paths.strength).pipe(Effect.option)
+          const fromConnect = Option.isNone(connectJson) ? null : connectSets(connectJson.value)
+          const sets: Array<StrengthSet & { readonly source: string }> =
+            fromConnect !== null && fromConnect.length > 0
+              ? fromConnect.map((set) => ({ ...set, source: 'connect' }))
+              : (fit?.sets ?? []).map((set) => ({ ...set, source: 'fit' }))
           if (row !== null) {
             yield* use((db) =>
               db.transaction(
                 (tx) => {
+                  tx.delete(strengthSets).where(eq(strengthSets.activity_id, id)).run()
                   tx.delete(samples).where(eq(samples.activity_id, id)).run()
                   tx.delete(laps).where(eq(laps.activity_id, id)).run()
                   tx.delete(activities).where(eq(activities.id, id)).run()
                   tx.insert(activities).values(row).run()
+                  if (sets.length > 0) {
+                    tx.insert(strengthSets)
+                      .values(sets.map((set) => ({ ...set, activity_id: id })))
+                      .run()
+                  }
                   if (fit !== null && fit.laps.length > 0) {
                     tx.insert(laps)
                       .values(fit.laps.map((lap) => ({ ...lap, activity_id: id })))
@@ -456,6 +495,15 @@ export class Ingest extends Context.Service<
             } else if (file.path === paths.summary || file.path === paths.exported) {
               const used = file.path === summaryPath
               yield* done(file, used && summary === null ? 'not an activity summary' : null)
+            } else if (file.path === paths.strength) {
+              yield* done(
+                file,
+                fromConnect === null
+                  ? 'not exercise sets'
+                  : row === null
+                    ? 'exercise sets of no activity'
+                    : null
+              )
             }
           }
         }

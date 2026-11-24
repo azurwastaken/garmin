@@ -105,6 +105,7 @@ layer(withTimeout(Reader.layer), { excludeTestServices: true })('Reader', (it) =
         'planned_workouts',
         'raw_files',
         'samples',
+        'strength_sets',
         'sync_runs',
         'weekly',
       ])

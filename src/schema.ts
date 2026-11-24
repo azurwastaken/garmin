@@ -136,6 +136,33 @@ export const samples = sqliteTable(
   (table) => [primaryKey({ columns: [table.activity_id, table.t] })]
 )
 
+// A strength session's active sets, in order (see strength/sets.ts): Garmin Connect's exercise
+// sets when the sync fetched them (connect/strength/YYYY/<id>.json, what the user corrected in
+// Connect), else the FIT file's set messages
+export const strengthSets = sqliteTable(
+  'strength_sets',
+  {
+    activity_id: integer()
+      .notNull()
+      .references(() => activities.id, { onDelete: 'cascade' }),
+    idx: integer().notNull(),
+    start_time: text(),
+    // Garmin's catalog keys (exercises.json: LUNGE, DUMBBELL_BULGARIAN_SPLIT_SQUAT); null when the
+    // watch did not know the exercise
+    category: text(),
+    exercise_name: text(),
+    reps: integer(),
+    weight_kg: real(),
+    duration_s: real(),
+    // connect or fit
+    source: text().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.activity_id, table.idx] }),
+    index('strength_sets_exercise').on(table.category, table.exercise_name),
+  ]
+)
+
 // One per day, from Garmin Connect's daily files (and the export's): the sleep is the night ending
 // that morning, as in Garmin Connect
 export const daily = sqliteTable('daily', {
