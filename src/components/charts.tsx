@@ -290,11 +290,17 @@ export interface LinePoint {
   // A band behind the line (Garmin's HRV baseline), where both are known
   readonly lo?: number | null
   readonly hi?: number | null
+  // A reading the line smooths (a weigh-in under its 7-day mean), a hollow dot
+  readonly reading?: number | null
 }
 
+const known = (value: number | null | undefined): value is number =>
+  value !== undefined && value !== null
+
 // One measure over evenly spaced points: a 2px line broken where a point has none (or dots, for
-// separate events), its last value marked, a crosshair snapping to the nearest point. Two charts
-// can share their crosshair (hover, onHover).
+// separate events), its last value marked, a crosshair snapping to the nearest point; behind it, a
+// band and the readings it smooths, when given. Two charts can share their crosshair (hover,
+// onHover).
 export function LineChart({
   points,
   color,
@@ -304,6 +310,7 @@ export function LineChart({
   dots = false,
   height = 110,
   bandLabel,
+  readingLabel,
   hover: controlled,
   onHover,
 }: {
@@ -316,6 +323,8 @@ export function LineChart({
   readonly dots?: boolean
   readonly height?: number
   readonly bandLabel?: string
+  // The readings' name (legend, tooltip, table)
+  readonly readingLabel?: string
   readonly hover?: number | null
   readonly onHover?: (index: number | null) => void
 }) {
@@ -330,7 +339,7 @@ export function LineChart({
   const pad = { top: 10, right: 44, bottom: 18, left: 6 }
   const plotW = W - pad.left - pad.right
   const plotH = H - pad.top - pad.bottom
-  const values = points.flatMap((p) => (p.value === null ? [] : [p.value]))
+  const values = points.flatMap((p) => [p.value, p.reading].filter((value) => known(value)))
   const bands = points.flatMap((p) =>
     p.lo === undefined || p.lo === null || p.hi === undefined || p.hi === null ? [] : [p.lo, p.hi]
   )
@@ -376,6 +385,10 @@ export function LineChart({
   const lastIndex = points.findLastIndex((p) => p.value !== null)
   const last = points[lastIndex]
   const hovered = hover === null ? undefined : points[hover]
+  const showBand = bandLabel !== undefined && areas.length > 0
+  const showReadings = readingLabel !== undefined && points.some((p) => known(p.reading))
+  const bandOf = (p: LinePoint) =>
+    known(p.lo) && known(p.hi) ? `${format(p.lo)}–${format(p.hi)}` : null
 
   // The pointer in the plot's own units (the hit area spans the whole chart, the points only the
   // plot between its paddings)
@@ -397,16 +410,24 @@ export function LineChart({
   const every = labelEvery(points.length, Math.max(2, Math.floor(plotW / 90)))
   return (
     <div className="chart" ref={ref}>
-      {bandLabel !== undefined && areas.length > 0 ? (
+      {showBand || showReadings ? (
         <div className="legend" aria-hidden="true">
           <span>
             <i className="line" style={{ background: color }} />
             {title}
           </span>
-          <span>
-            <i className="band" style={{ background: color }} />
-            {bandLabel}
-          </span>
+          {showBand ? (
+            <span>
+              <i className="band" style={{ background: color }} />
+              {bandLabel}
+            </span>
+          ) : null}
+          {showReadings ? (
+            <span>
+              <i className="dot hollow" style={{ boxShadow: `inset 0 0 0 2.5px ${color}` }} />
+              {readingLabel}
+            </span>
+          ) : null}
         </div>
       ) : null}
       <svg
@@ -429,6 +450,19 @@ export function LineChart({
           <text className="tick" x={W - pad.right + 4} y={y(lo) + 4}>
             {format(lo)}
           </text>
+        )}
+        {points.map((p, index) =>
+          known(p.reading) ? (
+            <circle
+              key={`reading-${p.key}`}
+              cx={x(index)}
+              cy={y(p.reading)}
+              r={3}
+              fill="var(--surface)"
+              stroke={color}
+              strokeWidth={1.5}
+            />
+          ) : null
         )}
         {dots ? (
           points.map((p, index) =>
@@ -509,16 +543,17 @@ export function LineChart({
             <b>{hovered.value === null ? '–' : format(hovered.value)}</b>
             <span>{title}</span>
           </div>
-          {bandLabel !== undefined &&
-          hovered.lo !== undefined &&
-          hovered.lo !== null &&
-          hovered.hi !== undefined &&
-          hovered.hi !== null ? (
+          {readingLabel !== undefined && known(hovered.reading) ? (
+            <div className="r">
+              <i className="key" style={{ background: color }} />
+              <b>{format(hovered.reading)}</b>
+              <span>{readingLabel}</span>
+            </div>
+          ) : null}
+          {bandLabel !== undefined && bandOf(hovered) !== null ? (
             <div className="r">
               <i className="key band" style={{ background: color }} />
-              <b>
-                {format(hovered.lo)}–{format(hovered.hi)}
-              </b>
+              <b>{bandOf(hovered)}</b>
               <span>{bandLabel}</span>
             </div>
           ) : null}
@@ -528,17 +563,43 @@ export function LineChart({
         text={
           hovered === undefined
             ? ''
-            : `${hovered.label} : ${hovered.value === null ? 'pas de donnée' : format(hovered.value)}`
+            : [
+                `${hovered.label} : ${hovered.value === null ? 'pas de donnée' : format(hovered.value)}`,
+                readingLabel !== undefined && known(hovered.reading)
+                  ? `${readingLabel} ${format(hovered.reading)}`
+                  : null,
+                bandLabel !== undefined && bandOf(hovered) !== null
+                  ? `${bandLabel} ${bandOf(hovered)}`
+                  : null,
+              ]
+                .filter((part) => part !== null)
+                .join(', ')
         }
       />
       <details className="table-view">
         <summary>Tableau</summary>
         <table>
+          {readingLabel === undefined && bandLabel === undefined ? null : (
+            <thead>
+              <tr>
+                <th>
+                  <span className="sr-only">Quand</span>
+                </th>
+                <th className="num">{title}</th>
+                {readingLabel === undefined ? null : <th className="num">{readingLabel}</th>}
+                {bandLabel === undefined ? null : <th className="num">{bandLabel}</th>}
+              </tr>
+            </thead>
+          )}
           <tbody>
             {points.map((p) => (
               <tr key={p.key}>
                 <td>{p.label}</td>
                 <td className="num">{p.value === null ? '–' : format(p.value)}</td>
+                {readingLabel === undefined ? null : (
+                  <td className="num">{known(p.reading) ? format(p.reading) : '–'}</td>
+                )}
+                {bandLabel === undefined ? null : <td className="num">{bandOf(p) ?? '–'}</td>}
               </tr>
             ))}
           </tbody>

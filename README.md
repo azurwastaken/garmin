@@ -23,7 +23,7 @@ it and write workouts to your watch.
 | 🔄  | **Syncs Garmin Connect by itself.** Logs in like the mobile app (SSO + MFA), keeps only its tokens, and pulls activities, sleep, HRV, readiness, weigh-ins and the calendar every 3 hours. The whole history on demand.                                                                           |
 | 📊  | **A web app to look at it.** Today first: the night against your own 28-day normal (green, orange, red, and why), the planned workout, the day's planned burn, your notes. Then stats, runs, every activity with its route and its curves, sleep night by night. Plain SVG charts, on a dark HUD. |
 | ⚖️  | **Withings weigh-ins too.** Connect a Withings scale once (OAuth): its weight, fat, muscle, water, bone mass and visceral fat land in the same `body` table every 3 hours, on a loop of their own.                                                                                                |
-| 🤖  | **An MCP for Claude.** 21 tools: list and compare runs, a morning readiness check, training load, the planned workouts, a journal of your notes, the pains you pinned on the body map, your target races and their plans, and read-only SQL on everything.                                        |
+| 🤖  | **An MCP for Claude.** 24 tools: list and compare runs, a morning readiness check, training load, the planned workouts, your notes, the pains pinned on the body map, your races and their plans, the nutrition plan and the weight trend, and read-only SQL on everything.                       |
 | 🏃  | **Workouts on the watch.** Claude creates, schedules, moves and deletes structured workouts: paces like `"6'05/km"`, HR in bpm, repeat groups, strength circuits from Garmin's catalog. Every write has a dry run.                                                                                |
 | 🧩  | **One API, three faces.** One [oRPC](https://orpc.dev) router serves the MCP (`/mcp`), OpenAPI (`/api`) and a typed RPC client (`/rpc`).                                                                                                                                                          |
 | 🫀  | **A 3D body map.** Click a 3D anatomical model (lower body and trunk) exactly where it hurts: the pain goes to your journal with its structure, and Claude reads it back (`body_history`) to triage it.                                                                                           |
@@ -113,7 +113,7 @@ apps you allowed and revokes any of them. You can also pass the app's password a
 token: `--header "Authorization: Bearer <password>"`.
 
 <details>
-<summary><b>The 21 tools</b></summary>
+<summary><b>The 24 tools</b></summary>
 
 **Your data (read-only)**
 
@@ -146,6 +146,16 @@ token: `--header "Authorization: Bearer <password>"`.
   then the passing times at each aid station and cutoff, and the gels on the timeline.
 - `plan_race`: the plan agreed with Claude: a pace or HR target, food and notes per segment, carbs
   and water per hour.
+
+**Your nutrition** (the plan in `data/nutrition/plan.json`, read on each call)
+
+- `nutrition_plan`, `set_nutrition_plan`: the plan agreed with Claude: kcal per day type (rest,
+  easy, quality, long), carbs per hour during a long run, protein a day, the weekly loss aimed for
+  and when to call it stalled, the target weight, the phases (deficit, maintenance). Without the
+  file, the plan of 2026-11-16.
+- `nutrition_today`: the day's type (from what was done, else planned) and its target, the phase,
+  and the weight trend: the slope of the 7-day mean over the last 28 days of the phase, and on
+  track, too fast, slow, stalled or not enough weigh-ins.
 
 **The watch** (these change the real Garmin account)
 
@@ -286,6 +296,7 @@ GarminWorkouts.use((workouts) => workouts.library({ limit: 10 })).pipe(
 | `journal/YYYY/<instant>.json`              | one note of your journal                                                       | `log_note`   |
 | `connect/workouts/<workoutId>.json`        | a workout's steps                                                              | sync         |
 | `races/<slug>.gpx`, `.json`, `.plan.json`  | a race's course, its facts, its plan (read on each request, not in SQL)        | `add_race`   |
+| `nutrition/plan.json`                      | the nutrition plan (read on each request, not in SQL)                          | the MCP      |
 | `terrain/<area>/{z}/{x}/{y}.png`           | local elevation tiles (terrarium) and their `tiles.json`, served at `/terrain` | by hand      |
 | `export/<zip>/…`                           | the export's wellness JSON files, as extracted                                 | export       |
 | `anatomy/runner.glb`, `structures.json`    | the body map's 3D model and its catalog (CC BY-SA 4.0, see its README)         | by hand      |
@@ -357,6 +368,8 @@ src/
   auth.ts               the password, the session cookie, the gate in front of everything
   journal/              the journal: a note and its pinned pain (note.ts), the writer (log.ts),
                         the body history (history.ts)
+  nutrition/            the nutrition plan (plan.ts), the day's type (day-type.ts), the weight
+                        trend (trend.ts), all without I/O; nutrition.ts (the plan's file, the view)
   anatomy/              the body map's model: its catalog, search and checks (catalog.ts), the
                         files in DATA_DIR/anatomy served read-only (anatomy.ts)
   routes/               TanStack Start pages and endpoints
@@ -369,9 +382,9 @@ src/
 <summary><b>🌐 Web pages</b></summary>
 
 - `/`: the connection at a glance, then today: the night against its 28-day normal (green, orange
-  or red, and why), the planned workout, the day's planned burn and protein, your journal. The last
-  7 days against the 7 before, the last night, hours per week by sport, and HRV, resting HR and
-  sleep over 28 days.
+  or red, and why), the planned workout, the day's planned burn and the plan's protein, your
+  journal. The last 7 days against the 7 before, the last night, hours per week by sport, and HRV,
+  resting HR and sleep over 28 days.
 - `/runs`: running over 26 or 52 weeks, or all of it.
   - Volume: km per week and the time per HR zone.
   - Each run's pace, and the longest run.
@@ -399,6 +412,12 @@ src/
   - The model (`data/anatomy/`, outside git) is served by `/anatomy/runner.glb` and
     `/anatomy/structures.json`; without it the page says so. Its credits (CC BY-SA) are on the
     page.
+- `/nutrition`: weight and nutrition, over 90 days or a year.
+  - Today's target: the day's type (rest, easy, quality, long) from the planned or done session,
+    its kcal, the protein, carbs per hour during a long run.
+  - The weight trend against the plan (on track, too fast, slow, stalled, not enough weigh-ins),
+    and the phase with its end.
+  - Each weigh-in, its 7-day mean and the deficit's corridor; fat and muscle mass.
 - `/garmin`: the connection, the login, sync now, the whole history, and the last syncs.
 - `/access`: the apps allowed on the MCP, each revocable.
 - `/setup`, `/login`, `/password`: the app's password.

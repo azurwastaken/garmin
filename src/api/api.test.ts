@@ -1,12 +1,16 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { createRouterClient, ORPCError } from '@orpc/server'
 import { Effect, ManagedRuntime } from 'effect'
 import { afterAll, describe, expect, it } from 'vitest'
 
-import { anatomyCatalog, put, testLayer } from '../../test/fixtures.ts'
+import { anatomyCatalog, dataDir, put, testLayer } from '../../test/fixtures.ts'
 import { gpxText, syntheticCourse } from '../../test/races.ts'
 import { Services } from '../app.ts'
 import { addDays, parisToday } from '../days.ts'
 import { Ingest } from '../ingest.ts'
+import { DEFAULT_PLAN, PLAN_PATH } from '../nutrition/plan.ts'
 
 import { makeHandlers, makeRun } from './handlers.ts'
 import { router } from './router.ts'
@@ -79,10 +83,13 @@ describe('the MCP', () => {
       'list_races',
       'list_workouts',
       'log_note',
+      'nutrition_plan',
+      'nutrition_today',
       'plan_race',
       'planned_workouts',
       'schedule_workout',
       'schema',
+      'set_nutrition_plan',
       'sql',
       'sync_status',
       'unschedule_workout',
@@ -142,6 +149,14 @@ describe('the MCP', () => {
     expect(body.properties['side']).toMatchObject({ enum: ['left', 'right', 'midline'] })
     expect(body.properties['pain']).toMatchObject({ type: 'integer', minimum: 0, maximum: 10 })
     expect(byName['body_history']?.annotations).toMatchObject({ readOnlyHint: true })
+    expect(byName['nutrition_today']?.annotations).toMatchObject({ readOnlyHint: true })
+    expect(byName['set_nutrition_plan']?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    })
+    expect(byName['set_nutrition_plan']?.inputSchema.required).toContain('phases')
     // Plain JSON Schema numbers for the model
     expect(byName['list_activities']?.inputSchema.properties?.['limit']).toMatchObject({
       type: 'integer',
@@ -350,6 +365,55 @@ describe("the body map's pains", () => {
     const texts = data.pins.map((pin) => pin.text)
     expect(texts).toContain('premier jour')
     expect(texts).not.toContain('hors période')
+  })
+})
+
+describe('the nutrition tools', () => {
+  it('reads the default plan without writing it, then the one written, and says a broken one', async () => {
+    const file = join(await runtime.runPromise(dataDir), PLAN_PATH)
+    expect(await call('nutrition_plan', {})).toEqual({
+      isError: false,
+      data: { plan: DEFAULT_PLAN, saved: false },
+    })
+    expect(existsSync(file)).toBe(false)
+    const plan = { ...DEFAULT_PLAN, protein_g: 135 }
+    expect(await call('set_nutrition_plan', plan)).toEqual({ isError: false, data: plan })
+    expect(await call('nutrition_plan', {})).toEqual({
+      isError: false,
+      data: { plan, saved: true },
+    })
+    expect(
+      await call('set_nutrition_plan', { ...plan, loss_kg_per_week: { min: 0.5, max: 0.3 } })
+    ).toMatchObject({ isError: true, data: { code: 'BAD_REQUEST' } })
+    await runtime.runPromise(put(PLAN_PATH, '{"protein_g": "beaucoup"'))
+    expect(await call('nutrition_today', {})).toMatchObject({
+      isError: true,
+      data: { code: 'BAD_REQUEST', message: expect.stringMatching(/^nutrition\/plan\.json : /u) },
+    })
+    await runtime.runPromise(put(PLAN_PATH, DEFAULT_PLAN))
+  })
+
+  it("answers today's target, the trend and its status", async () => {
+    const today = await runtime.runPromise(parisToday)
+    const { isError, data } = await call('nutrition_today', {})
+    expect(isError).toBe(false)
+    // No session in the test database: a rest day; no weigh-in: too few to say
+    expect(data).toMatchObject({
+      today,
+      day: { type: 'rest', from: 'nothing' },
+      target: { kcal: 1900, protein_g: 130, run_carbs_g_per_h: null },
+      trend: { kind: 'too-few', weigh_ins: 0 },
+      latest: null,
+    })
+    expect(Object.keys(data as object).toSorted()).toEqual([
+      'day',
+      'latest',
+      'phase',
+      'status',
+      'target',
+      'today',
+      'trend',
+    ])
   })
 })
 

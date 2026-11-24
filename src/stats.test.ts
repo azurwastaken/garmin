@@ -7,6 +7,8 @@ import { anatomyCatalog, apiSummary, dailyFile, fitRun, put, testLayer } from '.
 import { Anatomy } from './anatomy/anatomy.ts'
 import { addDays, parisToday } from './days.ts'
 import { Ingest, Storage } from './ingest.ts'
+import { Nutrition } from './nutrition/nutrition.ts'
+import { DEFAULT_PLAN } from './nutrition/plan.ts'
 import {
   minutesFromNoon,
   minutesOf,
@@ -17,7 +19,11 @@ import {
 } from './stats.ts'
 
 const TestLayer = testLayer(
-  Stats.layer.pipe(Layer.provideMerge(Anatomy.layer), Layer.provideMerge(Storage))
+  Stats.layer.pipe(
+    Layer.provideMerge(Nutrition.layer),
+    Layer.provideMerge(Anatomy.layer),
+    Layer.provideMerge(Storage)
+  )
 )
 
 // The real clock: the pages' periods end today
@@ -151,7 +157,8 @@ layer(TestLayer, { excludeTestServices: true })('Stats, the morning', (it) => {
       ])
       // 454 less 30 minutes of the resting 2160 a day
       expect(morning.burn).toEqual({ kind: 'known', rest: 2160, sessions: 409, total: 2569 })
-      expect(morning.protein_g).toBe(126)
+      // The plan's, whatever the weight
+      expect(morning.protein_g).toBe(130)
       expect(morning.weighed).toBe(true)
       expect(morning.notes).toEqual([
         { ...note, where: null },
@@ -181,6 +188,19 @@ layer(TestLayer, { excludeTestServices: true })('Stats, the morning', (it) => {
       expect(yield* where).toEqual(['vaste latéral (quadriceps), côté droit'])
       yield* put('anatomy/structures.json', '{"broken"')
       expect(yield* where).toEqual(['vastus_lateralis_r'])
+    })
+  )
+
+  it.effect("reads the protein from the nutrition plan's file, the page up when it is broken", () =>
+    Effect.gen(function* () {
+      const protein = Effect.map(
+        Stats.use((stats) => stats.dashboard),
+        ({ morning }) => morning.protein_g
+      )
+      yield* put('nutrition/plan.json', { ...DEFAULT_PLAN, protein_g: 140 })
+      expect(yield* protein).toBe(140)
+      yield* put('nutrition/plan.json', '{"broken"')
+      expect(yield* protein).toBeNull()
     })
   )
 })

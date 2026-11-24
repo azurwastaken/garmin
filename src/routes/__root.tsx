@@ -54,6 +54,7 @@ function Layout() {
           <Link to="/sleep">Sommeil</Link>
           <Link to="/races">Objectifs</Link>
           <Link to="/body">Corps</Link>
+          <Link to="/nutrition">Nutrition</Link>
           <Link to="/garmin">Connexion Garmin</Link>
           <Link to="/access">Accès MCP</Link>
           <Link to="/password">Mot de passe</Link>

@@ -17,6 +17,7 @@ import { Route as GarminRouteImport } from './routes/garmin.tsx'
 import { Route as HealthzRouteImport } from './routes/healthz.ts'
 import { Route as LoginRouteImport } from './routes/login.tsx'
 import { Route as McpRouteImport } from './routes/mcp.ts'
+import { Route as NutritionRouteImport } from './routes/nutrition.tsx'
 import { Route as PasswordRouteImport } from './routes/password.tsx'
 import { Route as RunsRouteImport } from './routes/runs.tsx'
 import { Route as SetupRouteImport } from './routes/setup.tsx'
@@ -80,6 +81,11 @@ const LoginRoute = LoginRouteImport.update({
 const McpRoute = McpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NutritionRoute = NutritionRouteImport.update({
+  id: '/nutrition',
+  path: '/nutrition',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PasswordRoute = PasswordRouteImport.update({
@@ -212,6 +218,7 @@ export interface FileRoutesByFullPath {
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
+  '/nutrition': typeof NutritionRoute
   '/password': typeof PasswordRoute
   '/runs': typeof RunsRoute
   '/setup': typeof SetupRoute
@@ -246,6 +253,7 @@ export interface FileRoutesByTo {
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
+  '/nutrition': typeof NutritionRoute
   '/password': typeof PasswordRoute
   '/runs': typeof RunsRoute
   '/setup': typeof SetupRoute
@@ -281,6 +289,7 @@ export interface FileRoutesById {
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
+  '/nutrition': typeof NutritionRoute
   '/password': typeof PasswordRoute
   '/runs': typeof RunsRoute
   '/setup': typeof SetupRoute
@@ -317,6 +326,7 @@ export interface FileRouteTypes {
     | '/healthz'
     | '/login'
     | '/mcp'
+    | '/nutrition'
     | '/password'
     | '/runs'
     | '/setup'
@@ -351,6 +361,7 @@ export interface FileRouteTypes {
     | '/healthz'
     | '/login'
     | '/mcp'
+    | '/nutrition'
     | '/password'
     | '/runs'
     | '/setup'
@@ -385,6 +396,7 @@ export interface FileRouteTypes {
     | '/healthz'
     | '/login'
     | '/mcp'
+    | '/nutrition'
     | '/password'
     | '/runs'
     | '/setup'
@@ -420,6 +432,7 @@ export interface RootRouteChildren {
   HealthzRoute: typeof HealthzRoute
   LoginRoute: typeof LoginRoute
   McpRoute: typeof McpRoute
+  NutritionRoute: typeof NutritionRoute
   PasswordRoute: typeof PasswordRoute
   RunsRoute: typeof RunsRoute
   SetupRoute: typeof SetupRoute
@@ -502,6 +515,13 @@ declare module '@tanstack/react-router' {
       path: '/mcp'
       fullPath: '/mcp'
       preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/nutrition': {
+      id: '/nutrition'
+      path: '/nutrition'
+      fullPath: '/nutrition'
+      preLoaderRoute: typeof NutritionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/password': {
@@ -684,6 +704,7 @@ const rootRouteChildren: RootRouteChildren = {
   HealthzRoute: HealthzRoute,
   LoginRoute: LoginRoute,
   McpRoute: McpRoute,
+  NutritionRoute: NutritionRoute,
   PasswordRoute: PasswordRoute,
   RunsRoute: RunsRoute,
   SetupRoute: SetupRoute,

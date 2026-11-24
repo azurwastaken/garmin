@@ -6,6 +6,7 @@ import { addDays, daysBetween, earlierDay, parisToday } from './days.ts'
 import { Database, type DatabaseError } from './db.ts'
 import { namesOf } from './journal/history.ts'
 import { mean, present, round } from './numbers.ts'
+import { Nutrition } from './nutrition/nutrition.ts'
 import { decode, type Point } from './polyline.ts'
 import { journal } from './schema.ts'
 import { type Burn, plannedBurn, type Reading, verdict, type Verdict } from './today.ts'
@@ -88,7 +89,7 @@ export interface Morning {
   readonly planned: ReadonlyArray<PlannedToday>
   // The mean total burn of the 28 days before today without an activity, plus the planned sessions
   readonly burn: Burn
-  // 1.8 g per kg of the latest weight
+  // The nutrition plan's protein a day; null when its file cannot be read
   readonly protein_g: number | null
   // A weigh-in today
   readonly weighed: boolean
@@ -435,6 +436,7 @@ export class Stats extends Context.Service<
     Effect.gen(function* () {
       const { use } = yield* Database
       const anatomy = yield* Anatomy
+      const nutrition = yield* Nutrition
       const all = <A extends object>(query: SQL) => use((db) => db.all<A>(query))
 
       const period = (from: string, to: string) =>
@@ -461,18 +463,12 @@ export class Stats extends Context.Service<
                 AND (sport LIKE '%' || p.sport || '%' OR (p.sport = 'cycling' AND ${sql.raw(BIKE)}))
             ) AS kcal
           FROM planned_workouts p WHERE p.day = ${today} ORDER BY p.id`)
-        const [energy] = yield* all<{
-          rest_kcal: number | null
-          protein_g: number | null
-          weighed: number
-        }>(sql`
+        const [energy] = yield* all<{ rest_kcal: number | null; weighed: number }>(sql`
           SELECT
             (SELECT round(avg(total_kcal)) FROM daily d
               WHERE d.day BETWEEN ${addDays(today, -28)} AND ${addDays(today, -1)}
                 AND d.total_kcal > 0
                 AND NOT EXISTS (SELECT 1 FROM activities a WHERE a.day = d.day)) AS rest_kcal,
-            (SELECT round(1.8 * weight_kg) FROM body WHERE weight_kg IS NOT NULL
-              ORDER BY time DESC LIMIT 1) AS protein_g,
             EXISTS (SELECT 1 FROM body WHERE day = ${today}) AS weighed`)
         const journalRows = yield* use((db) =>
           db
@@ -494,11 +490,18 @@ export class Stats extends Context.Service<
           ...note,
           where: body === null ? null : (namesOf(catalog, body)?.label ?? body.structure),
         }))
+        // The home page stays up when the plan's file is broken: /nutrition says why
+        const protein = yield* nutrition.plan.pipe(
+          Effect.map(({ plan }) => plan.protein_g),
+          Effect.catchTag('NutritionError', (error) =>
+            Effect.as(Effect.logWarning('the nutrition plan cannot be read', error), null)
+          )
+        )
         return {
           verdict: verdict(today, readings),
           planned,
           burn: plannedBurn(energy?.rest_kcal ?? null, planned),
-          protein_g: energy?.protein_g ?? null,
+          protein_g: protein,
           weighed: energy?.weighed === 1,
           notes,
         } satisfies Morning

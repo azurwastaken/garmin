@@ -2,6 +2,7 @@ import { Effect, Option, Schema } from 'effect'
 
 import { explain, GarminLogin } from '../garmin/login.ts'
 import { GarminSync } from '../garmin/sync.ts'
+import { Nutrition } from '../nutrition/nutrition.ts'
 import { type GrantView, OAuth } from '../oauth/oauth.ts'
 import { SlugSchema } from '../races/race.ts'
 import { Races } from '../races/races.ts'
@@ -11,7 +12,7 @@ import { WithingsSession } from '../withings/session.ts'
 import { type WithingsStatus, withingsStatus, WithingsSync } from '../withings/sync.ts'
 
 import { base, standard } from './base.ts'
-import { RUNS_SPANS, SLEEP_PERIODS } from './periods.ts'
+import { NUTRITION_SPANS, RUNS_SPANS, SLEEP_PERIODS } from './periods.ts'
 
 // sync_runs.warnings: the JSON array the sync wrote
 const decodeWarnings = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(Schema.String)))
@@ -187,6 +188,13 @@ export const web = {
   sleep: base
     .input(standard(Schema.Struct({ days: Schema.Literals(SLEEP_PERIODS) })))
     .handler(({ input, context }) => context.run(Stats.use((stats) => stats.sleep(input.days)))),
+
+  // The weight trend over the span (days), today's target and the phase
+  nutrition: base
+    .input(standard(Schema.Struct({ span: Schema.Literals(NUTRITION_SPANS) })))
+    .handler(({ input, context }) =>
+      context.run(Nutrition.use((nutrition) => nutrition.view(input.span)))
+    ),
 
   races: base.handler(({ context }) => context.run(Races.use((races) => races.list))),
 

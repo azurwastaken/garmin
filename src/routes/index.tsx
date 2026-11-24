@@ -262,9 +262,10 @@ function EnergyCard({ burn, protein_g, weighed }: Pick<Morning, 'burn' | 'protei
       <p>Dépense prévue : {burnLine(burn)}</p>
       <p>
         Protéines :{' '}
-        {protein_g === null ? 'pèse-toi pour avoir ta cible' : `${fmt(protein_g)} g (1,8 g/kg)`}
+        {protein_g === null ? 'plan nutrition illisible' : `${fmt(protein_g)} g (plan nutrition)`}
       </p>
       <p>Pesée du jour : {weighed ? 'faite' : 'pas encore'}</p>
+      <Link to="/nutrition">Cible du jour et tendance du poids →</Link>
     </div>
   )
 }
