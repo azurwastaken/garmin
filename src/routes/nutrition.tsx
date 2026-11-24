@@ -3,7 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { api } from '#src/api/client.ts'
 import { NUTRITION_SPANS } from '#src/api/periods.ts'
 import { LineChart, shortDay } from '#src/components/charts.tsx'
-import { dayLabel, fmt, hours, numericDay } from '#src/components/format.ts'
+import { dayLabel, fmt, numericDay } from '#src/components/format.ts'
 import { daysBetween } from '#src/days.ts'
 import type { Classified } from '#src/nutrition/day-type.ts'
 import type { Lever, LeverKey } from '#src/nutrition/levers.ts'
@@ -251,7 +251,7 @@ function LimitCell({ total }: { total: NutrientTotal }) {
         {total.status === 'over' ? 'Au-dessus' : 'Sous la limite'}
       </span>{' '}
       <span className="muted">
-        {fmt(total.limit.amount)} {total.limit.unit} · {SCOPE_LABEL[total.limit.scope]}
+        {`${fmt(total.limit.amount)}\u00A0${total.limit.unit}`} · {SCOPE_LABEL[total.limit.scope]}
       </span>
     </>
   )
@@ -325,9 +325,7 @@ function SupplementsSection({ day }: { day: SupplementDay }) {
                   {nutrients.map((total) => (
                     <tr key={total.nutrient}>
                       <td>{nutrientName(total.nutrient)}</td>
-                      <td className="num">
-                        {fmt(total.per_day, 2)} {total.unit}
-                      </td>
+                      <td className="num">{`${fmt(total.per_day, 2)}\u00A0${total.unit}`}</td>
                       <td>
                         <LimitCell total={total} />
                       </td>
@@ -487,7 +485,7 @@ const leverFacts = (lever: Lever) => {
   const value =
     measured === null
       ? null
-      : `${measured.unit === 'h' ? hours(measured.value * 3600) : `${fmt(measured.value, 2)} ${measured.unit}`} · du ${numericDay(measured.from)} au ${numericDay(measured.to)}`
+      : `${fmt(measured.value, 2)} ${measured.unit} · du ${numericDay(measured.from)} au ${numericDay(measured.to)}`
   const effect =
     kcal === null
       ? null
