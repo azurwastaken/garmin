@@ -16,7 +16,8 @@ export const parisToday = Effect.map(DateTime.now, (now) =>
   )
 )
 
-// The instant (epoch ms) of a Paris wall time (HH:MM) on a day; a time the clocks skip moves later
+// The instant (epoch ms) of a Paris wall time (HH:MM) on a day; a time the clocks skip moves later,
+// a day that does not exist (02-30) is none
 export const parisInstant = (day: string, clock: string) =>
   DateTime.makeZoned(
     {
@@ -27,7 +28,10 @@ export const parisInstant = (day: string, clock: string) =>
       minute: Number(clock.slice(3, 5)),
     },
     { timeZone: 'Europe/Paris', adjustForTimeZone: true }
-  ).pipe(Option.map(DateTime.toEpochMillis))
+  ).pipe(
+    Option.map(DateTime.toEpochMillis),
+    Option.filter((at) => parisWall(at).day === day)
+  )
 
 const parisParts = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Europe/Paris',

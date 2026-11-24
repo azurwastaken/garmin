@@ -8,7 +8,7 @@ import { dataDir, put, rows, sql, testLayer } from '../../test/fixtures.ts'
 import { Ingest, Storage } from '../ingest.ts'
 
 import { Caffeine } from './caffeine.ts'
-import type { Instant } from './intake.ts'
+import { type Instant, intakePath } from './intake.ts'
 
 const TestLayer = testLayer(Caffeine.layer.pipe(Layer.provideMerge(Storage)))
 
@@ -97,11 +97,13 @@ layer(TestLayer)('Caffeine', (it) => {
       const time = '1970-01-01T00:00:00.000Z' as Instant
       // A copy of an intake under another name: its time would be taken twice
       yield* put('caffeine/1970/copy.json', { time, kind: 'espresso', mg: 63 })
+      const other = '1970-01-01T00:05:00.000Z' as Instant
+      yield* put(intakePath(other), { time: other, kind: 'espresso', mg: 63 })
       const summary = yield* ingest.run()
       expect(summary.errors).toEqual([
         `caffeine/1970/copy.json: not a caffeine intake: its name is not its time (${time})`,
       ])
-      expect((yield* tableTimes).length).toBeGreaterThan(0)
+      expect((yield* tableTimes).map((row) => row.time)).toContain(other)
     })
   )
 

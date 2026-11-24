@@ -2,8 +2,14 @@ import { createFileRoute } from '@tanstack/react-router'
 
 import { api } from '#src/api/client.ts'
 import type { CaffeinePage } from '#src/caffeine/caffeine.ts'
-import type { CaffeineDay } from '#src/caffeine/kinetics.ts'
-import type { CaffeineVsSleep, MetricGap, MetricKey } from '#src/caffeine/sleep.ts'
+import { BEDTIME_LEFT_MG, type CaffeineDay, HALF_LIFE_H } from '#src/caffeine/kinetics.ts'
+import {
+  type CaffeineVsSleep,
+  HIGH_MG,
+  type MetricGap,
+  type MetricKey,
+  MIN_NIGHTS,
+} from '#src/caffeine/sleep.ts'
 import { CafeCard } from '#src/components/caffeine.tsx'
 import { LineChart, shortDay, StackedColumns } from '#src/components/charts.tsx'
 import { clock, dayLabel, fmt } from '#src/components/format.ts'
@@ -41,7 +47,7 @@ function GapRow({ gap }: { readonly gap: MetricGap }) {
       <tr>
         <td>{label}</td>
         <td colSpan={3} className="muted">
-          pas assez de nuits mesurées ({gap.high_n} et {gap.low_n} sur 10)
+          pas assez de nuits mesurées ({gap.high_n} et {gap.low_n} sur {MIN_NIGHTS})
         </td>
       </tr>
     )
@@ -67,21 +73,21 @@ function SleepComparison({ sleep }: { readonly sleep: CaffeineVsSleep }) {
     <section className="card">
       <h2>Caféine et sommeil</h2>
       <p className="sub">
-        Les nuits avec plus de 50 mg encore dans le corps à l'endormissement (estimé au début de la
-        nuit selon Garmin) contre les autres. Une association, jamais une cause. Le temps
+        Les nuits avec plus de {HIGH_MG} mg encore dans le corps à l'endormissement (estimé au début
+        de la nuit selon Garmin) contre les autres. Une association, jamais une cause. Le temps
         d'endormissement n'est pas dans les données Garmin : il n'est pas comparé.
       </p>
       {sleep.kind === 'too-few' ? (
         <p className="note">
-          Pas encore assez de nuits : {sleep.high} / {sleep.needed} avec plus de 50 mg, {sleep.low}{' '}
-          / {sleep.needed} avec 50 mg ou moins. Les nuits comptent à partir du surlendemain de ton
-          premier café noté.
+          Pas encore assez de nuits : {sleep.high} / {sleep.needed} avec plus de {HIGH_MG} mg,{' '}
+          {sleep.low} / {sleep.needed} avec {HIGH_MG} mg ou moins. Les nuits comptent à partir du
+          surlendemain de ton premier café noté.
         </p>
       ) : (
         <div className="table-wrap">
           <table>
             <caption className="sr-only">
-              Plus de 50 mg à l'endormissement est associé à :{' '}
+              Plus de {HIGH_MG} mg à l'endormissement est associé à :{' '}
               {sleep.metrics
                 .flatMap((gap) =>
                   gap.kind === 'compared'
@@ -93,8 +99,12 @@ function SleepComparison({ sleep }: { readonly sleep: CaffeineVsSleep }) {
             <thead>
               <tr>
                 <th>Mesure</th>
-                <th className="num">&gt; 50 mg ({sleep.high} nuits)</th>
-                <th className="num">≤ 50 mg ({sleep.low} nuits)</th>
+                <th className="num">
+                  &gt; {HIGH_MG} mg ({sleep.high} nuits)
+                </th>
+                <th className="num">
+                  ≤ {HIGH_MG} mg ({sleep.low} nuits)
+                </th>
                 <th className="num">Écart</th>
               </tr>
             </thead>
@@ -120,8 +130,8 @@ function Cafe() {
       <h1>Café</h1>
       <p className="sub">
         Ce que tu bois, ce qu'il en reste au coucher ({today.bedtime.clock}) et tes nuits. Les mg
-        restants sont une estimation (demi-vie moyenne de 5 h selon l'EFSA 2015, entre ~2 et ~10 h
-        selon les personnes), pas une mesure.
+        restants sont une estimation (demi-vie moyenne de {HALF_LIFE_H} h selon l'EFSA 2015, entre
+        ~2 et ~10 h selon les personnes), pas une mesure.
       </p>
 
       <div className="grid cols-2">
@@ -131,7 +141,7 @@ function Cafe() {
           <figure>
             <figcaption className="note">
               ~{fmt(today.now_mg)} mg maintenant, ~{fmt(today.bedtime_mg)} mg au coucher (
-              {today.bedtime.clock}) ; la bande : 25 mg ou moins.
+              {today.bedtime.clock}) ; la bande : {BEDTIME_LEFT_MG} mg ou moins.
             </figcaption>
             <LineChart
               points={page.curve.map((point) => ({
@@ -140,12 +150,12 @@ function Cafe() {
                 tick: point.clock,
                 value: point.mg,
                 lo: 0,
-                hi: 25,
+                hi: BEDTIME_LEFT_MG,
               }))}
               color="var(--series-1)"
               format={(value) => `${fmt(value)} mg`}
               title="Caféine estimée"
-              bandLabel="25 mg ou moins"
+              bandLabel={`${BEDTIME_LEFT_MG} mg ou moins`}
               height={160}
             />
           </figure>
@@ -172,23 +182,27 @@ function Cafe() {
             height={180}
           />
         </figure>
-        <h3>Dernier café de la journée</h3>
-        <LineChart
-          dots
-          points={page.days.map((day) => ({
-            key: day.day,
-            label: dayLabel(day.day),
-            tick: shortDay(day.day),
-            value: day.last_min,
-            lo: page.cutoff_min,
-            hi: page.bedtime_min,
-          }))}
-          color="var(--series-3)"
-          format={atMinute}
-          title="Dernière prise"
-          bandLabel={`après le seuil (${atMinute(page.cutoff_min)}–${atMinute(page.bedtime_min)})`}
-          height={140}
-        />
+        <figure>
+          <figcaption className="note">
+            L'heure du dernier café de chaque jour ; la bande : après le seuil.
+          </figcaption>
+          <LineChart
+            dots
+            points={page.days.map((day) => ({
+              key: day.day,
+              label: dayLabel(day.day),
+              tick: shortDay(day.day),
+              value: day.last_min,
+              lo: page.cutoff_min,
+              hi: page.bedtime_min,
+            }))}
+            color="var(--series-3)"
+            format={atMinute}
+            title="Dernière prise"
+            bandLabel={`après le seuil (${atMinute(page.cutoff_min)}–${atMinute(page.bedtime_min)})`}
+            height={140}
+          />
+        </figure>
       </section>
 
       <SleepComparison sleep={page.sleep} />

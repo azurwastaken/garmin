@@ -44,6 +44,13 @@ describe('the cut-off', () => {
     expect(CUTOFF_BEFORE_MS).toBe((9 * 3600 + 37 * 60 + 48) * 1000)
   })
 
+  it.each([
+    ['in winter', '2026-11-24', '2026-11-24T12:52:12.000Z'],
+    ['in summer', '2026-07-01', '2026-07-01T11:52:12.000Z'],
+  ])('is 13:52 in Paris %s', (_, day, iso) => {
+    expect(bedtimeOn(day) - CUTOFF_BEFORE_MS).toBe(Date.parse(iso))
+  })
+
   it('leaves 25 mg of a standard coffee at bedtime', () => {
     const bedtime = bedtimeOn('2026-11-24')
     const coffee = { at: bedtime - CUTOFF_BEFORE_MS, mg: 95 }

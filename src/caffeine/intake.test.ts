@@ -80,9 +80,26 @@ describe('resolving what was said', () => {
     ['an hour that is not one', { kind: 'espresso', time: '25:00' }],
     ['a time in another shape', { kind: 'espresso', time: '9h30' }],
     ['a day in another shape', { kind: 'espresso', day: '23/11', time: '09:30' }],
+    ['a day that does not exist', { kind: 'espresso', day: '2026-02-30', time: '10:00' }],
     ['a time later today', { kind: 'espresso', time: '16:00' }],
   ] as const)('refuses %s', (_, input) => {
     expect(Result.isFailure(resolveIntake(input, context))).toBe(true)
+  })
+
+  it.each([
+    [
+      'skips the hour the clocks jump: 02:30 is 03:30 CEST',
+      '2026-03-29',
+      '2026-03-29T01:30:00.000Z',
+    ],
+    ['takes the first of the hour lived twice', '2026-10-25', '2026-10-25T00:30:00.000Z'],
+  ])('%s', (_, day, iso) => {
+    expect(
+      resolveIntake(
+        { kind: 'espresso', day, time: '02:30' },
+        { now: Date.parse('2026-11-24T12:00:00.000Z'), today: '2026-11-24' }
+      )
+    ).toEqual(Result.succeed({ at: Date.parse(iso), mg: 63 }))
   })
 
   it('reads the wall clock in summer time too', () => {

@@ -102,7 +102,7 @@ export const todayView = (input: {
   const doses = input.recent.map(doseFrom)
   const intakes = input.recent
     .filter((row) => row.day === input.today)
-    .map((row) => Object.assign(row, { clock: parisWall(Date.parse(row.time)).clock }))
+    .map((row) => ({ ...row, clock: parisWall(Date.parse(row.time)).clock }))
   const total = intakes.reduce((sum, intake) => sum + intake.mg, 0)
   const cutoff = input.bedtime - CUTOFF_BEFORE_MS
   return {

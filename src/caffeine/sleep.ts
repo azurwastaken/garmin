@@ -31,8 +31,8 @@ export interface CaffeineNight extends NightRow {
   readonly last_intake: string | null
 }
 
-// The nights fully tracked, with their caffeine: from the first intake's day + 2 (that day's
-// earlier coffees were not logged; its night is the next morning's)
+// The nights fully tracked, with their caffeine, from the rows by time: from the first intake's day
+// + 2 (that day's earlier coffees were not logged; its night is the next morning's)
 export const caffeineNights = (
   rows: ReadonlyArray<CaffeineRow>,
   nights: ReadonlyArray<NightRow>
@@ -48,10 +48,11 @@ export const caffeineNights = (
         const at = Date.parse(row.time)
         return at <= onset && at > onset - DAY_MS
       })
-      return Object.assign(night, {
+      return {
+        ...night,
         left_mg: Math.round(caffeineAt(doses, onset)),
         last_intake: last?.time ?? null,
-      })
+      }
     })
 }
 

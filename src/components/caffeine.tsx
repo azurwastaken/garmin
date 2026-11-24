@@ -3,7 +3,15 @@ import { useState } from 'react'
 
 import { api } from '#src/api/client.ts'
 import { type CaffeineIntake, DRINK_KINDS, type DrinkKind, DRINKS } from '#src/caffeine/intake.ts'
-import type { CaffeineToday } from '#src/caffeine/kinetics.ts'
+import {
+  BEDTIME_LEFT_MG,
+  type CaffeineToday,
+  DAY_LIMIT_MG,
+  DOSE_LIMIT_MG,
+  HALF_LIFE_H,
+  RULE_HOURS,
+  STANDARD_COFFEE_MG,
+} from '#src/caffeine/kinetics.ts'
 
 import { fmt } from './format.ts'
 
@@ -77,12 +85,16 @@ export function CafeCard({ today }: { readonly today: CaffeineToday }) {
       </div>
       <p>
         <strong>{fmt(today.total_mg)} mg</strong> aujourd'hui ·{' '}
-        {today.intakes.length === 1 ? '1 boisson' : `${today.intakes.length} boissons`} · limite 400
-        mg / jour (EFSA)
+        {today.intakes.length === 1 ? '1 boisson' : `${today.intakes.length} boissons`} · limite{' '}
+        {DAY_LIMIT_MG} mg / jour (EFSA)
       </p>
-      {today.over_day_limit ? <p className="status bad">Plus de 400 mg aujourd'hui</p> : null}
+      {today.over_day_limit ? (
+        <p className="status bad">Plus de {DAY_LIMIT_MG} mg aujourd'hui</p>
+      ) : null}
       {today.strong.length > 0 ? (
-        <p className="status wait">Plus de 200 mg d'un coup ({today.strong[0]?.clock})</p>
+        <p className="status wait">
+          Plus de {DOSE_LIMIT_MG} mg d'un coup ({today.strong[0]?.clock})
+        </p>
       ) : null}
       <p>
         Dans le corps maintenant : ~{fmt(today.now_mg)} mg · au coucher ({today.bedtime.clock}) : ~
@@ -94,9 +106,10 @@ export function CafeCard({ today }: { readonly today: CaffeineToday }) {
           : `Dernier café conseillé avant ${today.cutoff.clock}`}
       </p>
       <p className="note">
-        Estimations (demi-vie moyenne 5 h, EFSA 2015). Seuil affiché : un café filtre (95 mg) bu
-        avant {today.cutoff.clock} n'en laisse que 25 mg au coucher. Repère des études : 8,8 h avant
-        le coucher, soit {today.rule_cutoff.clock} (Gardiner et al. 2023).
+        Estimations (demi-vie moyenne {HALF_LIFE_H} h, EFSA 2015). Seuil affiché : un café filtre (
+        {STANDARD_COFFEE_MG} mg) bu avant {today.cutoff.clock} n'en laisse que {BEDTIME_LEFT_MG} mg
+        au coucher. Repère des études : {fmt(RULE_HOURS, 1)} h avant le coucher, soit{' '}
+        {today.rule_cutoff.clock} (Gardiner et al. 2023).
       </p>
 
       <form className="cafe-quick" onSubmit={quick} aria-label="Ajouter une boisson">

@@ -211,7 +211,7 @@ export class Caffeine extends Context.Service<
             midnight,
             bedtime,
             15
-          ).map((point) => Object.assign(momentOf(point.at), { mg: Math.round(point.mg) })),
+          ).map((point) => ({ ...momentOf(point.at), mg: Math.round(point.mg) })),
           sleep: (yield* sleep).comparison,
         } satisfies CaffeinePage
       })

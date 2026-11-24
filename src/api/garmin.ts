@@ -11,7 +11,15 @@ import {
   InstantSchema,
   Mg,
 } from '../caffeine/intake.ts'
-import { TARGET_BEDTIME } from '../caffeine/kinetics.ts'
+import {
+  BEDTIME_LEFT_MG,
+  DAY_LIMIT_MG,
+  DOSE_LIMIT_MG,
+  HALF_LIFE_H,
+  RULE_HOURS,
+  STANDARD_COFFEE_MG,
+  TARGET_BEDTIME,
+} from '../caffeine/kinetics.ts'
 import { HIGH_MG, MIN_NIGHTS } from '../caffeine/sleep.ts'
 import { addDays, parisToday } from '../days.ts'
 import { GarminLogin } from '../garmin/login.ts'
@@ -366,7 +374,7 @@ const bodyHistoryTool = tool({
 
 // --- The caffeine the user drinks: what is left at bedtime, and the nights after
 
-const CAFFEINE_MODEL = `Estimates, not measurements: caffeine left = Σ mg · 0.5^(hours since / 5), with EFSA 2015's mean adult half-life of 5 h (anyone's own lies between ~2 and ~10 h). EFSA 2015's limits for a healthy adult: 400 mg a day, 200 mg at once. Bedtime is ${TARGET_BEDTIME} in Paris for now. cutoff: the latest a standard 95 mg coffee is down to 25 mg at bedtime (bedtime − 5 h·log2(95/25), 9 h 38), what the web app shows as "dernier café conseillé"; rule_cutoff: Gardiner et al. 2023's meta-analysis, coffee at least 8.8 h before bed. Instants are UTC (at, time), each with its Paris clock (clock).`
+const CAFFEINE_MODEL = `Estimates, not measurements: caffeine left = Σ mg · 0.5^(hours since / ${HALF_LIFE_H}), with EFSA 2015's mean adult half-life of ${HALF_LIFE_H} h (anyone's own lies between ~2 and ~10 h). EFSA 2015's limits for a healthy adult: ${DAY_LIMIT_MG} mg a day, ${DOSE_LIMIT_MG} mg at once. Bedtime is ${TARGET_BEDTIME} in Paris for now. cutoff: the latest a standard ${STANDARD_COFFEE_MG} mg coffee is down to ${BEDTIME_LEFT_MG} mg at bedtime (bedtime − ${HALF_LIFE_H} h·log2(${STANDARD_COFFEE_MG}/${BEDTIME_LEFT_MG})), what the web app shows as "dernier café conseillé"; rule_cutoff: Gardiner et al. 2023's meta-analysis, coffee at least ${RULE_HOURS} h before bed. Instants are UTC (at, time), each with its Paris clock (clock).`
 
 const logCaffeine = tool({
   name: 'log_caffeine',
@@ -396,7 +404,7 @@ const logCaffeine = tool({
 const caffeineToday = tool({
   name: 'caffeine_today',
   title: "Today's caffeine",
-  description: `Today's caffeine (Paris): the intakes (with their Paris clock), total_mg and over_day_limit, strong (intakes over 200 mg at once), now_mg (left in the body now), bedtime_mg (left at bedtime), cutoff and cutoff_passed, rule_cutoff. ${CAFFEINE_MODEL}`,
+  description: `Today's caffeine (Paris): the intakes (with their Paris clock), total_mg and over_day_limit, strong (intakes over ${DOSE_LIMIT_MG} mg at once), now_mg (left in the body now), bedtime_mg (left at bedtime), cutoff and cutoff_passed, rule_cutoff. ${CAFFEINE_MODEL}`,
   method: 'GET',
   path: '/caffeine/today',
   tags: ['caffeine'],
