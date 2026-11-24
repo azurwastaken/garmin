@@ -23,51 +23,53 @@ const known = rows<{ path: string }>(
 
 // The test clock: frozen at 1970-01-01T00:00:00Z (01:00 in Paris)
 layer(TestLayer)('Caffeine', (it) => {
-  it.effect('writes each intake to its own file, then ingests it', () =>
-    Effect.gen(function* () {
-      const caffeine = yield* Caffeine
-      // Refused before anything is written
-      for (const input of [
-        { kind: 'custom' },
-        { kind: 'espresso', mg: 9500 },
-        { kind: 'espresso', time: '02:00' },
-        { kind: 'espresso', day: '1969-12-31' },
-      ] as const) {
-        expect(Exit.isFailure(yield* caffeine.log(input).pipe(Effect.exit))).toBe(true)
-      }
-      expect(yield* files).toEqual([])
+  it.effect(
+    'writes each intake to its own file, ingests it, and today counts the nights before',
+    () =>
+      Effect.gen(function* () {
+        const caffeine = yield* Caffeine
+        // Refused before anything is written
+        for (const input of [
+          { kind: 'custom' },
+          { kind: 'espresso', mg: 9500 },
+          { kind: 'espresso', time: '02:00' },
+          { kind: 'espresso', day: '1969-12-31' },
+        ] as const) {
+          expect(Exit.isFailure(yield* caffeine.log(input).pipe(Effect.exit))).toBe(true)
+        }
+        expect(yield* files).toEqual([])
 
-      // 23:00 in Paris two days back, 26 h ago: 160·2^(−26/5) = 4.35 mg still in the body
-      const old = yield* caffeine.log({ kind: 'monster', day: '1969-12-30', time: '23:00' })
-      const before = yield* caffeine.today
-      expect(before.now_mg).toBe(4)
-      expect(before.intakes).toEqual([])
+        // 23:00 in Paris two days back, 26 h ago: 160·2^(−26/5) = 4.35 mg still in the body
+        const old = yield* caffeine.log({ kind: 'monster', day: '1969-12-30', time: '23:00' })
+        const before = yield* caffeine.today
+        expect(before.now_mg).toBe(4)
+        expect(before.intakes).toEqual([])
 
-      const first = yield* caffeine.log({ kind: 'espresso' })
-      expect(first).toEqual({ time: '1970-01-01T00:00:00.000Z', kind: 'espresso', mg: 63 })
-      // The same millisecond: the next one, never over the first
-      const second = yield* caffeine.log({ kind: 'custom', mg: 150, note: 'gel' })
-      expect(second.time).toBe('1970-01-01T00:00:00.001Z')
-      // 00:15 in Paris
-      const earlier = yield* caffeine.log({ kind: 'black_tea', time: '00:15' })
-      expect(earlier.time).toBe('1969-12-31T23:15:00.000Z')
-      expect(yield* files).toEqual([
-        '1970-01-01T00-00-00.000Z.json',
-        '1970-01-01T00-00-00.001Z.json',
-      ])
-      expect(
-        yield* rows(sql`SELECT time, day, kind, mg, note FROM caffeine ORDER BY time`)
-      ).toEqual([
-        { time: old.time, day: '1969-12-30', kind: 'monster', mg: 160, note: null },
-        { time: earlier.time, day: '1970-01-01', kind: 'black_tea', mg: 47, note: null },
-        { time: first.time, day: '1970-01-01', kind: 'espresso', mg: 63, note: null },
-        { time: second.time, day: '1970-01-01', kind: 'custom', mg: 150, note: 'gel' },
-      ])
+        const first = yield* caffeine.log({ kind: 'espresso' })
+        expect(first).toEqual({ time: '1970-01-01T00:00:00.000Z', kind: 'espresso', mg: 63 })
+        // The same millisecond: the next one, never over the first
+        const second = yield* caffeine.log({ kind: 'custom', mg: 150, note: 'gel' })
+        expect(second.time).toBe('1970-01-01T00:00:00.001Z')
+        // 00:15 in Paris
+        const earlier = yield* caffeine.log({ kind: 'black_tea', time: '00:15' })
+        expect(earlier.time).toBe('1969-12-31T23:15:00.000Z')
+        expect(yield* files).toEqual([
+          '1970-01-01T00-00-00.000Z.json',
+          '1970-01-01T00-00-00.001Z.json',
+        ])
+        expect(
+          yield* rows(sql`SELECT time, day, kind, mg, note FROM caffeine ORDER BY time`)
+        ).toEqual([
+          { time: old.time, day: '1969-12-30', kind: 'monster', mg: 160, note: null },
+          { time: earlier.time, day: '1970-01-01', kind: 'black_tea', mg: 47, note: null },
+          { time: first.time, day: '1970-01-01', kind: 'espresso', mg: 63, note: null },
+          { time: second.time, day: '1970-01-01', kind: 'custom', mg: 150, note: 'gel' },
+        ])
 
-      const today = yield* caffeine.today
-      expect(today.total_mg).toBe(260)
-      expect(today.intakes.map((intake) => intake.clock)).toEqual(['00:15', '01:00', '01:00'])
-    })
+        const today = yield* caffeine.today
+        expect(today.total_mg).toBe(260)
+        expect(today.intakes.map((intake) => intake.clock)).toEqual(['00:15', '01:00', '01:00'])
+      })
   )
 
   it.effect('deletes an intake, file and row; the ingest drops one deleted by hand', () =>

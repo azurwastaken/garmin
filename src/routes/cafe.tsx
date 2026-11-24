@@ -136,7 +136,7 @@ function Cafe() {
 
       <div className="grid cols-2">
         <CafeCard today={today} />
-        <section className="card">
+        <div className="card">
           <h2>Aujourd'hui dans le corps</h2>
           <figure>
             <figcaption className="note">
@@ -159,7 +159,7 @@ function Cafe() {
               height={160}
             />
           </figure>
-        </section>
+        </div>
       </div>
 
       <section className="card">
