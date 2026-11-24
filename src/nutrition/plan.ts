@@ -70,7 +70,8 @@ export const DEFAULT_PLAN: NutritionPlan = {
   target_kg: 68,
   phases: [
     { kind: 'deficit', from: '2026-11-19', to: '2027-01-31' },
-    // shortcut: the Paris Marathon's date is assumed (no race file for it), set_nutrition_plan fixes it
+    // shortcut: the Paris Marathon's date is assumed (no race file for it), set_nutrition_plan
+    // fixes it
     { kind: 'maintenance', from: '2027-02-01', to: '2027-04-11', label: 'Marathon de Paris' },
   ],
 }
@@ -86,7 +87,7 @@ export interface DayTarget {
   readonly run_carbs_g_per_h: { readonly min: number; readonly max: number } | null
 }
 
-// What the plan asks of a day of that type: its kcal, the protein, carbs during the run on a long day
+// What the plan asks of a day of that type: its kcal, the protein, carbs during a long day's run
 export const targetFor = (
   plan: Pick<NutritionPlan, 'kcal' | 'protein_g' | 'long_run_carbs_g_per_h'>,
   type: DayType

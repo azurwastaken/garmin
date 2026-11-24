@@ -3,9 +3,9 @@ import { parseDuration } from '../garmin/workout-builder.ts'
 import type { DayType } from './plan.ts'
 
 // A day's type for the plan's kcal, without I/O: from what was done that day, else from what its
-// calendar plans. Long is a running day (75 min or 15 km of running); quality any sport's (20 min in
-// zones 4–5 once done; before, the plan's words, its HR targets, its repetitions); any other session
-// makes an easy day; nothing, a rest day.
+// calendar plans. Long is a running day (75 min or 15 km of running); quality any sport's (20 min
+// in zones 4–5 once done; before, the plan's words, its HR targets, its repetitions); any other
+// session makes an easy day; nothing, a rest day.
 
 export interface PlannedSession {
   readonly name: string
@@ -152,8 +152,8 @@ const stepMarker = (step: Step, z4FloorBpm: number | null): string | null => {
     : null
 }
 
-// A planned session's quality marker, else null: a quality word in its name or description (never in
-// its steps, where `interval` is every main step's kind), then its steps (never a strength
+// A planned session's quality marker, else null: a quality word in its name or description (never
+// in its steps, where `interval` is every main step's kind), then its steps (never a strength
 // session's: its exercises are `interval` steps of a minute)
 const qualityMarker = (session: PlannedSession, z4FloorBpm: number | null): string | null => {
   const word = QUALITY_WORDS.exec(`${session.name} ${session.description ?? ''}`)

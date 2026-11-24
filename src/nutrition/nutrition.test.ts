@@ -1,12 +1,13 @@
-import { expect, layer } from '@effect/vitest'
+import { describe, expect, it, layer } from '@effect/vitest'
 import { Effect, Layer } from 'effect'
 
 import { fitRun, put, testLayer } from '../../test/fixtures.ts'
 import { addDays, monthEnd, parisToday } from '../days.ts'
 import { Ingest, Storage } from '../ingest.ts'
 
-import { Nutrition } from './nutrition.ts'
+import { Nutrition, nutritionView } from './nutrition.ts'
 import { DEFAULT_PLAN } from './plan.ts'
+import { dailyWeighIns } from './trend.ts'
 
 const TestLayer = testLayer(Nutrition.layer.pipe(Layer.provideMerge(Storage)))
 
@@ -27,6 +28,37 @@ const putWeighIns = (weighIns: ReadonlyArray<readonly [string, number]>) =>
       }),
     { discard: true }
   )
+
+describe('nutritionView', () => {
+  it('judges the trend in the phase today falls in, from that phase’s start', () => {
+    const view = nutritionView({
+      plan: DEFAULT_PLAN,
+      today: '2026-11-24',
+      span: 90,
+      weighIns: dailyWeighIns(
+        ['2026-11-13', '2026-11-16', '2026-11-18', '2026-11-24'].map((day) => ({
+          time: `${day}T06:00:00.000Z`,
+          day,
+          weight_kg: 71,
+          body_fat_pct: null,
+          muscle_mass_kg: null,
+        }))
+      ),
+      done: [],
+      planned: [],
+      z4FloorBpm: null,
+    })
+    expect(view).toMatchObject({
+      day: { type: 'rest' },
+      target: { kcal: 1900 },
+      phase: { kind: 'deficit', from: '2026-11-19' },
+      trend: { kind: 'too-few', from: '2026-11-19', weigh_ins: 1 },
+      status: 'too-few',
+      latest: { day: '2026-11-24' },
+    })
+    expect(view.days).toHaveLength(90)
+  })
+})
 
 // The real clock: the page's days end today
 layer(TestLayer, { excludeTestServices: true })('Nutrition', (it) => {

@@ -35,8 +35,8 @@ const SLOPE_DAYS = 28
 export const MIN_SLOPE_SPAN_DAYS = 14
 export const MIN_SLOPE_WEIGH_INS = 4
 
-// The morning's weigh-in of each day (its earliest), in day order: Withings and Garmin may both have
-// one
+// The morning's weigh-in of each day (its earliest), in day order: Withings and Garmin may both
+// have one
 export const dailyWeighIns = (rows: ReadonlyArray<BodyRow>): DailyWeighIns => {
   const first = new Map<string, WeighIn>()
   for (const { time: _time, ...weighIn } of rows.toSorted((a, b) => a.time.localeCompare(b.time))) {

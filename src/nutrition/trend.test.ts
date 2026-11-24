@@ -83,6 +83,14 @@ describe('trendOf', () => {
     expect(trend.kind === 'measured' && trend.kg_per_week).toBeCloseTo(-0.4, 2)
   })
 
+  it('takes the whole 28 days outside any phase', () => {
+    expect(trendOf(series(START, 41, 0.4), addDays(START, 40), null)).toMatchObject({
+      kind: 'measured',
+      from: addDays(START, 13),
+      weigh_ins: 28,
+    })
+  })
+
   it('starts at the phase: the weeks before it are another regime', () => {
     // Gaining before the phase, losing 0.4 a week from its first day
     const before = Array.from({ length: 14 }, (_, index) =>
@@ -114,8 +122,9 @@ describe('trendOf', () => {
       to: '2026-11-24',
       weigh_ins: 1,
     })
-    // Means only from the phase's 7th day: 7 days of them, under 14
+    // Means only from the phase's 7th day: 7 days of them, then 13, under 14
     expect(trendOf(series(START, 14, 0.4), addDays(START, 13), START).kind).toBe('too-few')
+    expect(trendOf(series(START, 20, 0.4), addDays(START, 19), START).kind).toBe('too-few')
     // Means over 27 days, but only 3 weigh-ins in the window
     const today = '2026-12-20'
     const three = dailyWeighIns(
@@ -195,6 +204,17 @@ describe('weightDays', () => {
     // The anchor 71.1 on 19/11; two weeks later, 0.6 to 1 kg under it
     expect(days.at(-1)).toMatchObject({ day: '2026-12-03', weight_kg: 70.5, lo: 70.1, hi: 70.5 })
     expect(days[1]).toMatchObject({ day: '2026-11-19', weight_kg: null, lo: 71.1, hi: 71.1 })
+  })
+
+  it('draws the corridor in the deficit only, up to its last day', () => {
+    const weighIns = dailyWeighIns([
+      row('2026-11-16', 71),
+      row('2026-11-18', 71.2),
+      row('2027-01-26', 68.5),
+      row('2027-02-01', 68.4),
+    ])
+    const days = weightDays(DEFAULT_PLAN, weighIns, '2027-01-31', '2027-02-02')
+    expect(days.map((day) => day.lo !== null && day.hi !== null)).toEqual([true, false, false])
   })
 
   it('draws no corridor without a mean on the deficit’s first day', () => {
