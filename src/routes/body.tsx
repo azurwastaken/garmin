@@ -1,5 +1,5 @@
 import { CatchBoundary, ClientOnly, createFileRoute, Link, useRouter } from '@tanstack/react-router'
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 
 import {
   type BodyPoint,
@@ -18,6 +18,7 @@ import {
 import { api } from '#src/api/client.ts'
 import { BODY_PERIODS } from '#src/api/periods.ts'
 import { dayLabel } from '#src/components/format.ts'
+import { useCatalog } from '#src/components/use-catalog.ts'
 import {
   PAIN_KIND_LABEL,
   PAIN_KINDS,
@@ -52,37 +53,10 @@ export const Route = createFileRoute('/body')({
 // Three.js only in the browser, in its own chunk
 const BodyScene = lazy(() => import('#src/components/body-scene.tsx'))
 
-type CatalogState =
-  | { readonly tag: 'loading' }
-  | { readonly tag: 'absent' }
-  | { readonly tag: 'failed'; readonly message: string }
-  | { readonly tag: 'ready'; readonly catalog: Catalog }
-
 type Panel =
   | { readonly tag: 'none' }
   | { readonly tag: 'report'; readonly id: string; readonly point: BodyPoint | null }
   | { readonly tag: 'pin'; readonly time: string }
-
-// The catalog, once: absent when the server has no model
-const loadCatalog = async (): Promise<CatalogState> => {
-  try {
-    const response = await fetch('/anatomy/structures.json')
-    if (response.status === 404) return { tag: 'absent' }
-    if (!response.ok) return { tag: 'failed', message: `HTTP ${response.status}` }
-    // The server's own asset, served as it is
-    return { tag: 'ready', catalog: (await response.json()) as Catalog }
-  } catch (cause) {
-    return { tag: 'failed', message: cause instanceof Error ? cause.message : String(cause) }
-  }
-}
-
-const useCatalog = () => {
-  const [state, setState] = useState<CatalogState>({ tag: 'loading' })
-  useEffect(() => {
-    void loadCatalog().then(setState)
-  }, [])
-  return state
-}
 
 const PERIOD_LABEL: Record<Period, string> = { 7: '7 jours', 30: '30 jours', 90: '90 jours' }
 

@@ -1115,3 +1115,58 @@ td a:hover {
   }
 }
 /* --- end /body --- */
+
+/* The Renfo page: the body map's stage, shorter; what to regress, in the warning's ink */
+.renfo-stage {
+  height: min(64vh, 600px);
+  min-height: 380px;
+}
+.renfo-warn {
+  color: var(--warning-ink);
+}
+p.renfo-warn {
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+.renfo-slots,
+.renfo-flags {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+.renfo-slots li,
+.renfo-flags li {
+  padding: 8px 0;
+  border-top: 1px solid var(--grid);
+}
+.renfo-legend {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.renfo-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin: 0 4px 0 8px;
+  vertical-align: -1px;
+}
+.renfo-swatch.primary {
+  background: var(--series-2);
+}
+.renfo-swatch.secondary {
+  background: var(--series-3);
+}
+.renfo-swatch.pain {
+  background: var(--warning-ink);
+}
+.renfo-session {
+  margin-top: 14px;
+}
+.renfo-progress {
+  margin-top: 14px;
+}
+.renfo-empty .hero {
+  margin: 0;
+  color: var(--muted);
+}

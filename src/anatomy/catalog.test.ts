@@ -120,6 +120,8 @@ describe('the scene palette', () => {
       '--good': '#a3e635',
       '--warning-ink': '#fbbf24',
       '--critical': ' #ff5470',
+      '--series-2': '#f9a8d4',
+      '--series-3': '#a78bfa',
     })
     const style = (page: string) => ({
       getPropertyValue: (name: string) => sheet(page)[name] ?? '',
@@ -129,6 +131,7 @@ describe('the scene palette', () => {
       base: '#3fe0ff',
       highlight: '#e8f7ff',
       pain: { low: '#a3e635', mid: '#fbbf24', high: '#ff5470' },
+      worked: { primary: '#f9a8d4', secondary: '#a78bfa' },
     })
   })
 })

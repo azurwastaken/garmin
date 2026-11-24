@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 
-import { sql } from 'drizzle-orm'
+import { and, asc, between, isNotNull, sql } from 'drizzle-orm'
 import { Config, Context, Effect, FileSystem, Layer, Schema, Semaphore } from 'effect'
 
 import { Anatomy, readableCatalog } from '../anatomy/anatomy.ts'
@@ -9,8 +9,10 @@ import { addDays, parisToday } from '../days.ts'
 import { Database, type DatabaseError } from '../db.ts'
 import { writeAtomic } from '../files.ts'
 import { EXERCISES, type WorkoutInput } from '../garmin/workout-builder.ts'
+import { type BodyNote, type BodyPin, bodyHistory } from '../journal/history.ts'
 import { dayType } from '../nutrition/day-type.ts'
 import { sessionsOn } from '../nutrition/nutrition.ts'
+import { journal } from '../schema.ts'
 
 import {
   type LastSession,
@@ -99,12 +101,16 @@ export interface StrengthView {
   readonly program: StrengthProgram
   readonly saved: boolean
   readonly phase: Phase | null
+  // Each session as the current phase asks it (the next phase's in a recovery week)
+  readonly plans: ReadonlyArray<SessionPlan>
   readonly weeks: readonly [WeekProposal, WeekProposal]
   readonly calendar: ReadonlyArray<PlannedStrength>
   readonly next: NextSession | null
   readonly history: StrengthHistory
   // The window's worst pain per structure, the worst first
   readonly pains: ReadonlyArray<PainView>
+  // The window's pains as the body map pins them
+  readonly pins: ReadonlyArray<BodyPin>
   // The pain rule against the week's sessions (both sessions when none is placed)
   readonly flags: ReadonlyArray<PainFlag>
   // What the week's sessions load
@@ -131,6 +137,10 @@ export const labelFrom =
     const structure = structureOf(catalog, id)
     return structure === undefined ? id : structureLabel(structure.french, structure.side)
   }
+
+// The pains of the pinned notes
+const painsOf = (notes: ReadonlyArray<BodyNote>): Array<RecentPain> =>
+  notes.map((note) => ({ structure: note.body.structure, day: note.day, pain: note.body.pain }))
 
 // The pain rule's line on the watch: "Règle des 3/10 (droit fémoral, côté droit 3/10) : …"
 const painNote = (flag: PainFlag, labelOf: (id: string) => string) => {
@@ -323,11 +333,28 @@ export class Strength extends Context.Service<
           })
       )
 
+      // The pains pinned on the body map in the pain rule's window, in day order
+      const painNotes = (today: string, days: number) =>
+        database.use((db) =>
+          db
+            .select({
+              time: journal.time,
+              day: journal.day,
+              text: journal.text,
+              body: journal.body,
+            })
+            .from(journal)
+            .where(
+              and(isNotNull(journal.body), between(journal.day, addDays(today, -(days - 1)), today))
+            )
+            .orderBy(asc(journal.day), asc(journal.time))
+            .all()
+            .flatMap(({ body, ...note }): Array<BodyNote> =>
+              body === null ? [] : [{ ...note, body }]
+            )
+        )
       const recentPains = (today: string, days: number) =>
-        all<RecentPain>(sql`
-          SELECT day, json_extract(body, '$.structure') AS structure,
-            json_extract(body, '$.pain') AS pain
-          FROM journal WHERE body IS NOT NULL AND day BETWEEN ${addDays(today, -(days - 1))} AND ${today}`)
+        Effect.map(painNotes(today, days), painsOf)
 
       const proposal = Effect.fnUntraced(function* (input: {
         readonly program: StrengthProgram
@@ -435,7 +462,13 @@ export class Strength extends Context.Service<
         const current = read.program
         const catalog = yield* readableCatalog(anatomy)
         const labelOf = labelFrom(catalog)
-        const pains = yield* recentPains(today, current.pain_rule.days)
+        const notes = yield* painNotes(today, current.pain_rule.days)
+        const pains = painsOf(notes)
+        const pinned = bodyHistory(
+          { from: addDays(today, -(current.pain_rule.days - 1)), to: today },
+          notes,
+          catalog
+        )
         const propose = (day: string) =>
           proposal({ program: current, today, day, variant, pains, labelOf })
         const weeks = [yield* propose(today), yield* propose(addDays(mondayOf(today), 7))] as const
@@ -461,10 +494,23 @@ export class Strength extends Context.Service<
         const worst = [...worstPains(pains).values()].toSorted(
           (a, b) => b.pain - a.pain || b.day.localeCompare(a.day)
         )
+        const shownDay =
+          phaseOn(current.phases, today) === null
+            ? (current.phases.find((phase) => phase.from > today)?.from ?? today)
+            : today
+        const plans = current.sessions.flatMap(
+          (session) => sessionPlan(current, session.id, shownDay, variant) ?? []
+        )
         const labels = Object.fromEntries(
-          [...new Set([...worked.map((w) => w.structure), ...worst.map((p) => p.structure)])].map(
-            (id) => [id, labelOf(id)]
-          )
+          [
+            ...new Set([
+              ...current.exercises.flatMap((exercise) => [
+                ...exercise.primary,
+                ...exercise.secondary,
+              ]),
+              ...worst.map((p) => p.structure),
+            ]),
+          ].map((id) => [id, labelOf(id)])
         )
         return {
           today,
@@ -472,11 +518,13 @@ export class Strength extends Context.Service<
           program: current,
           saved: read.saved,
           phase: phaseOn(current.phases, today),
+          plans,
           weeks,
           calendar,
           next: nextOf(calendar, slot),
           history: yield* historyOf(current, today, HISTORY_WEEKS),
           pains: worst.map((pain) => ({ ...pain, label: labelOf(pain.structure) })),
+          pins: pinned.pins,
           flags,
           worked,
           labels,

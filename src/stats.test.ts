@@ -17,9 +17,11 @@ import {
   withClock,
   type SleepNight,
 } from './stats.ts'
+import { Strength } from './strength/strength.ts'
 
 const TestLayer = testLayer(
   Stats.layer.pipe(
+    Layer.provideMerge(Strength.layer),
     Layer.provideMerge(Nutrition.layer),
     Layer.provideMerge(Anatomy.layer),
     Layer.provideMerge(Storage)
@@ -153,7 +155,14 @@ layer(TestLayer, { excludeTestServices: true })('Stats, the morning', (it) => {
       expect(morning.verdict).toMatchObject({ kind: 'judged', light: 'green', recovery_h: 6 })
       // 1800 s at 300 kcal per 1190 s
       expect(morning.planned).toEqual([
-        { id: 1, name: 'Footing', steps: null, minutes: 30, kcal: expect.closeTo(453.78, 2) },
+        {
+          id: 1,
+          name: 'Footing',
+          sport: 'running',
+          steps: null,
+          minutes: 30,
+          kcal: expect.closeTo(453.78, 2),
+        },
       ])
       // 454 less 30 minutes of the resting 2160 a day
       expect(morning.burn).toEqual({ kind: 'known', rest: 2160, sessions: 409, total: 2569 })
@@ -165,6 +174,32 @@ layer(TestLayer, { excludeTestServices: true })('Stats, the morning', (it) => {
         { ...lastNote, where: null },
       ])
     })
+  )
+
+  it.effect(
+    "shows today's strength session from the calendar, with the programme's exercises",
+    () =>
+      Effect.gen(function* () {
+        const today = yield* parisToday
+        const name = 'Renfo B - Hanches et chaîne postérieure'
+        yield* put(`connect/calendar/${today.slice(0, 7)}.json`, {
+          calendarItems: [
+            { id: 1, itemType: 'workout', title: 'Footing', date: today, workoutId: 9 },
+            { id: 2, itemType: 'workout', title: name, date: today, workoutId: 10 },
+          ],
+        })
+        yield* put('connect/workouts/10.json', {
+          workoutId: 10,
+          workoutName: name,
+          sportType: { sportTypeKey: 'strength_training' },
+          estimatedDurationInSecs: 2700,
+          workoutSegments: [],
+        })
+        yield* Ingest.use((ingest) => ingest.run())
+        const { morning } = yield* Stats.use((stats) => stats.dashboard)
+        expect(morning.strength).toMatchObject({ from: 'calendar', title: name, flags: 0 })
+        expect(morning.strength?.exercises).toContain('Copenhagen plank (progression)')
+      })
   )
 
   it.effect("names a pinned pain's structure on the home page, the id without the model", () =>

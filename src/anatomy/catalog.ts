@@ -155,6 +155,11 @@ export const PAIN_COLOR_VAR = {
   mid: '--warning-ink',
   high: '--critical',
 } as const satisfies Record<PainLevel, `--${string}`>
+// The muscles a strength session works, apart from the pains' hues and the model's cyan
+export const WORKED_COLOR_VAR = {
+  primary: '--series-2',
+  secondary: '--series-3',
+} as const satisfies Record<'primary' | 'secondary', `--${string}`>
 // Metres: 6 mm at 0, 18 mm at 10
 export const pinRadius = (pain: number) => 0.006 + pain * 0.0012
 
@@ -166,6 +171,8 @@ export interface ScenePalette {
   // Hovered and selected structures
   readonly highlight: string
   readonly pain: Record<PainLevel, string>
+  // What a strength session works (the Renfo page): its primary and secondary muscles
+  readonly worked: { readonly primary: string; readonly secondary: string }
 }
 
 export const readPalette = (style: Pick<CSSStyleDeclaration, 'getPropertyValue'>): ScenePalette => {
@@ -178,6 +185,10 @@ export const readPalette = (style: Pick<CSSStyleDeclaration, 'getPropertyValue'>
       low: read(PAIN_COLOR_VAR.low),
       mid: read(PAIN_COLOR_VAR.mid),
       high: read(PAIN_COLOR_VAR.high),
+    },
+    worked: {
+      primary: read(WORKED_COLOR_VAR.primary),
+      secondary: read(WORKED_COLOR_VAR.secondary),
     },
   }
 }

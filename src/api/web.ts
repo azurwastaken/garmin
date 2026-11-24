@@ -8,6 +8,7 @@ import { SlugSchema } from '../races/race.ts'
 import { Races } from '../races/races.ts'
 import { boundsOf } from '../races/terrarium.ts'
 import { Stats } from '../stats.ts'
+import { Strength } from '../strength/strength.ts'
 import { WithingsSession } from '../withings/session.ts'
 import { type WithingsStatus, withingsStatus, WithingsSync } from '../withings/sync.ts'
 
@@ -194,6 +195,13 @@ export const web = {
     .input(standard(Schema.Struct({ span: Schema.Literals(NUTRITION_SPANS) })))
     .handler(({ input, context }) =>
       context.run(Nutrition.use((nutrition) => nutrition.view(input.span)))
+    ),
+
+  // The Renfo page: the programme, the week placed, the sessions done, the pains against the week
+  strength: base
+    .input(standard(Schema.Struct({ variant: Schema.Literals(['gym', 'maison']) })))
+    .handler(({ input, context }) =>
+      context.run(Strength.use((strength) => strength.view(input.variant)))
     ),
 
   races: base.handler(({ context }) => context.run(Races.use((races) => races.list))),

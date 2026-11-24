@@ -52,6 +52,8 @@ export interface SceneProps {
   readonly pins: ReadonlyArray<BodyPin>
   // Each structure's highest pain over the period
   readonly heat: ReadonlyMap<string, number>
+  // What a strength session works (the Renfo page), under the pains
+  readonly worked?: ReadonlyMap<string, 'primary' | 'secondary'>
   readonly onHover: (id: string | null) => void
   readonly onPick: (id: string, point: BodyPoint) => void
   readonly onPin: (time: string) => void
@@ -168,11 +170,12 @@ function Model({
   selected,
   hovered,
   heat,
+  worked,
   palette,
   reduced,
   onHover,
   onPick,
-}: Pick<SceneProps, 'catalog' | 'shown' | 'selected' | 'heat' | 'onPick'> & {
+}: Pick<SceneProps, 'catalog' | 'shown' | 'selected' | 'heat' | 'worked' | 'onPick'> & {
   readonly hovered: { readonly id: string; readonly point: BodyPoint } | null
   readonly palette: ScenePalette
   readonly reduced: boolean
@@ -218,6 +221,10 @@ function Model({
     if (id === selected || id === hovered?.id) return { color: palette.highlight, opacity: 1 }
     const pain = heat.get(id)
     if (pain !== undefined) return { color: palette.pain[painLevel(pain)], opacity: 0.9 }
+    const role = worked?.get(id)
+    if (role !== undefined) {
+      return { color: palette.worked[role], opacity: role === 'primary' ? 0.85 : 0.55 }
+    }
     const kind = structureOf(catalog, id)?.kind
     return { color: palette.base, opacity: kind === undefined ? 0.4 : TISSUE_GLOW[kind] }
   }
@@ -300,6 +307,7 @@ export default function BodyScene({
   selected,
   pins,
   heat,
+  worked,
   onHover,
   onPick,
   onPin,
@@ -341,6 +349,7 @@ export default function BodyScene({
             selected={selected}
             hovered={hovered}
             heat={heat}
+            worked={worked}
             palette={palette}
             reduced={reduced}
             onHover={hover}

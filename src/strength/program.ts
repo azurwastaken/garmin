@@ -609,14 +609,3 @@ export const nextSession = (program: StrengthProgram, last: string | null): stri
   const at = last === null ? -1 : ids.indexOf(last)
   return ids[(at + 1) % ids.length] ?? ids[0] ?? 'A'
 }
-
-// "3 × 10 par côté · tempo 3-0-3", "3 × 20 s par côté"
-export const doseLabel = (
-  exercise: Pick<Prescribed, 'sets' | 'reps' | 'seconds' | 'per_side' | 'tempo'>
-) =>
-  [
-    `${exercise.sets} × ${exercise.reps ?? `${exercise.seconds ?? 0} s`}${exercise.per_side ? ' par côté' : ''}`,
-    exercise.tempo === null ? null : `tempo ${exercise.tempo}`,
-  ]
-    .filter((part) => part !== null)
-    .join(' · ')

@@ -9,6 +9,7 @@ import { mean, present, round } from './numbers.ts'
 import { Nutrition } from './nutrition/nutrition.ts'
 import { decode, type Point } from './polyline.ts'
 import { journal } from './schema.ts'
+import { Strength, type StrengthToday } from './strength/strength.ts'
 import { type Burn, plannedBurn, type Reading, verdict, type Verdict } from './today.ts'
 import { decoupling, kmSplits, type SamplePoint, type Split } from './tools.ts'
 
@@ -67,6 +68,7 @@ export interface PlannedToday {
   // Its calendar entry
   readonly id: number
   readonly name: string
+  readonly sport: string | null
   readonly minutes: number | null
   readonly steps: string | null
   // Its calories as Garmin counts an activity's (resting ones included): its duration at the rate of
@@ -95,6 +97,8 @@ export interface Morning {
   readonly weighed: boolean
   // The last 14 days', newest first
   readonly notes: ReadonlyArray<NoteLine>
+  // Today's strength session: the calendar's, else the Renfo page's proposal; null without one
+  readonly strength: StrengthToday | null
 }
 
 export interface Dashboard {
@@ -437,6 +441,7 @@ export class Stats extends Context.Service<
       const { use } = yield* Database
       const anatomy = yield* Anatomy
       const nutrition = yield* Nutrition
+      const strength = yield* Strength
       const all = <A extends object>(query: SQL) => use((db) => db.all<A>(query))
 
       const period = (from: string, to: string) =>
@@ -455,7 +460,7 @@ export class Stats extends Context.Service<
           SELECT day, hrv, resting_hr, recovery_time_h FROM daily
           WHERE day BETWEEN ${addDays(today, -28)} AND ${today}`)
         const planned = yield* all<PlannedToday>(sql`
-          SELECT p.id, p.name, p.steps, p.estimated_duration_s / 60.0 AS minutes,
+          SELECT p.id, p.name, p.sport, p.steps, p.estimated_duration_s / 60.0 AS minutes,
             (SELECT p.estimated_duration_s * sum(calories) * 1.0 / sum(${sql.raw(TIME)})
               FROM activities
               WHERE calories IS NOT NULL AND ${sql.raw(TIME)} > 0
@@ -504,6 +509,11 @@ export class Stats extends Context.Service<
           protein_g: protein,
           weighed: energy?.weighed === 1,
           notes,
+          strength: yield* strength.today.pipe(
+            Effect.catchTag('StrengthError', (error) =>
+              Effect.as(Effect.logWarning('the strength programme cannot be read', error), null)
+            )
+          ),
         } satisfies Morning
       })
 

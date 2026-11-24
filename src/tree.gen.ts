@@ -19,6 +19,7 @@ import { Route as LoginRouteImport } from './routes/login.tsx'
 import { Route as McpRouteImport } from './routes/mcp.ts'
 import { Route as NutritionRouteImport } from './routes/nutrition.tsx'
 import { Route as PasswordRouteImport } from './routes/password.tsx'
+import { Route as RenfoRouteImport } from './routes/renfo.tsx'
 import { Route as RunsRouteImport } from './routes/runs.tsx'
 import { Route as SetupRouteImport } from './routes/setup.tsx'
 import { Route as SleepRouteImport } from './routes/sleep.tsx'
@@ -91,6 +92,11 @@ const NutritionRoute = NutritionRouteImport.update({
 const PasswordRoute = PasswordRouteImport.update({
   id: '/password',
   path: '/password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RenfoRoute = RenfoRouteImport.update({
+  id: '/renfo',
+  path: '/renfo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RunsRoute = RunsRouteImport.update({
@@ -220,6 +226,7 @@ export interface FileRoutesByFullPath {
   '/mcp': typeof McpRoute
   '/nutrition': typeof NutritionRoute
   '/password': typeof PasswordRoute
+  '/renfo': typeof RenfoRoute
   '/runs': typeof RunsRoute
   '/setup': typeof SetupRoute
   '/sleep': typeof SleepRoute
@@ -255,6 +262,7 @@ export interface FileRoutesByTo {
   '/mcp': typeof McpRoute
   '/nutrition': typeof NutritionRoute
   '/password': typeof PasswordRoute
+  '/renfo': typeof RenfoRoute
   '/runs': typeof RunsRoute
   '/setup': typeof SetupRoute
   '/sleep': typeof SleepRoute
@@ -291,6 +299,7 @@ export interface FileRoutesById {
   '/mcp': typeof McpRoute
   '/nutrition': typeof NutritionRoute
   '/password': typeof PasswordRoute
+  '/renfo': typeof RenfoRoute
   '/runs': typeof RunsRoute
   '/setup': typeof SetupRoute
   '/sleep': typeof SleepRoute
@@ -328,6 +337,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/nutrition'
     | '/password'
+    | '/renfo'
     | '/runs'
     | '/setup'
     | '/sleep'
@@ -363,6 +373,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/nutrition'
     | '/password'
+    | '/renfo'
     | '/runs'
     | '/setup'
     | '/sleep'
@@ -398,6 +409,7 @@ export interface FileRouteTypes {
     | '/mcp'
     | '/nutrition'
     | '/password'
+    | '/renfo'
     | '/runs'
     | '/setup'
     | '/sleep'
@@ -434,6 +446,7 @@ export interface RootRouteChildren {
   McpRoute: typeof McpRoute
   NutritionRoute: typeof NutritionRoute
   PasswordRoute: typeof PasswordRoute
+  RenfoRoute: typeof RenfoRoute
   RunsRoute: typeof RunsRoute
   SetupRoute: typeof SetupRoute
   SleepRoute: typeof SleepRoute
@@ -529,6 +542,13 @@ declare module '@tanstack/react-router' {
       path: '/password'
       fullPath: '/password'
       preLoaderRoute: typeof PasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/renfo': {
+      id: '/renfo'
+      path: '/renfo'
+      fullPath: '/renfo'
+      preLoaderRoute: typeof RenfoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/runs': {
@@ -706,6 +726,7 @@ const rootRouteChildren: RootRouteChildren = {
   McpRoute: McpRoute,
   NutritionRoute: NutritionRoute,
   PasswordRoute: PasswordRoute,
+  RenfoRoute: RenfoRoute,
   RunsRoute: RunsRoute,
   SetupRoute: SetupRoute,
   SleepRoute: SleepRoute,

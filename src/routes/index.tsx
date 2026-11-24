@@ -215,14 +215,55 @@ function VerdictCard({ verdict }: { verdict: Verdict }) {
   )
 }
 
-function PlanCard({ planned }: { planned: Morning['planned'] }) {
+// Today's strength session as the Renfo page has it: its exercises by name, the pain rule's count
+function StrengthLine({ strength }: { strength: NonNullable<Morning['strength']> }) {
+  return (
+    <>
+      <p className="note">{strength.exercises.join(' · ')}</p>
+      {strength.flags > 0 ? (
+        <p className="renfo-warn">
+          Règle des 3/10 : {strength.flags} exercice{strength.flags > 1 ? 's' : ''} à régresser
+        </p>
+      ) : null}
+      <Link to="/renfo">Le détail, les charges et les régressions →</Link>
+    </>
+  )
+}
+
+function PlanCard({
+  planned,
+  strength,
+}: {
+  planned: Morning['planned']
+  strength: Morning['strength']
+}) {
+  const proposed = strength?.from === 'proposal' ? strength : null
   return (
     <div className="card">
       <h2>Séance prévue</h2>
-      {planned.length === 0 ? (
+      {planned.length === 0 && proposed === null ? (
         <p className="note">Pas de séance prévue aujourd'hui.</p>
-      ) : (
-        planned.map((workout) => (
+      ) : null}
+      {proposed === null ? null : (
+        <div>
+          <p>
+            <strong>Renfo proposé : {proposed.title}</strong>
+            <br />
+            <span className="note">Pas encore sur la montre (schedule_strength le pousse).</span>
+          </p>
+          <StrengthLine strength={proposed} />
+        </div>
+      )}
+      {planned.map((workout) =>
+        workout.sport === 'strength_training' && strength?.from === 'calendar' ? (
+          <div key={workout.id}>
+            <p>
+              <strong>Renfo : {workout.name}</strong>
+              {workout.minutes === null ? '' : ` · ${fmt(workout.minutes)} min`}
+            </p>
+            <StrengthLine strength={strength} />
+          </div>
+        ) : (
           <div key={workout.id}>
             <p>
               <strong>{workout.name}</strong>
@@ -238,7 +279,7 @@ function PlanCard({ planned }: { planned: Morning['planned'] }) {
               </ul>
             ) : null}
           </div>
-        ))
+        )
       )}
     </div>
   )
@@ -302,7 +343,7 @@ function Today({ morning }: { morning: Morning }) {
       <h2>Aujourd'hui</h2>
       <div className="grid cols-3">
         <VerdictCard verdict={morning.verdict} />
-        <PlanCard planned={morning.planned} />
+        <PlanCard planned={morning.planned} strength={morning.strength} />
         <EnergyCard burn={morning.burn} protein_g={morning.protein_g} weighed={morning.weighed} />
       </div>
       <JournalCard notes={morning.notes} />
