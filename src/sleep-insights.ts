@@ -24,8 +24,9 @@ export type SleptNight = Pick<
   | 'readiness'
 > & { readonly sleep_s: number }
 
-// A journal note (the pains pinned on the body map left out)
+// A journal note (the pains pinned on the body map left out): time is the instant written, its key
 export interface Note {
+  readonly time: string
   readonly day: string
   readonly text: string
 }
@@ -178,6 +179,8 @@ export interface Regularity {
 export type Tag = 'supplements' | 'alcohol'
 
 export interface TaggedNight {
+  // The note's key
+  readonly time: string
   readonly tags: ReadonlyArray<Tag>
   readonly note_day: string
   // The night after the note's day: the one ending the next morning
@@ -411,6 +414,38 @@ const clampOf = (best: Best | null, computed: number) =>
     ? { best, bed: best.to_min - 5 }
     : null
 
+// The window in French, with its numbers and their n
+const windowSentence = ({
+  wake,
+  bed,
+  computed,
+  anchor,
+  plateau,
+  awake_s,
+  best,
+}: {
+  readonly wake: number
+  readonly bed: number
+  // The bedtime before the best bucket pulled it back (the same when it didn't)
+  readonly computed: number
+  readonly anchor: Extract<Anchor, { kind: 'anchor' }>
+  readonly plateau: Plateau
+  readonly awake_s: number
+  readonly best: Best | null
+}) => {
+  const pulled = bed === computed ? '' : `, d'où ${clock(bed)} plutôt que ${clock(computed)}`
+  const bestText =
+    best === null
+      ? ''
+      : ` Tes nuits commencées ${bedtimePhrase(best)} sont associées au meilleur score (${fmt(best.score, 1)} sur ${best.nights} nuits)${pulled}.`
+  return (
+    `Levé à ${clock(wake)}, la médiane de tes réveils en semaine (${anchor.mornings} matins). ` +
+    `Au-delà de ${hours(plateau.sleep_s)} de sommeil, le score ne monte presque plus (tranche ${plateau.label} : ${fmt(plateau.score, 1)} sur ${plateau.nights} nuits, ${fmt(plateau.best_score, 1)} au mieux). ` +
+    `Avec ${minutesText(awake_s / 60)} d'éveil par nuit en médiane, endormi à ${clock(bed)}.${bestText} ` +
+    `Garmin ne mesure pas le temps pour s'endormir : éteins un peu avant.`
+  )
+}
+
 // The window: up at the weekday wake time, asleep the plateau's sleep and the median time awake
 // before it, and never later than the end of the best bedtime bucket
 export const windowOf = ({
@@ -428,10 +463,6 @@ export const windowOf = ({
   const computed = floorTo5(wake - (plateau.sleep_s + awake_s) / 60)
   const clamp = clampOf(best, computed)
   const bed = clamp?.bed ?? computed
-  const bestText =
-    best === null
-      ? ''
-      : ` Tes nuits commencées ${bedtimePhrase(best)} sont associées au meilleur score (${fmt(best.score, 1)} sur ${best.nights} nuits)${clamp === null ? '' : `, d'où ${clock(bed)} plutôt que ${clock(computed)}`}.`
   return {
     bed_min: bed,
     wake_min: wake,
@@ -441,11 +472,7 @@ export const windowOf = ({
     plateau,
     best,
     clamped_to: clamp?.best ?? null,
-    sentence:
-      `Levé à ${clock(wake)}, la médiane de tes réveils en semaine (${anchor.mornings} matins). ` +
-      `Au-delà de ${hours(plateau.sleep_s)} de sommeil, le score ne monte presque plus (tranche ${plateau.label} : ${fmt(plateau.score, 1)} sur ${plateau.nights} nuits, ${fmt(plateau.best_score, 1)} au mieux). ` +
-      `Avec ${minutesText(awake_s / 60)} d'éveil par nuit en médiane, endormi à ${clock(bed)}.${bestText} ` +
-      `Garmin ne mesure pas le temps pour s'endormir : éteins un peu avant.`,
+    sentence: windowSentence({ wake, bed, computed, anchor, plateau, awake_s, best }),
   }
 }
 
@@ -495,7 +522,7 @@ export const tonightOf = ({
     reasons,
     sentence:
       earlier_min === 0
-        ? `Ce soir, endormi à ${clock(bed)} pour un lever à ${clock(window.wake_min)} : ni dette, ni nuit courte, ni grosse séance demain.`
+        ? `Ce soir, endormi à ${clock(bed)} pour un lever à ${clock(window.wake_min)} : dette sous ${hours(DEBT_LIMIT_S)}, ${last_s === null ? 'nuit dernière pas encore synchronisée' : 'nuit dernière pas courte'}, pas de grosse séance demain.`
         : `Ce soir, endormi à ${clock(bed)}, ${EARLIER_MIN} min plus tôt, pour un lever à ${clock(window.wake_min)} : ${reasons.join(' ; ')}. Pas plus tôt : bien avant son heure, on s'endort rarement plus vite.`,
   }
 }
@@ -567,25 +594,25 @@ const jetlagOf = (nights: ReadonlyArray<SleptNight>): Jetlag => {
   const weekday = midSleeps(nights.filter((night) => !weekendNight(night)))
   const late = mean(weekend)
   const usual = mean(weekday)
-  return late === null ||
-    usual === null ||
-    weekend.length < MIN_NIGHTS ||
-    weekday.length < MIN_NIGHTS
+  const shift =
+    late === null || usual === null || weekend.length < MIN_NIGHTS || weekday.length < MIN_NIGHTS
+      ? null
+      : round(late - usual)
+  return shift === null
     ? { kind: 'few', weekend: weekend.length, weekday: weekday.length }
-    : {
-        kind: 'measured',
-        minutes: round(late - usual) ?? 0,
-        weekend: weekend.length,
-        weekday: weekday.length,
-      }
+    : { kind: 'measured', minutes: shift, weekend: weekend.length, weekday: weekday.length }
 }
 
 // The nights of one evening of the week: their count, median bedtime and score
-const weekdayRow = (nights: ReadonlyArray<SleptNight>, evening: number): WeekdayRow => {
+const weekdayRow = (
+  nights: ReadonlyArray<SleptNight>,
+  evening: number,
+  label: string
+): WeekdayRow => {
   const those = nights.filter((night) => eveningOf(night.day) === evening)
   return {
     evening,
-    label: EVENINGS[evening] ?? '',
+    label,
     nights: those.length,
     bed_min: round(median(present(those.map((night) => night.bed_min)))),
     score: measure(those.map((night) => night.sleep_score)),
@@ -598,7 +625,7 @@ export const regularityOf = (nights: ReadonlyArray<SleptNight>): Regularity => (
   bed_sd: spreadOf(nights.map((night) => night.bed_min)),
   wake_sd: spreadOf(nights.map((night) => night.wake_min)),
   social_jetlag: jetlagOf(nights),
-  weekdays: EVENINGS.map((_, evening) => weekdayRow(nights, evening)),
+  weekdays: EVENINGS.map((label, evening) => weekdayRow(nights, evening, label)),
 })
 
 // The tags a note's words carry
@@ -674,6 +701,7 @@ export const tagsOf = ({
       const slept = byDay.get(night)
       return [
         {
+          time: note.time,
           tags,
           note_day: note.day,
           night,

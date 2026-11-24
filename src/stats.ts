@@ -2,6 +2,7 @@ import { between, desc, sql, type SQL } from 'drizzle-orm'
 import { Context, Effect, Layer } from 'effect'
 
 import { Anatomy, readableCatalog } from './anatomy/anatomy.ts'
+import { INSIGHT_MIN_DAYS } from './api/periods.ts'
 import { addDays, daysBetween, earlierDay, parisToday } from './days.ts'
 import { Database, type DatabaseError } from './db.ts'
 import { namesOf } from './journal/history.ts'
@@ -318,12 +319,9 @@ export interface SleepView {
   readonly nights: ReadonlyArray<SleepNight>
   readonly averages: SleepAverages
   readonly previous: SleepAverages
-  // Over INSIGHT_MIN_DAYS nights at least (sleep-insights.ts)
+  // Over INSIGHT_MIN_DAYS days at least (sleep-insights.ts)
   readonly insights: SleepInsights
 }
-
-// The page's analysis reads 90 nights at least: 30 make buckets of 5 nights rare
-const INSIGHT_MIN_DAYS = 90
 
 const RUN = `(sport LIKE '%running%')`
 const BIKE = `(sport LIKE '%cycling%' OR sport LIKE '%biking%')`
@@ -788,7 +786,7 @@ export class Stats extends Context.Service<
       const insightsOn = Effect.fnUntraced(function* (today: string, days: number) {
         const from = addDays(today, -(days - 1))
         const notes = yield* all<Note>(sql`
-          SELECT day, text FROM journal WHERE body IS NULL ORDER BY day, time`)
+          SELECT time, day, text FROM journal WHERE body IS NULL ORDER BY day, time`)
         const nights = sleptOnly(yield* nightsBetween(firstDayRead(from, notes), today))
         const { planned } = yield* sessionsOn(addDays(today, 1)).pipe(
           Effect.provideService(Database, database)

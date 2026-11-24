@@ -334,6 +334,18 @@ describe('tonightOf', () => {
     expect(tonight.reasons).toHaveLength(earlier === 0 ? 0 : 1)
   })
 
+  it.each([
+    { debt_s: 7199, last_s: 25_920, said: 'dette sous 2 h 00, nuit dernière pas courte' },
+    { debt_s: 0, last_s: null, said: 'nuit dernière pas encore synchronisée' },
+  ])(
+    'says what holds when nothing moves tonight ($debt_s, $last_s)',
+    ({ debt_s, last_s, said }) => {
+      const tonight = advise(debt_s, last_s)
+      expect(tonight.sentence).toContain(said)
+      expect(tonight.sentence).toContain('pas de grosse séance demain')
+    }
+  )
+
   it('names every reason, and never more than 30 min earlier', () => {
     const tonight = advise(4 * 3600, 3 * 3600, {
       type: 'long',
@@ -408,16 +420,30 @@ describe('the tags', () => {
   it('dates the supplements from their earliest note, whatever the order', () => {
     expect(
       supplementsSince([
-        { day: '2026-11-22', text: 'ashwagandha ce soir' },
-        { day: '2026-11-20', text: 'magnésium (écrit plus tard)' },
-        { day: '2026-11-19', text: 'run facile' },
+        { time: '2026-11-22T20:00:00.000Z', day: '2026-11-22', text: 'ashwagandha ce soir' },
+        {
+          time: '2026-11-25T08:00:00.000Z',
+          day: '2026-11-20',
+          text: 'magnésium (écrit plus tard)',
+        },
+        { time: '2026-11-19T20:00:00.000Z', day: '2026-11-19', text: 'run facile' },
       ])
     ).toBe('2026-11-20')
-    expect(supplementsSince([{ day: '2026-11-19', text: 'run facile' }])).toBeNull()
+    expect(
+      supplementsSince([
+        { time: '2026-11-19T20:00:00.000Z', day: '2026-11-19', text: 'run facile' },
+      ])
+    ).toBeNull()
   })
 
   // Supplements first noted on 23/11: the before side starts on 27/10
-  const NOTES = [{ day: '2026-11-23', text: "Première prise d'Ashwa+ ce soir" }]
+  const NOTES = [
+    {
+      time: '2026-11-23T20:00:00.000Z',
+      day: '2026-11-23',
+      text: "Première prise d'Ashwa+ ce soir",
+    },
+  ]
 
   it.each([
     { from: '2026-10-26', expected: '2026-10-26' },
@@ -439,22 +465,36 @@ describe('the tags', () => {
     { text: "pas bu d'alcool hier", tags: [] },
     { text: 'run facile, vingt minutes', tags: [] },
   ])('tags "$text"', ({ text, tags }) => {
-    const found = tagsOf({ notes: [{ day: TODAY, text }], from: TODAY, span: [], history: [] })
+    const found = tagsOf({
+      notes: [{ time: `${TODAY}T20:00:00.000Z`, day: TODAY, text }],
+      from: TODAY,
+      span: [],
+      history: [],
+    })
     expect(found.nights.map((tagged) => tagged.tags)).toEqual(tags.length === 0 ? [] : [tags])
   })
 
   it('shows a tagged note with the night after it, from the span’s first day on', () => {
     const tags = tagsOf({
       notes: [
-        { day: '2026-11-23', text: 'Ashwa+ ce soir' },
-        { day: '2026-11-01', text: 'une bière' },
+        { time: '2026-11-23T20:00:00.000Z', day: '2026-11-23', text: 'Ashwa+ ce soir' },
+        { time: '2026-11-01T20:00:00.000Z', day: '2026-11-01', text: 'une bière' },
       ],
       from: '2026-11-10',
       span: [night({ day: '2026-11-24', sleep_score: 70, hrv: 39, resting_hr: 52 })],
       history: [],
     })
+    // A note the day before the span: its night is the span's first, listed
+    const edge = tagsOf({
+      notes: [{ time: '2026-11-09T20:00:00.000Z', day: '2026-11-09', text: 'une bière' }],
+      from: '2026-11-10',
+      span: [],
+      history: [],
+    })
+    expect(edge.nights.map((tagged) => tagged.night)).toEqual(['2026-11-10'])
     expect(tags.nights).toEqual([
       {
+        time: '2026-11-23T20:00:00.000Z',
         tags: ['supplements'],
         note_day: '2026-11-23',
         night: '2026-11-24',
@@ -478,16 +518,18 @@ describe('the tags', () => {
     const before = nightsBack(14, '2026-11-23', { hrv: 40 })
     // A night 29 days before the first night after: out of the before side
     const old = night({ day: '2026-10-26', hrv: 10 })
+    // The before side's first night: in
+    const first = night({ day: '2026-10-27', hrv: 40 })
     const compared = tagsOf({
       notes: NOTES,
       from: '2026-11-24',
       span: after,
-      history: [old, ...before],
+      history: [old, first, ...before],
     })
     expect(compared.supplements).toMatchObject({
       kind: 'compared',
       first_night: '2026-11-24',
-      before: { nights: 14, hrv: { kind: 'measured', mean: 40 } },
+      before: { nights: 15, hrv: { kind: 'measured', mean: 40 } },
       after: { nights: 14, hrv: { kind: 'measured', mean: 46 } },
     })
     const short = tagsOf({
@@ -497,6 +539,13 @@ describe('the tags', () => {
       history: before,
     })
     expect(short.supplements).toMatchObject({ kind: 'too-few', before: 14, after: 13 })
+    const shortBefore = tagsOf({
+      notes: NOTES,
+      from: '2026-11-24',
+      span: after,
+      history: before.slice(1),
+    })
+    expect(shortBefore.supplements).toMatchObject({ kind: 'too-few', before: 13, after: 14 })
   })
 })
 

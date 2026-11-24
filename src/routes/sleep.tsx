@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
 import { api } from '#src/api/client.ts'
-import { SLEEP_PERIODS } from '#src/api/periods.ts'
+import { INSIGHT_MIN_DAYS, SLEEP_PERIODS } from '#src/api/periods.ts'
 import {
   LineChart,
   RangeColumns,
@@ -295,7 +295,7 @@ function WindowCard({ plan }: { readonly plan: Plan }) {
 // Signed: a deficit, or a surplus after a minus sign
 const signedHours = (seconds: number) => (seconds < 0 ? `−${hours(-seconds)}` : hours(seconds))
 
-// Tonight's target, the week's debt and the night's target
+// Tonight's bedtime, the week's debt and the sleep aimed for
 function TonightFacts({ plan }: { readonly plan: Plan }) {
   if (plan.kind === 'too-few') return null
   const { tonight, debt } = plan
@@ -331,13 +331,7 @@ const spreadText = (spread: Spread) =>
   spread.kind === 'few' ? `${spread.nights} nuits, trop peu` : `± ${spread.minutes} min`
 
 // The spreads, the weekend's shift and each evening of the week
-function RegularityTiles({
-  regularity,
-  nights,
-}: {
-  readonly regularity: Regularity
-  readonly nights: number
-}) {
+function RegularityTiles({ regularity }: { readonly regularity: Regularity }) {
   const jetlag = regularity.social_jetlag
   return (
     <>
@@ -345,12 +339,12 @@ function RegularityTiles({
         <div className="card tile">
           <div className="label">Heure d'endormissement</div>
           <div className="value">{spreadText(regularity.bed_sd)}</div>
-          <div className="delta">écart type sur les {nights} nuits de l'analyse</div>
+          <div className="delta">écart type sur {regularity.bed_sd.nights} nuits</div>
         </div>
         <div className="card tile">
           <div className="label">Heure de réveil</div>
           <div className="value">{spreadText(regularity.wake_sd)}</div>
-          <div className="delta">écart type sur les {nights} nuits de l'analyse</div>
+          <div className="delta">écart type sur {regularity.wake_sd.nights} nuits</div>
         </div>
         <div className="card tile">
           <div className="label">Décalage du week-end</div>
@@ -420,7 +414,7 @@ function TaggedNights({ tags }: { readonly tags: Tags }) {
             </thead>
             <tbody>
               {tags.nights.map((tagged) => (
-                <tr key={`${tagged.note_day}${tagged.text}`}>
+                <tr key={tagged.time}>
                   <td>{numericDay(tagged.night)}</td>
                   <td>
                     <b>{tagged.tags.map((tag) => TAG_LABEL[tag]).join(', ')}</b> · {tagged.text}
@@ -476,7 +470,8 @@ function TaggedNights({ tags }: { readonly tags: Tags }) {
   )
 }
 
-// The score by bedtime: a column per bucket of 5 nights or more, the chart's summary as its label
+// The chart's summary for its label: each measured bucket's score and n, and the buckets with too
+// few nights
 const bedtimeSummary = (buckets: ReadonlyArray<BedtimeBucket>) => {
   const measured = buckets.flatMap((bucket) =>
     bucket.recovery.score.kind === 'measured'
@@ -514,8 +509,8 @@ function Insights({
         <h2>Analyse & conseils</h2>
         <p className="sub">
           Sur les {insights.nights} nuits mesurées depuis le {numericDay(insights.from)}
-          {floored ? ' (90 nuits au moins, même sur la vue 30 nuits)' : ''} · des associations, pas
-          des causes
+          {floored ? ` (l'analyse lit ${INSIGHT_MIN_DAYS} jours au moins)` : ''} · des associations,
+          pas des causes
         </p>
         <WindowCard plan={insights.plan} />
         <TonightFacts plan={insights.plan} />
@@ -561,7 +556,7 @@ function Insights({
       <section>
         <h2>Régularité</h2>
         <p className="sub">Les vendredis et samedis comptés à part</p>
-        <RegularityTiles regularity={insights.regularity} nights={insights.nights} />
+        <RegularityTiles regularity={insights.regularity} />
       </section>
 
       <section className="card">
@@ -714,7 +709,7 @@ function Sleep() {
         <Averages now={view.averages} before={view.previous} />
       </section>
 
-      <Insights insights={view.insights} floored={view.days < 90} />
+      <Insights insights={view.insights} floored={view.days < INSIGHT_MIN_DAYS} />
 
       <section className="card">
         <h2>Phases {weekly ? 'par semaine (moyenne par nuit)' : 'par nuit'} (h)</h2>

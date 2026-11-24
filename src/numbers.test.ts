@@ -15,6 +15,7 @@ describe('number helpers', () => {
   it.each([
     { values: [], expected: null },
     { values: [5], expected: null },
+    { values: [1, 3], expected: 1 },
     { values: [2, 4, 4, 4, 5, 5, 7, 9], expected: 2 },
   ])('takes the population standard deviation of $values', ({ values, expected }) => {
     expect(spread(values)).toBe(expected)
