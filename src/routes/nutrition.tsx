@@ -3,10 +3,10 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { api } from '#src/api/client.ts'
 import { NUTRITION_SPANS } from '#src/api/periods.ts'
 import { LineChart, shortDay } from '#src/components/charts.tsx'
-import { dayLabel, fmt, numericDay } from '#src/components/format.ts'
+import { dayLabel, fmt, numericDay, plural } from '#src/components/format.ts'
 import { daysBetween } from '#src/days.ts'
 import type { Classified } from '#src/nutrition/day-type.ts'
-import { type Lever, type LeverKey, plural } from '#src/nutrition/levers.ts'
+import type { Lever, LeverKey } from '#src/nutrition/levers.ts'
 import type { NutritionView } from '#src/nutrition/nutrition.ts'
 import {
   BIA_ERROR_POINTS,
@@ -261,9 +261,10 @@ function LimitCell({ total }: { total: NutrientTotal }) {
 }
 
 function SupplementsSection({ day }: { day: SupplementDay }) {
-  const rhythms = day.items.flatMap((item) => {
+  // Keyed by position: two entries may share a name (a product paused, then resumed)
+  const rhythms = day.items.flatMap((item, index) => {
     const line = rhythmLine(item)
-    return line === null ? [] : [{ key: `${item.name}·${item.brand}`, name: item.name, line }]
+    return line === null ? [] : [{ key: index, name: item.name, line }]
   })
   const { from, nutrients } = day.totals
   const over = nutrients.flatMap((total) => (total.status === 'over' ? [total] : []))
@@ -292,8 +293,8 @@ function SupplementsSection({ day }: { day: SupplementDay }) {
                 {day.moments.map(({ moment, take }) => (
                   <div key={moment}>
                     <dt>{MOMENT_LABEL[moment]}</dt>
-                    {take.map((intake) => (
-                      <dd key={`${intake.name}·${intake.brand}`}>
+                    {take.map((intake, index) => (
+                      <dd key={index}>
                         {intake.name} <span className="muted">({intake.brand})</span> ·{' '}
                         {plural(intake.units, intake.unit_name)}
                       </dd>

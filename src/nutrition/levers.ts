@@ -1,4 +1,4 @@
-import { fmt, hours } from '../components/format.ts'
+import { fmt, hours, plural } from '../components/format.ts'
 import { addDays, daysBetween, mondayOf, parisMinutesFromNoon } from '../days.ts'
 import { mean, round } from '../numbers.ts'
 
@@ -112,10 +112,6 @@ export const leverWindows = (today: string): LeverWindows => {
 
 // A window's days, its first and last included
 const daysIn = (window: Window) => daysBetween(window.from, window.to) + 1
-
-// A count and its word, with an s past one
-export const plural = (count: number, word: string) =>
-  `${fmt(count)} ${word}${count > 1 ? 's' : ''}`
 
 const kcalEach = (kcal: number) => {
   const whole = Math.round(kcal)
