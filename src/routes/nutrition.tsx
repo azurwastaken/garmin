@@ -398,14 +398,20 @@ const goalLines = (goal: Goal, { loss, phase, phases }: Pace): Array<string> => 
       const lines = [
         `Encore ${range(goal.gap_kg.min, goal.gap_kg.max)} : ${weeks} à ${fmt(min, 2)}–${fmt(max, 2)} kg par semaine, ${when}.`,
       ]
-      if (goal.before_deficit_end === true && phase !== null) {
-        lines.push(`Possible dans le déficit en cours (jusqu’au ${numericDay(phase.to)}).`)
-      }
-      if (goal.before_deficit_end === false && phase !== null) {
-        const after = phases.find((next) => next.from > phase.to)
+      if (goal.before_deficit_end === null || phase === null) return lines
+      const until = `(jusqu’au ${numericDay(phase.to)})`
+      const label = phases.find((next) => next.from > phase.to)?.label
+      const after = label === undefined ? 'après lui' : `plutôt après ${label}`
+      // Only the fastest pace to the range's near end may fit: the rest comes after the deficit
+      const partly = slowest === null || slowest.by > phase.to
+      if (goal.before_deficit_end && partly) {
         lines.push(
-          `Au-delà du déficit en cours (jusqu’au ${numericDay(phase.to)})${after?.label === undefined ? '' : ` : plutôt après ${after.label}`}.`
+          `Au mieux dans le déficit en cours ${until}, au rythme le plus rapide ; sinon ${after}.`
         )
+      } else if (goal.before_deficit_end) {
+        lines.push(`Possible dans le déficit en cours ${until}.`)
+      } else {
+        lines.push(`Au-delà du déficit en cours ${until} : ${after}.`)
       }
       return lines
     }
