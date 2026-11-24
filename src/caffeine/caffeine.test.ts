@@ -6,6 +6,9 @@ import { Effect, Exit, Layer } from 'effect'
 
 import { dataDir, put, rows, sql, testLayer } from '../../test/fixtures.ts'
 import { Anatomy } from '../anatomy/anatomy.ts'
+import { INSIGHT_MIN_DAYS } from '../api/periods.ts'
+import { clock } from '../components/format.ts'
+import { addDays } from '../days.ts'
 import { Ingest, Storage } from '../ingest.ts'
 import { Nutrition } from '../nutrition/nutrition.ts'
 import { Stats } from '../stats.ts'
@@ -145,6 +148,31 @@ layer(TestLayer)('Caffeine', (it) => {
         { concurrency: 'unbounded' }
       )
       expect(new Set(logged.map((intake) => intake.time)).size).toBe(2)
+    })
+  )
+})
+
+// Two weeks of nights to 1970-01-01, asleep 23:00 to 07:00 Paris (UTC+1): enough for a plan
+const nights = Effect.forEach(
+  Array.from({ length: 14 }, (_, index) => addDays('1970-01-01', -index)),
+  (day) =>
+    rows(sql`
+      INSERT INTO daily (day, sleep_start, sleep_end, sleep_s, awake_s, sleep_score)
+      VALUES (${day}, ${`${addDays(day, -1)}T22:00:00.000Z`}, ${`${day}T06:00:00.000Z`},
+        27000, 1800, 80)`)
+)
+
+layer(TestLayer)('Caffeine, with a sleep plan', (it) => {
+  it.effect('aims at tonight’s bedtime of the sleep analysis, and says so', () =>
+    Effect.gen(function* () {
+      yield* nights
+      const { plan } = yield* Stats.use((stats) => stats.sleepInsights(INSIGHT_MIN_DAYS))
+      if (plan.kind !== 'plan') return expect.fail(`no plan: ${plan.reason}`)
+      const caffeine = yield* Caffeine
+      const today = yield* caffeine.today
+      expect(today.bedtime_source).toEqual({ kind: 'tonight' })
+      expect(today.bedtime.clock).toBe(clock(plan.tonight.bed_min))
+      expect((yield* caffeine.page).bedtime_min).toBe(plan.tonight.bed_min + 720)
     })
   )
 })
