@@ -1,12 +1,25 @@
-import type { GeoJSONSource } from 'maplibre-gl'
+import type { GeoJSONSource, MapMovementEvent } from 'maplibre-gl'
 import { useEffect, useRef, useState } from 'react'
 
 import type { Bounds, Dem } from '../races/terrarium.ts'
 
+import {
+  followCamera,
+  middle,
+  type Mode,
+  type Motion,
+  orbitCamera,
+  pressed,
+  RELIEF,
+  reliefStops,
+  SHADING,
+} from './race-scene.ts'
+
 // A race's course in 3D, on its elevation tiles (MapLibre GL, in the browser only: loaded once the
-// page is there, never during server rendering). No basemap vendor, no key: a hillshade of the
-// same tiles on the page's dark ground, the route colored by grade, its segment cuts, aid stations
-// and cutoffs, and a flight along it (step by step when the visitor asks for less motion).
+// page is there, never during server rendering). No basemap vendor, no key: the same tiles tinted
+// by altitude over the course's own range and shaded from three directions, the route colored by
+// grade on a dark casing, its segment cuts, aid stations and cutoffs; a flight along it, an orbit
+// around it and turns of 22.5° (step by step when the visitor asks for less motion).
 
 // A course point: longitude, latitude, altitude (m), metres from the start, predicted seconds
 export type TrackPoint = readonly [number, number, number, number, number | null]
@@ -21,6 +34,13 @@ type MapLibre = typeof import('maplibre-gl')
 type MapInstance = InstanceType<MapLibre['Map']>
 
 const EXAGGERATION = 1.3
+// The tint and the shading read tiles up to z14: finer LiDAR only adds speckle
+const RELIEF_MAXZOOM = 14
+// A ↺/↻ press, and an Orbite press under reduced motion (°)
+const TURN = 22.5
+const ORBIT_STEP = 45
+// The visitor's hand on the map: it stops a flight or an orbit before the next frame overrides it
+const INPUTS = ['mousedown', 'touchstart', 'wheel'] as const
 // The flight: 12 s a 10 km, between 20 s and 2 min
 const flightMs = (km: number) => Math.min(120_000, Math.max(20_000, km * 1200))
 
@@ -47,15 +67,6 @@ const nearest = (track: ReadonlyArray<TrackPoint>, lon: number, lat: number) => 
 export const pointAt = (track: ReadonlyArray<TrackPoint>, km: number) => {
   const i = track.findIndex((point) => point[3] >= km * 1000)
   return i === -1 ? track.length - 1 : i
-}
-
-const bearing = (from: TrackPoint, to: TrackPoint) => {
-  const lat1 = (from[1] * Math.PI) / 180
-  const lat2 = (to[1] * Math.PI) / 180
-  const dLon = ((to[0] - from[0]) * Math.PI) / 180
-  const y = Math.sin(dLon) * Math.cos(lat2)
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon)
-  return (Math.atan2(y, x) * 180) / Math.PI
 }
 
 // Each step of the course as a line with its grade (%), for the color
@@ -118,9 +129,9 @@ export function RaceMap({
   const hoverHandler = useRef(onHover)
   hoverHandler.current = onHover
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
-  const [flying, setFlying] = useState(false)
-  const flight = useRef<number | null>(null)
-  const step = useRef(0)
+  const [motion, setMotion] = useState<Motion>('still')
+  // The next segment cut a reduced-motion flight shows
+  const cut = useRef(0)
 
   // The map, once: rebuilt only for another course or DEM
   useEffect(() => {
@@ -150,6 +161,8 @@ export function RaceMap({
           : { bounds: [...dem.bounds] as [number, number, number, number] }),
       }
       const accent = color('--accent', '#22d3ee')
+      const shade = color(...SHADING.shade)
+      const light = color(...SHADING.light)
       created = new maplibre.Map({
         container: element,
         maxPitch: 85,
@@ -165,7 +178,7 @@ export function RaceMap({
           version: 8,
           sources: {
             dem: source,
-            hillshade: source,
+            relief: { ...source, maxzoom: Math.min(dem.maxzoom, RELIEF_MAXZOOM) },
             route: { type: 'geojson', data: routeOf(track) },
             cuts: { type: 'geojson', data: pointsOf(track, cuts) },
             cursor: { type: 'geojson', data: pointsOf(track, []) },
@@ -177,14 +190,34 @@ export function RaceMap({
               paint: { 'background-color': color('--page', '#030a10') },
             },
             {
+              id: 'tint',
+              type: 'color-relief',
+              source: 'relief',
+              paint: {
+                'color-relief-color': [
+                  'interpolate',
+                  ['linear'],
+                  ['elevation'],
+                  ...reliefStops(
+                    track.map((point) => point[2]),
+                    RELIEF.map(([name, hex]) => color(name, hex))
+                  ),
+                ],
+              },
+            },
+            {
               id: 'relief',
               type: 'hillshade',
-              source: 'hillshade',
+              source: 'relief',
               paint: {
-                'hillshade-shadow-color': '#000000',
-                'hillshade-highlight-color': color('--ink-2', '#7dd3e0'),
-                'hillshade-accent-color': color('--grid', '#0e3340'),
-                'hillshade-exaggeration': 0.55,
+                // Three suns fixed on the map, north-west the strongest: no relief inverted when it turns
+                'hillshade-method': 'multidirectional',
+                'hillshade-illumination-anchor': 'map',
+                'hillshade-illumination-direction': [270, 315, 0],
+                'hillshade-illumination-altitude': [35, 45, 35],
+                'hillshade-shadow-color': [shade, shade, shade],
+                'hillshade-highlight-color': [light, light, light],
+                'hillshade-exaggeration': 0.3,
               },
             },
             {
@@ -198,6 +231,14 @@ export function RaceMap({
                 'line-blur': 8,
                 'line-opacity': 0.35,
               },
+            },
+            {
+              // The page's dark under every mark, so the glow and the ground never touch the grade colors
+              id: 'route-casing',
+              type: 'line',
+              source: 'route',
+              layout: { 'line-join': 'round', 'line-cap': 'round' },
+              paint: { 'line-color': color('--page', '#030a10'), 'line-width': 7 },
             },
             {
               id: 'route',
@@ -290,7 +331,6 @@ export function RaceMap({
     })
     return () => {
       removed = true
-      if (flight.current !== null) cancelAnimationFrame(flight.current)
       created?.remove()
       map.current = null
     }
@@ -305,76 +345,158 @@ export function RaceMap({
       .catch((error: unknown) => console.warn('race map', error))
   }, [hover, state, track])
 
-  const stop = () => {
-    if (flight.current !== null) cancelAnimationFrame(flight.current)
-    flight.current = null
-    setFlying(false)
+  // Point i of the course on the map: the camera there, the profile's cursor on it
+  const follow = (live: MapInstance, i: number) => {
+    const camera = followCamera(track, i)
+    if (camera === null) return
+    live.jumpTo(camera)
+    hoverHandler.current(i)
   }
 
-  // Along the course with the camera behind the runner; with less motion, one segment a press
-  const fly = () => {
-    const live = map.current
-    if (live === null || track.length < 2) return
-    const camera = (i: number) => {
-      const here = track[i]
-      const ahead = track[Math.min(track.length - 1, i + 12)]
-      if (here === undefined || ahead === undefined) return
-      live.jumpTo({
-        center: [here[0], here[1]],
-        bearing: bearing(here, ahead),
-        pitch: 72,
-        zoom: 14.2,
-      })
-      hoverHandler.current(i)
+  // A frame of the orbit `elapsed` ms in: around the course's centre, never finished
+  const orbitFrames = (live: MapInstance) => {
+    const from = live.getCenter().toArray()
+    const to = middle(bounds)
+    const start = live.getBearing()
+    return (elapsed: number) => {
+      live.jumpTo(orbitCamera(from, to, start, elapsed))
+      return false
     }
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      camera(cuts[step.current % Math.max(1, cuts.length)] ?? 0)
-      step.current += 1
+  }
+
+  // A frame of the flight `elapsed` ms in: along the course behind the runner, finished at the end
+  const flightFrames = (live: MapInstance) => {
+    const duration = flightMs((track.at(-1)?.[3] ?? 0) / 1000)
+    return (elapsed: number) => {
+      const progress = Math.min(1, elapsed / duration)
+      follow(live, Math.round(progress * (track.length - 1)))
+      return progress === 1
+    }
+  }
+
+  // The flight or the orbit: one frame loop, stopped at once by the visitor's own hand
+  useEffect(() => {
+    const live = map.current
+    if (motion === 'still') return
+    if (live === null) {
+      setMotion('still')
       return
     }
-    const km = (track.at(-1)?.[3] ?? 0) / 1000
-    const duration = flightMs(km)
-    const started = performance.now()
-    live.once('dragstart', stop)
-    setFlying(true)
-    const frame = (now: number) => {
-      const progress = Math.min(1, (now - started) / duration)
-      camera(Math.round(progress * (track.length - 1)))
-      if (progress < 1) flight.current = requestAnimationFrame(frame)
-      else stop()
+    const advance = motion === 'orbit' ? orbitFrames(live) : flightFrames(live)
+    // From the first frame's own timestamp, so never negative
+    let started: number | undefined
+    let id = requestAnimationFrame(function frame(now) {
+      started ??= now
+      if (advance(now - started)) setMotion('still')
+      else id = requestAnimationFrame(frame)
+    })
+    const halt = () => {
+      cancelAnimationFrame(id)
+      setMotion('still')
     }
-    flight.current = requestAnimationFrame(frame)
+    // Keys, the compass and the zoom buttons move the map with their event; our own frames without
+    const interrupt = (event: MapMovementEvent) => {
+      if (event.originalEvent !== undefined) halt()
+    }
+    for (const input of INPUTS) live.on(input, halt)
+    live.on('movestart', interrupt)
+    return () => {
+      cancelAnimationFrame(id)
+      for (const input of INPUTS) live.off(input, halt)
+      live.off('movestart', interrupt)
+    }
+  }, [motion, state, track, cuts, marks, dem, bounds])
+
+  // A mode's step under reduced motion: the flight's next segment cut, or the orbit's next 45°
+  const step = (live: MapInstance, mode: Mode) => {
+    if (mode === 'flight') {
+      follow(live, cuts[cut.current % Math.max(1, cuts.length)] ?? 0)
+      cut.current += 1
+    } else {
+      live.easeTo({ center: [...middle(bounds)], bearing: live.getBearing() + ORBIT_STEP })
+    }
+  }
+
+  const press = (mode: Mode) => {
+    const live = map.current
+    if (live === null) return
+    const next = pressed(
+      motion,
+      mode,
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    )
+    if (next === 'step') step(live, mode)
+    else setMotion(next)
+  }
+
+  // A turn of `degrees`, instant under reduced motion (MapLibre's own easeTo rule)
+  const turn = (degrees: number) => {
+    setMotion('still')
+    map.current?.easeTo({ bearing: map.current.getBearing() + degrees })
   }
 
   return (
-    <div className="race-map">
-      <div
-        ref={container}
-        className="race-map-canvas"
-        role="region"
-        aria-label="Carte 3D du parcours : glisser pour déplacer, clic droit ou Ctrl pour incliner et tourner"
-      />
-      {state === 'failed' ? (
-        <p className="note">
-          La carte 3D n'a pas pu s'afficher (WebGL indisponible ?). Le profil et le plan restent là.
-        </p>
-      ) : null}
-      <div className="race-map-bar">
-        <button
-          type="button"
-          className="hud-button"
-          onClick={flying ? stop : fly}
-          disabled={state !== 'ready'}
-        >
-          {flying ? '■ Stop' : '▶ Survoler le parcours'}
-        </button>
-        <span className="hud-legend" aria-hidden="true">
-          <i style={{ background: 'var(--series-1)' }} /> descente
-          <i style={{ background: 'var(--series-3)' }} /> plat
-          <i style={{ background: 'var(--warning-ink)' }} /> montée
-          <i style={{ background: 'var(--critical)' }} /> raide
-        </span>
+    <>
+      <div className="race-map">
+        <div
+          ref={container}
+          className="race-map-canvas"
+          role="region"
+          aria-label="Carte 3D du parcours : glisser pour déplacer, clic droit ou Ctrl pour incliner et tourner"
+        />
+        {state === 'failed' ? (
+          <p className="note">
+            La carte 3D n'a pas pu s'afficher (WebGL indisponible ?). Le profil et le plan restent
+            là.
+          </p>
+        ) : null}
+        <div className="race-map-bar">
+          <button
+            type="button"
+            className="hud-button"
+            onClick={() => press('flight')}
+            disabled={state !== 'ready' || track.length < 2}
+          >
+            {motion === 'flight' ? '■ Stop' : '▶ Survoler le parcours'}
+          </button>
+          <button
+            type="button"
+            className="hud-button turn"
+            aria-label="Pivoter de 22,5° à gauche"
+            onClick={() => turn(-TURN)}
+            disabled={state !== 'ready'}
+          >
+            ↺
+          </button>
+          <button
+            type="button"
+            className="hud-button turn"
+            aria-label="Pivoter de 22,5° à droite"
+            onClick={() => turn(TURN)}
+            disabled={state !== 'ready'}
+          >
+            ↻
+          </button>
+          <button
+            type="button"
+            className="hud-button"
+            onClick={() => press('orbit')}
+            disabled={state !== 'ready'}
+          >
+            {motion === 'orbit' ? '■ Arrêter l’orbite' : '◎ Orbite'}
+          </button>
+          <span className="hud-legend" aria-hidden="true">
+            <i style={{ background: 'var(--series-1)' }} /> descente
+            <i style={{ background: 'var(--series-3)' }} /> plat
+            <i style={{ background: 'var(--warning-ink)' }} /> montée
+            <i style={{ background: 'var(--critical)' }} /> raide
+          </span>
+        </div>
       </div>
-    </div>
+      <p className="race-map-hint">
+        Clic droit + glisser (ou Ctrl + glisser), deux doigts au tactile : pivoter et incliner · Maj
+        + ← → sur la carte sélectionnée · la boussole remet le nord et à plat
+      </p>
+    </>
   )
 }

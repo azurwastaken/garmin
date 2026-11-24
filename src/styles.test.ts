@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
+import { RELIEF, SHADING } from './components/race-scene.ts'
+
 // The HUD stays readable: text 4.5:1 and marks 3:1 (WCAG 2) on every surface it sits on, status
 // hues apart from the series (CIEDE2000), the OAuth pages on the same tokens, and motion only for
 // whoever has not asked to reduce it
@@ -146,6 +148,28 @@ describe('the HUD palette', () => {
       for (const b of SERIES.slice(index + 1)) {
         expect(deltaE(a, b), `--${a} vs --${b}`).toBeGreaterThanOrEqual(20)
       }
+    }
+  })
+
+  it('keeps the course marks at 3:1 on every ground color of the race map', () => {
+    // The casing puts --page next to each mark; past it, the hillshade and the distance fog blend
+    // these in sRGB with weights summing to at most 1, and sRGB → linear is convex, so no blend is
+    // lighter than its lightest color
+    const ground = [
+      'page',
+      'grid',
+      ...[...RELIEF, ...Object.values(SHADING)].map(([n]) => n.slice(2)),
+    ]
+    for (const mark of ['series-1', 'series-3', 'warning-ink', 'critical', 'accent']) {
+      for (const surface of ground) {
+        expect(contrast(mark, surface), `--${mark} on --${surface}`).toBeGreaterThanOrEqual(3)
+      }
+    }
+  })
+
+  it('gives the race map the sheet’s ground colors as fallbacks', () => {
+    for (const [name, hex] of [...RELIEF, ...Object.values(SHADING)]) {
+      expect(hex, name).toBe(root[name.slice(2)])
     }
   })
 

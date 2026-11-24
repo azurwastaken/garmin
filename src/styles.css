@@ -40,6 +40,15 @@
   --warning-ink: #fbbf24;
   --accent: #3fe0ff;
   --accent-ink: #03060b;
+  /* The race map's ground: an altitude ramp, low to high, and the hillshade's shade and light. Each
+     stays dark enough for every route color at 3:1 (src/components/race-scene.ts holds the same) */
+  --relief-1: #0a1d2b;
+  --relief-2: #0e3036;
+  --relief-3: #1f3d32;
+  --relief-4: #38432f;
+  --relief-5: #4a4438;
+  --relief-shade: #030a1c;
+  --relief-light: #2a4852;
   --mono: ui-monospace, 'SF Mono', Menlo, monospace;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
@@ -764,12 +773,20 @@ td a:hover {
 }
 .race-map-bar {
   position: absolute;
+  top: 12px;
   left: 12px;
-  bottom: 12px;
+  /* Clear of the map's controls on the right and its attribution at the bottom */
+  right: 56px;
   display: flex;
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
+}
+.race-map-hint {
+  margin: 0;
+  padding: 8px 14px 0;
+  font-size: 11px;
+  color: var(--muted);
 }
 .hud-button {
   font-size: 11px;
@@ -780,6 +797,11 @@ td a:hover {
   color: var(--accent);
   cursor: pointer;
   box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+/* ↺ ↻: a glyph, not a word, so a size up on the same height */
+.hud-button.turn {
+  font-size: 15px;
+  padding: 3px 10px;
 }
 .hud-button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 18%, var(--page));
