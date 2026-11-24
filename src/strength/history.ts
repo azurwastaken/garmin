@@ -1,6 +1,4 @@
-import { addDays } from '../days.ts'
-
-import { mondayOf } from './schedule.ts'
+import { addDays, mondayOf } from '../days.ts'
 
 // The strength sessions done, without I/O: the sessions per week against the target, each key
 // exercise's progression session by session, the last session in full

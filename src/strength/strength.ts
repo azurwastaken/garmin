@@ -5,13 +5,13 @@ import { Config, Context, Effect, FileSystem, Layer, Schema, Semaphore } from 'e
 
 import { Anatomy, readableCatalog } from '../anatomy/anatomy.ts'
 import { type Catalog, closestIds, structureLabel, structureOf } from '../anatomy/catalog.ts'
-import { addDays, parisToday } from '../days.ts'
+import { addDays, mondayOf, parisToday } from '../days.ts'
 import { Database, type DatabaseError } from '../db.ts'
 import { writeAtomic } from '../files.ts'
 import { EXERCISES, type WorkoutInput } from '../garmin/workout-builder.ts'
 import { type BodyNote, type BodyPin, bodyHistory } from '../journal/history.ts'
 import { dayType, type DoneSession, type PlannedSession } from '../nutrition/day-type.ts'
-import { sessionsOn } from '../nutrition/nutrition.ts'
+import { sessionsOn, z4Floor } from '../nutrition/nutrition.ts'
 import { journal } from '../schema.ts'
 
 import {
@@ -38,7 +38,7 @@ import {
   StrengthProgramJson,
   type Variant,
 } from './program.ts'
-import { mondayOf, placeSessions, type WeekDay, type WeekPlacement } from './schedule.ts'
+import { placeSessions, type WeekDay, type WeekPlacement } from './schedule.ts'
 import { strengthWorkout } from './workout.ts'
 
 // The Renfo page's and the coach's answer: the programme (its file in data/, read on each request,
@@ -318,15 +318,6 @@ export class Strength extends Context.Service<
         return next
       })
 
-      // hr_zone_bounds holds each zone's top bound: zone 3's is zone 4's floor
-      const z4Floor = Effect.map(
-        all<{ floor: number | null }>(sql`
-          SELECT json_extract(hr_zone_bounds, '$[3]') AS floor FROM activities
-          WHERE sport LIKE '%running%' AND hr_zone_bounds IS NOT NULL
-          ORDER BY start_time DESC LIMIT 1`),
-        ([row]) => row?.floor ?? null
-      )
-
       const weekDay = Effect.fnUntraced(function* (day: string, floor: number | null) {
         const { done, planned } = yield* sessionsOn(day).pipe(
           Effect.provideService(Database, database)
@@ -380,7 +371,7 @@ export class Strength extends Context.Service<
         readonly labelOf: (id: string) => string
       }) {
         const week = mondayOf(input.day)
-        const floor = yield* z4Floor
+        const floor = yield* z4Floor.pipe(Effect.provideService(Database, database))
         const days = yield* Effect.forEach(
           Array.from({ length: 9 }, (_, index) => addDays(week, index - 1)),
           (day) => weekDay(day, floor)

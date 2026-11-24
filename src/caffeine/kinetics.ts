@@ -1,6 +1,8 @@
 import { Option } from 'effect'
 
-import { minuteOf, parisInstant, parisWall } from '../days.ts'
+import { clock } from '../components/format.ts'
+import { addDays, minuteOf, parisInstant, parisWall } from '../days.ts'
+import type { Plan } from '../sleep-insights.ts'
 
 import { type CaffeineRow, type Instant, instantOf } from './intake.ts'
 
@@ -22,8 +24,8 @@ export const BEDTIME_LEFT_MG = 25
 // before bed keeps its loss of total sleep time away
 export const RULE_HOURS = 8.8
 
-// TODO(jarvis-sleep): the sleep insights will recommend the bedtime; wire it in after that merge
-export const TARGET_BEDTIME = '23:30'
+// The bedtime without enough nights for the sleep analysis: 23:30, on the noon axis
+export const DEFAULT_BEDTIME_MIN = 690
 
 const HOUR_MS = 3_600_000
 
@@ -57,8 +59,27 @@ export const curveOf = (doses: ReadonlyArray<Dose>, from: number, to: number, st
   ).map((at) => ({ at, mg: caffeineAt(doses, at) }))
 }
 
-// The target bedtime on a day (23:30 always exists in Paris: the clocks change at night)
-export const bedtimeOn = (day: string) => Option.getOrThrow(parisInstant(day, TARGET_BEDTIME))
+// Where tonight's bedtime comes from: the sleep analysis's advice, or 23:30 and why
+export type BedtimeSource =
+  | { readonly kind: 'tonight' }
+  | { readonly kind: 'default'; readonly reason: string }
+
+export interface Bedtime {
+  // Asleep by, on the noon axis (minutes from noon the day before, Paris time: 00:30 is 750)
+  readonly bed_min: number
+  readonly source: BedtimeSource
+}
+
+// Tonight's bedtime from the sleep analysis's plan, 23:30 when it has too few nights
+export const bedtimeFrom = (plan: Plan): Bedtime =>
+  plan.kind === 'plan'
+    ? { bed_min: plan.tonight.bed_min, source: { kind: 'tonight' } }
+    : { bed_min: DEFAULT_BEDTIME_MIN, source: { kind: 'default', reason: plan.reason } }
+
+// The instant of a bedtime on the evening of `day`: from midnight on (720), the next calendar day.
+// Every wall time exists in Paris: one the clocks skip moves later, on the same day
+export const bedtimeOn = (day: string, bed_min: number) =>
+  Option.getOrThrow(parisInstant(bed_min >= 720 ? addDays(day, 1) : day, clock(bed_min)))
 
 // An instant and its Paris wall clock, as the activities pair start_time and start_local
 export interface Moment {
@@ -84,6 +105,7 @@ export interface CaffeineToday {
   // Estimates
   readonly now_mg: number
   readonly bedtime: Moment
+  readonly bedtime_source: BedtimeSource
   readonly bedtime_mg: number
   // The last standard coffee for ≤ 25 mg at bedtime (the one the pages show), and whether it is
   // behind now; the meta-analysis's rule beside it
@@ -97,6 +119,7 @@ export const todayView = (input: {
   readonly today: string
   readonly now: number
   readonly bedtime: number
+  readonly source: BedtimeSource
   readonly recent: ReadonlyArray<CaffeineRow>
 }): CaffeineToday => {
   const doses = input.recent.map(doseFrom)
@@ -113,6 +136,7 @@ export const todayView = (input: {
     strong: intakes.filter((intake) => intake.mg > DOSE_LIMIT_MG),
     now_mg: Math.round(caffeineAt(doses, input.now)),
     bedtime: momentOf(input.bedtime),
+    bedtime_source: input.source,
     bedtime_mg: Math.round(caffeineAt(doses, input.bedtime)),
     cutoff: momentOf(cutoff),
     cutoff_passed: input.now > cutoff,

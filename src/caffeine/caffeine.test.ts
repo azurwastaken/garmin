@@ -5,12 +5,24 @@ import { expect, layer } from '@effect/vitest'
 import { Effect, Exit, Layer } from 'effect'
 
 import { dataDir, put, rows, sql, testLayer } from '../../test/fixtures.ts'
+import { Anatomy } from '../anatomy/anatomy.ts'
 import { Ingest, Storage } from '../ingest.ts'
+import { Nutrition } from '../nutrition/nutrition.ts'
+import { Stats } from '../stats.ts'
+import { Strength } from '../strength/strength.ts'
 
 import { Caffeine } from './caffeine.ts'
 import { type Instant, intakePath } from './intake.ts'
 
-const TestLayer = testLayer(Caffeine.layer.pipe(Layer.provideMerge(Storage)))
+const TestLayer = testLayer(
+  Caffeine.layer.pipe(
+    Layer.provideMerge(Stats.layer),
+    Layer.provideMerge(Strength.layer),
+    Layer.provideMerge(Nutrition.layer),
+    Layer.provideMerge(Anatomy.layer),
+    Layer.provideMerge(Storage)
+  )
+)
 
 const directory = Effect.map(dataDir, (root) => join(root, 'caffeine', '1970'))
 const files = Effect.map(directory, (path) =>
@@ -44,6 +56,13 @@ layer(TestLayer)('Caffeine', (it) => {
         const before = yield* caffeine.today
         expect(before.now_mg).toBe(4)
         expect(before.intakes).toEqual([])
+        // No nights: 23:30, and the sleep analysis's reason
+        expect(before.bedtime.clock).toBe('23:30')
+        expect(before.bedtime_source).toEqual({
+          kind: 'default',
+          reason:
+            "Pas assez de nuits : aucune tranche de durée n'a 5 nuits avec un score, 0 réveil en semaine sur les 5 qu'il faut, pas de temps d'éveil mesuré.",
+        })
 
         const first = yield* caffeine.log({ kind: 'espresso' })
         expect(first).toEqual({ time: '1970-01-01T00:00:00.000Z', kind: 'espresso', mg: 63 })

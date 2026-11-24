@@ -3,12 +3,19 @@ import { Context, Effect, Layer } from 'effect'
 
 import { Anatomy, readableCatalog } from './anatomy/anatomy.ts'
 import { INSIGHT_MIN_DAYS } from './api/periods.ts'
-import { addDays, daysBetween, earlierDay, parisToday } from './days.ts'
+import {
+  addDays,
+  daysBetween,
+  earlierDay,
+  mondayOf,
+  parisMinutesFromNoon,
+  parisToday,
+} from './days.ts'
 import { Database, type DatabaseError } from './db.ts'
 import { namesOf } from './journal/history.ts'
 import { mean, present, round } from './numbers.ts'
 import { dayType } from './nutrition/day-type.ts'
-import { Nutrition, sessionsOn } from './nutrition/nutrition.ts'
+import { Nutrition, sessionsOn, z4Floor } from './nutrition/nutrition.ts'
 import { decode, type Point } from './polyline.ts'
 import { journal } from './schema.ts'
 import {
@@ -17,6 +24,8 @@ import {
   type Note,
   type SleepInsights,
   sleptOnly,
+  startedBy,
+  supplementsSince,
 } from './sleep-insights.ts'
 import { Strength, type StrengthToday } from './strength/strength.ts'
 import { type Burn, plannedBurn, type Reading, verdict, type Verdict } from './today.ts'
@@ -341,28 +350,6 @@ const PACE = `CASE WHEN distance_m > 0 AND moving_s > 0 THEN round(moving_s * 10
 const SPEED = `CASE WHEN distance_m > 0 AND moving_s > 0 THEN round(distance_m / moving_s * 3.6, 1)
   ELSE round(avg_speed * 3.6, 1) END`
 
-// The Monday of the ISO week of `day`
-const mondayOf = (day: string) =>
-  addDays(day, -((new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7))
-
-const parisClock = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Europe/Paris',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-})
-
-// Minutes from noon (Paris time), so that a night's bedtime and wake time sort on one axis
-export const minutesFromNoon = (iso: string | null) => {
-  if (iso === null) return null
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return null
-  const parts = parisClock.formatToParts(date)
-  const hour = Number(parts.find((part) => part.type === 'hour')?.value)
-  const minute = Number(parts.find((part) => part.type === 'minute')?.value)
-  return (hour * 60 + minute - 720 + 1440) % 1440
-}
-
 export const sleepAverages = (nights: ReadonlyArray<SleepNight>): SleepAverages => {
   const slept = nights.filter((night) => night.sleep_s !== null)
   const staged = slept.filter(
@@ -398,8 +385,8 @@ export const sleepAverages = (nights: ReadonlyArray<SleepNight>): SleepAverages 
 // A night's bedtime and wake time as minutes from noon; woken after noon, past the axis's end
 // (over 1440), not before the bedtime
 export const withClock = (night: Omit<SleepNight, 'bed_min' | 'wake_min'>): SleepNight => {
-  const bed = minutesFromNoon(night.sleep_start)
-  const wake = minutesFromNoon(night.sleep_end)
+  const bed = parisMinutesFromNoon(night.sleep_start)
+  const wake = parisMinutesFromNoon(night.sleep_end)
   return {
     ...night,
     bed_min: bed,
@@ -781,23 +768,25 @@ export class Stats extends Context.Service<
         return Math.max(30, Math.min(daysBetween(first?.day ?? today, today) + 1, 3660))
       })
 
-      // The zone-4 floor of the latest run with zone bounds (zone 3's top bound)
-      // shortcut: a copy of Nutrition.view's query, export it from nutrition.ts once that file is
-      // free
-      const z4Floor = Effect.map(
-        all<{ floor: number | null }>(sql`
-          SELECT json_extract(hr_zone_bounds, '$[3]') AS floor FROM activities
-          WHERE sport LIKE '%running%' AND hr_zone_bounds IS NOT NULL
-          ORDER BY start_time DESC LIMIT 1`),
-        ([zones]) => zones?.floor ?? null
+      // The supplements of data/nutrition/supplements.json; none when the file is broken: /nutrition
+      // says why
+      const supplements = nutrition.supplements.pipe(
+        Effect.map((read) => read.supplements),
+        Effect.catchTag('NutritionError', (error) =>
+          Effect.as(Effect.logWarning('the supplements cannot be read', error), [])
+        )
       )
 
-      // The analysis of the `days` nights ending `today`, tomorrow's planned day and the notes
+      // The analysis of the `days` nights ending `today`, tomorrow's planned day, the notes and the
+      // supplements begun
       const insightsOn = Effect.fnUntraced(function* (today: string, days: number) {
         const from = addDays(today, -(days - 1))
         const notes = yield* all<Note>(sql`
           SELECT time, day, text FROM journal WHERE body IS NULL ORDER BY day, time`)
-        const nights = sleptOnly(yield* nightsBetween(firstDayRead(from, notes), today))
+        const started = startedBy(yield* supplements, today)
+        const nights = sleptOnly(
+          yield* nightsBetween(firstDayRead(from, supplementsSince(notes, started)), today)
+        )
         const { planned } = yield* sessionsOn(addDays(today, 1)).pipe(
           Effect.provideService(Database, database)
         )
@@ -806,8 +795,13 @@ export class Stats extends Context.Service<
           today,
           span: nights.filter((night) => night.day >= from),
           history: nights.filter((night) => night.day < from),
-          tomorrow: dayType([], planned, yield* z4Floor),
+          tomorrow: dayType(
+            [],
+            planned,
+            yield* z4Floor.pipe(Effect.provideService(Database, database))
+          ),
           notes,
+          started,
         })
       })
 

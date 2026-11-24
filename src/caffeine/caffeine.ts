@@ -14,11 +14,13 @@ import {
   Semaphore,
 } from 'effect'
 
-import { addDays, minuteOf, parisInstant, parisToday } from '../days.ts'
+import { INSIGHT_MIN_DAYS } from '../api/periods.ts'
+import { addDays, parisInstant, parisToday } from '../days.ts'
 import { Database, type DatabaseError } from '../db.ts'
 import { writeAtomic } from '../files.ts'
 import { Ingest } from '../ingest.ts'
 import { caffeine } from '../schema.ts'
+import { Stats } from '../stats.ts'
 
 import {
   type CaffeineIntake,
@@ -30,6 +32,7 @@ import {
   resolveIntake,
 } from './intake.ts'
 import {
+  bedtimeFrom,
   bedtimeOn,
   type CaffeineDay,
   type CaffeineToday,
@@ -39,7 +42,6 @@ import {
   doseFrom,
   type Moment,
   momentOf,
-  TARGET_BEDTIME,
   todayView,
 } from './kinetics.ts'
 import {
@@ -53,7 +55,8 @@ import {
 // The caffeine tracker's writer and reader (the MCP's tools, the Café card and page): an intake is
 // resolved, written to its own file in data/caffeine/, then ingested; a mistaken one is deleted by
 // its time, file and row. Its file is never written over another's: two intakes in the same
-// millisecond take the next free one. The views are estimates from caffeine/kinetics.ts.
+// millisecond take the next free one. The views are estimates from caffeine/kinetics.ts, to
+// tonight's bedtime from the sleep analysis (Stats.sleepInsights).
 
 // An intake the tracker cannot take (its message says why, for the caller)
 export class CaffeineRefused extends Schema.TaggedError<CaffeineRefused>()('CaffeineRefused', {
@@ -70,7 +73,8 @@ export const PAGE_DAYS = 30
 export interface CaffeinePage {
   readonly today: CaffeineToday
   readonly days: ReadonlyArray<CaffeineDay>
-  // Minutes after midnight (Paris), for the history's line
+  // Minutes after today's midnight (Paris), for the history's line; bedtime_min passes 1440 for a
+  // bedtime after midnight
   readonly cutoff_min: number
   readonly bedtime_min: number
   // Every 15 minutes from midnight to bedtime
@@ -110,6 +114,7 @@ export class Caffeine extends Context.Service<
       const ingest = yield* Ingest
       const { use } = yield* Database
       const dataDir = yield* Config.String('DATA_DIR')
+      const stats = yield* Stats
       const lock = yield* Semaphore.make(1)
 
       const fileOf = (time: Instant) => join(dataDir, intakePath(time))
@@ -173,12 +178,19 @@ export class Caffeine extends Context.Service<
           db.select().from(caffeine).where(gte(caffeine.day, day)).orderBy(caffeine.time).all()
         )
 
+      // Tonight's bedtime: the sleep analysis's over its default span
+      const bedtime = Effect.map(stats.sleepInsights(INSIGHT_MIN_DAYS), (insights) =>
+        bedtimeFrom(insights.plan)
+      )
+
       const today = Effect.gen(function* () {
         const day = yield* parisToday
+        const bed = yield* bedtime
         return todayView({
           today: day,
           now: yield* Clock.currentTimeMillis,
-          bedtime: bedtimeOn(day),
+          bedtime: bedtimeOn(day, bed.bed_min),
+          source: bed.source,
           recent: yield* rowsSince(addDays(day, -RECENT_DAYS)),
         })
       })
@@ -197,13 +209,15 @@ export class Caffeine extends Context.Service<
       const page = Effect.gen(function* () {
         const day = yield* parisToday
         const now = yield* Clock.currentTimeMillis
-        const bedtime = bedtimeOn(day)
+        const bed = yield* bedtime
+        const at = bedtimeOn(day, bed.bed_min)
         const rows = yield* rowsSince(addDays(day, -PAGE_DAYS))
         // Midnight always exists in Paris: the clocks change at 02:00 and 03:00
         const midnight = Option.getOrThrow(parisInstant(day, '00:00'))
-        const bedtimeMin = minuteOf(TARGET_BEDTIME)
+        // From today's midnight rather than the day before's noon
+        const bedtimeMin = bed.bed_min + 720
         return {
-          today: todayView({ today: day, now, bedtime, recent: rows }),
+          today: todayView({ today: day, now, bedtime: at, source: bed.source, recent: rows }),
           days: dailyHistory(
             rows,
             Array.from({ length: PAGE_DAYS }, (_, index) => addDays(day, index + 1 - PAGE_DAYS))
@@ -213,7 +227,7 @@ export class Caffeine extends Context.Service<
           curve: curveOf(
             rows.map((row) => doseFrom(row)),
             midnight,
-            bedtime,
+            at,
             15
           ).map((point) => ({ ...momentOf(point.at), mg: Math.round(point.mg) })),
           sleep: (yield* sleep).comparison,

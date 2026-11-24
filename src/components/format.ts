@@ -34,7 +34,7 @@ export const duration = (seconds: number | null | undefined) => {
 export const pace = (seconds: number | null | undefined) =>
   seconds === null || seconds === undefined || seconds <= 0 ? '–' : duration(seconds)
 
-// 23:40, from minutes from noon (see stats.ts minutesFromNoon)
+// 23:40, from minutes from noon (see days.ts parisMinutesFromNoon)
 export const clock = (minutes: number) => {
   const wrapped = (((Math.round(minutes) + 720) % 1440) + 1440) % 1440
   return `${String(Math.floor(wrapped / 60)).padStart(2, '0')}:${String(wrapped % 60).padStart(2, '0')}`

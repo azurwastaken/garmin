@@ -149,6 +149,19 @@ export const sessionsOn = Effect.fnUntraced(function* (day: string) {
   return { done, planned }
 })
 
+// The zone-4 floor of the latest run with zone bounds: hr_zone_bounds holds each zone's top bound,
+// zone 3's is zone 4's floor
+export const z4Floor = Effect.gen(function* () {
+  const { use } = yield* Database
+  const [zones] = yield* use((db) =>
+    db.all<{ floor: number | null }>(sql`
+      SELECT json_extract(hr_zone_bounds, '$[3]') AS floor FROM activities
+      WHERE sport LIKE '%running%' AND hr_zone_bounds IS NOT NULL
+      ORDER BY start_time DESC LIMIT 1`)
+  )
+  return zones?.floor ?? null
+})
+
 // What the levers read over their windows: the days with an activity, the strength sessions and
 // the running km, each day's steps (none and 0, an unworn watch, left out), each night
 export const leverFactsOn = Effect.fnUntraced(function* (windows: LeverWindows) {
@@ -278,13 +291,6 @@ export class Nutrition extends Context.Service<
         const { done, planned } = yield* sessionsOn(today).pipe(
           Effect.provideService(Database, database)
         )
-        // hr_zone_bounds holds each zone's top bound: zone 3's is zone 4's floor
-        const [zones] = yield* database.use((db) =>
-          db.all<{ floor: number | null }>(sql`
-            SELECT json_extract(hr_zone_bounds, '$[3]') AS floor FROM activities
-            WHERE sport LIKE '%running%' AND hr_zone_bounds IS NOT NULL
-            ORDER BY start_time DESC LIMIT 1`)
-        )
         const windows = leverWindows(today)
         const facts = yield* leverFactsOn(windows).pipe(Effect.provideService(Database, database))
         return nutritionView({
@@ -294,7 +300,7 @@ export class Nutrition extends Context.Service<
           weighIns: dailyWeighIns(rows),
           done,
           planned,
-          z4FloorBpm: zones?.floor ?? null,
+          z4FloorBpm: yield* z4Floor.pipe(Effect.provideService(Database, database)),
           supplements: (yield* supplements).supplements,
           facts,
           windows,

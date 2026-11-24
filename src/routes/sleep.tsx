@@ -19,6 +19,7 @@ import type {
   Regularity,
   SleepInsights,
   Spread,
+  TaggedNight,
   Tags,
 } from '#src/sleep-insights.ts'
 import type { SleepAverages, SleepNight } from '#src/stats.ts'
@@ -390,19 +391,30 @@ function RegularityTiles({ regularity }: { readonly regularity: Regularity }) {
 
 const TAG_LABEL = { supplements: 'compléments', alcohol: 'alcool' } as const
 
-// The tagged notes beside their night, and the supplements' before and after
+// A tagged night's words: the supplements begun that day, then the note
+const taggedText = (tagged: TaggedNight) =>
+  [
+    tagged.started.length > 0 ? `début : ${tagged.started.join(', ')}` : null,
+    tagged.source === 'journal' ? tagged.text : null,
+  ]
+    .filter((part) => part !== null)
+    .join(' · ')
+
+// The tagged notes and the supplements' first days beside their night, and the supplements' before
+// and after
 function TaggedNights({ tags }: { readonly tags: Tags }) {
   const since = tags.supplements
   return (
     <>
       {tags.nights.length === 0 ? (
         <p className="note muted">
-          Aucune note de compléments ou d'alcool : le journal (log_note) les met ici, chacune à côté
-          de la nuit qui la suit.
+          Aucune note de compléments ou d'alcool, aucun complément commencé : le journal (log_note)
+          et les compléments (set_supplements) les mettent ici, chacun à côté de la nuit qui le
+          suit.
         </p>
       ) : (
         <div className="table-wrap">
-          <table aria-label="Nuits notées dans le journal">
+          <table aria-label="Nuits notées : journal et compléments">
             <thead>
               <tr>
                 <th>Nuit du</th>
@@ -414,10 +426,11 @@ function TaggedNights({ tags }: { readonly tags: Tags }) {
             </thead>
             <tbody>
               {tags.nights.map((tagged) => (
-                <tr key={tagged.time}>
+                <tr key={tagged.source === 'journal' ? tagged.time : tagged.day}>
                   <td>{numericDay(tagged.night)}</td>
                   <td>
-                    <b>{tagged.tags.map((tag) => TAG_LABEL[tag]).join(', ')}</b> · {tagged.text}
+                    <b>{tagged.tags.map((tag) => TAG_LABEL[tag]).join(', ')}</b> ·{' '}
+                    {taggedText(tagged)}
                   </td>
                   <td className="num">{fmt(tagged.sleep_score)}</td>
                   <td className="num">{fmt(tagged.hrv)}</td>

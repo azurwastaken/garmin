@@ -5,6 +5,7 @@ import { api } from '#src/api/client.ts'
 import { type CaffeineIntake, DRINK_KINDS, type DrinkKind, DRINKS } from '#src/caffeine/intake.ts'
 import {
   BEDTIME_LEFT_MG,
+  type BedtimeSource,
   type CaffeineToday,
   DAY_LIMIT_MG,
   DOSE_LIMIT_MG,
@@ -17,8 +18,8 @@ import { fmt } from './format.ts'
 
 // The Café card (Aujourd'hui and /cafe): one tap per usual drink, any other with its mg and time,
 // today's intakes (each deletable, the last tap undoable), the caffeine in the body now and at
-// bedtime, and the cut-off for the last coffee. Every write goes through the API, then the page's
-// data is read again.
+// bedtime (tonight's from the sleep analysis, and where it comes from), and the cut-off for the
+// last coffee. Every write goes through the API, then the page's data is read again.
 
 const QUICK: ReadonlyArray<DrinkKind> = [
   'espresso',
@@ -29,6 +30,10 @@ const QUICK: ReadonlyArray<DrinkKind> = [
 ]
 
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause))
+
+// Where the bedtime comes from, in French
+const bedtimeOrigin = (source: BedtimeSource) =>
+  source.kind === 'tonight' ? 'conseil sommeil de ce soir' : 'par défaut, trop peu de nuits'
 
 // A form's optional field: empty is absent
 const optional = (form: FormData, name: string) => {
@@ -97,8 +102,8 @@ export function CafeCard({ today }: { readonly today: CaffeineToday }) {
         </p>
       ) : null}
       <p>
-        Dans le corps maintenant : ~{fmt(today.now_mg)} mg · au coucher ({today.bedtime.clock}) : ~
-        {fmt(today.bedtime_mg)} mg
+        Dans le corps maintenant : ~{fmt(today.now_mg)} mg · au coucher ({today.bedtime.clock},{' '}
+        {bedtimeOrigin(today.bedtime_source)}) : ~{fmt(today.bedtime_mg)} mg
       </p>
       <p className={`status ${today.cutoff_passed ? 'wait' : 'good'}`}>
         {today.cutoff_passed

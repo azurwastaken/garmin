@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { mondayOf, placeSessions, type WeekDay } from './schedule.ts'
+import { placeSessions, type WeekDay } from './schedule.ts'
 
 const WEEK = '2026-11-30'
 
@@ -98,13 +98,5 @@ describe('placing the week', () => {
       why: 'veille d’une séance de qualité (« VMA » dans la séance)',
     })
     expect(placement).toMatchObject({ slots: [], missing: 1 })
-  })
-})
-
-describe('weeks', () => {
-  it('starts on Monday', () => {
-    expect(mondayOf('2026-11-30')).toBe('2026-11-30')
-    expect(mondayOf('2026-12-06')).toBe('2026-11-30')
-    expect(mondayOf('2026-12-01')).toBe('2026-11-30')
   })
 })

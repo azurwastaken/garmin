@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
+import { windowOf } from '../sleep-insights.ts'
+
 import type { CaffeineRow, Instant } from './intake.ts'
 import {
+  bedtimeFrom,
   bedtimeOn,
   caffeineAt,
   CUTOFF_BEFORE_MS,
   curveOf,
+  DEFAULT_BEDTIME_MIN,
   dailyHistory,
   todayView,
 } from './kinetics.ts'
@@ -48,11 +52,11 @@ describe('the cut-off', () => {
     ['in winter', '2026-11-24', '2026-11-24T12:52:12.000Z'],
     ['in summer', '2026-07-01', '2026-07-01T11:52:12.000Z'],
   ])('is 13:52 in Paris %s', (_, day, iso) => {
-    expect(bedtimeOn(day) - CUTOFF_BEFORE_MS).toBe(Date.parse(iso))
+    expect(bedtimeOn(day, DEFAULT_BEDTIME_MIN) - CUTOFF_BEFORE_MS).toBe(Date.parse(iso))
   })
 
   it('leaves 25 mg of a standard coffee at bedtime', () => {
-    const bedtime = bedtimeOn('2026-11-24')
+    const bedtime = bedtimeOn('2026-11-24', DEFAULT_BEDTIME_MIN)
     const coffee = { at: bedtime - CUTOFF_BEFORE_MS, mg: 95 }
     expect(caffeineAt([coffee], bedtime)).toBeCloseTo(25, 3)
   })
@@ -63,7 +67,60 @@ describe('the cut-off', () => {
     ['the day the clocks go forward', '2026-03-29', '2026-03-29T21:30:00.000Z'],
     ['the day they go back', '2026-10-25', '2026-10-25T22:30:00.000Z'],
   ])('puts bedtime at 23:30 Paris %s', (_, day, iso) => {
-    expect(bedtimeOn(day)).toBe(at(iso))
+    expect(bedtimeOn(day, DEFAULT_BEDTIME_MIN)).toBe(at(iso))
+  })
+})
+
+describe('the bedtime', () => {
+  // Up at 06:30 after 7 h of sleep and 20 min awake: asleep by 23:10
+  const window = windowOf({
+    anchor: { kind: 'anchor', wake_min: 1110, mornings: 5 },
+    plateau: { label: '7 h 00 – 7 h 30', sleep_s: 7 * 3600, nights: 5, score: 80, best_score: 80 },
+    awake_s: 20 * 60,
+    best: null,
+  })
+
+  it('is tonight’s advice when the sleep analysis has a plan', () => {
+    expect(
+      bedtimeFrom({
+        kind: 'plan',
+        window,
+        debt: { target_s: 7 * 3600, nights: 7, debt_s: 3 * 3600 },
+        tonight: {
+          bed_min: window.bed_min - 30,
+          wake_min: window.wake_min,
+          earlier_min: 30,
+          reasons: ['3 h 00 de dette sur les 7 dernières nuits'],
+          sentence: '',
+        },
+      })
+    ).toEqual({ bed_min: 640, source: { kind: 'tonight' } })
+  })
+
+  it('is 23:30 with too few nights, and says why', () => {
+    const reason = 'Pas assez de nuits : 2 réveils en semaine sur les 5 qu’il faut.'
+    expect(bedtimeFrom({ kind: 'too-few', missing: ['anchor'], mornings: 2, reason })).toEqual({
+      bed_min: 690,
+      source: { kind: 'default', reason },
+    })
+  })
+
+  it.each([
+    ['23:25, the same evening', '2026-11-24', 685, '2026-11-24T22:25:00.000Z'],
+    ['00:30, the next calendar day', '2026-11-24', 750, '2026-11-24T23:30:00.000Z'],
+    ['00:30 before the clocks go back at 03:00', '2026-10-24', 750, '2026-10-24T22:30:00.000Z'],
+    [
+      '02:30, skipped when the clocks go forward: 03:30',
+      '2026-03-28',
+      870,
+      '2026-03-29T01:30:00.000Z',
+    ],
+  ])('puts %s', (_, day, bed_min, iso) => {
+    expect(bedtimeOn(day, bed_min)).toBe(at(iso))
+  })
+
+  it('moves the cut-off with it: 14:52 for 00:30', () => {
+    expect(bedtimeOn('2026-11-24', 750) - CUTOFF_BEFORE_MS).toBe(at('2026-11-24T13:52:12.000Z'))
   })
 })
 
@@ -76,9 +133,9 @@ describe('the curve', () => {
 })
 
 describe('today', () => {
-  const bedtime = bedtimeOn('2026-11-24')
+  const bedtime = bedtimeOn('2026-11-24', DEFAULT_BEDTIME_MIN)
   const view = (now: string, recent: ReadonlyArray<CaffeineRow>) =>
-    todayView({ today: '2026-11-24', now: at(now), bedtime, recent })
+    todayView({ today: '2026-11-24', now: at(now), bedtime, source: { kind: 'tonight' }, recent })
 
   it('counts today’s intakes, and yesterday’s evening in the body', () => {
     const today = view('2026-11-24T12:00:00.000Z', [

@@ -3,12 +3,14 @@ import { clock, fmt, hours } from './components/format.ts'
 import { addDays, earlierDay } from './days.ts'
 import { mean, median, present, round, spread } from './numbers.ts'
 import type { Classified } from './nutrition/day-type.ts'
+import type { Supplement } from './nutrition/supplements.ts'
 import type { SleepNight } from './stats.ts'
 
 // The sleep page's analysis and the coach's (sleep_insights), without I/O: recovery by bedtime and
 // by duration, the window they point to, how regular the nights are, the week's debt, tonight's
-// advice and the nights the journal tags. Descriptive only: under 5 nights a bucket says nothing,
-// every number carries its n, and a difference is "associé à", never a cause.
+// advice and the nights the journal and the supplements' first days tag. Descriptive only: under 5
+// nights a bucket says nothing, every number carries its n, and a difference is "associé à", never
+// a cause.
 
 // A night with its sleep measured; its day is the morning it ends, bed_min and wake_min are on the
 // noon axis (minutes from noon the day before, Paris time: see stats.ts withClock)
@@ -182,18 +184,26 @@ export interface Regularity {
 
 export type Tag = 'supplements' | 'alcohol'
 
-export interface TaggedNight {
-  // The note's key
-  readonly time: string
+// A supplement of data/nutrition/supplements.json, as the tags read it: its name and first day
+export type Started = Pick<Supplement, 'name' | 'start'>
+
+// A night tagged by a journal note (source 'journal', its time its key), or by supplements begun
+// that day without a note naming one (source 'supplements')
+export type TaggedNight = {
   readonly tags: ReadonlyArray<Tag>
-  readonly note_day: string
-  // The night after the note's day: the one ending the next morning
+  // The day the note is about, or the supplements' first day
+  readonly day: string
+  // The night after it: the one ending the next morning
   readonly night: string
-  readonly text: string
+  // The supplements of data/nutrition/supplements.json begun that day
+  readonly started: ReadonlyArray<string>
   readonly sleep_score: number | null
   readonly hrv: number | null
   readonly resting_hr: number | null
-}
+} & (
+  | { readonly source: 'journal'; readonly time: string; readonly text: string }
+  | { readonly source: 'supplements' }
+)
 
 export interface Side {
   readonly nights: number
@@ -643,24 +653,31 @@ const tagsIn = (text: string): Array<Tag> =>
     ALCOHOL.test(text) && !NO_ALCOHOL.test(text) ? ('alcohol' as const) : null,
   ])
 
-// The day of the earliest note naming a supplement, whatever the notes' order
-export const supplementsSince = (notes: ReadonlyArray<Note>): string | null =>
-  notes
-    .filter((note) => SUPPLEMENTS.test(note.text))
-    .reduce<string | null>(
-      (first, note) => (first === null ? note.day : earlierDay(first, note.day)),
-      null
-    )
+// The starts the tags read: begun by `today`, named as a sleep supplement, as the notes are
+export const startedBy = (supplements: ReadonlyArray<Started>, today: string): Array<Started> =>
+  supplements.filter((supplement) => supplement.start <= today && SUPPLEMENTS.test(supplement.name))
+
+// The notes naming a supplement
+const supplementNotes = (notes: ReadonlyArray<Note>) =>
+  notes.filter((note) => SUPPLEMENTS.test(note.text))
+
+// The earliest of the first note naming a supplement and the first start, whatever their order
+export const supplementsSince = (
+  notes: ReadonlyArray<Note>,
+  started: ReadonlyArray<Started>
+): string | null =>
+  [
+    ...supplementNotes(notes).map((note) => note.day),
+    ...started.map((supplement) => supplement.start),
+  ].reduce<string | null>((first, day) => (first === null ? day : earlierDay(first, day)), null)
 
 // The first night of the before side, for supplements first noted on `since`
 const beforeFrom = (since: string) => addDays(since, 1 - TAG_BEFORE_DAYS)
 
-// The first day the analysis reads: the span's first, or the supplements' before side when it
-// starts earlier
-export const firstDayRead = (from: string, notes: ReadonlyArray<Note>) => {
-  const since = supplementsSince(notes)
-  return since === null ? from : earlierDay(from, beforeFrom(since))
-}
+// The first day the analysis reads: the span's first, or the before side of the supplements begun
+// on `since` when it starts earlier
+export const firstDayRead = (from: string, since: string | null) =>
+  since === null ? from : earlierDay(from, beforeFrom(since))
 
 // A side of a "since" comparison
 const sideOf = (nights: ReadonlyArray<SleptNight>): Side => ({
@@ -686,46 +703,94 @@ const sinceOf = (since: string, nights: ReadonlyArray<SleptNight>): Since => {
     : { kind: 'compared', first_night, before: sideOf(before), after: sideOf(after) }
 }
 
-// The tagged notes whose night is from `from` on, each with that night's numbers, and the
-// supplements' comparison over the history and the span
+// The names begun on each day
+const startsByDay = (started: ReadonlyArray<Started>) =>
+  new Map(
+    Array.from(
+      Map.groupBy(started, (supplement) => supplement.start),
+      ([day, begun]) => [day, begun.map((supplement) => supplement.name)]
+    )
+  )
+
+// The time of each day's earliest note naming a supplement: the one that carries its starts
+const firstSupplementNotes = (notes: ReadonlyArray<Note>) =>
+  new Set(
+    Array.from(Map.groupBy(supplementNotes(notes), (note) => note.day).values(), (ofDay) =>
+      ofDay.reduce((first, note) => (note.time < first.time ? note : first))
+    ).map((note) => note.time)
+  )
+
+// The night after `day` and its numbers, from the nights by day
+const nightAfter = (day: string, byDay: ReadonlyMap<string, SleptNight>) => {
+  const night = addDays(day, 1)
+  const slept = byDay.get(night)
+  return {
+    night,
+    sleep_score: slept?.sleep_score ?? null,
+    hrv: slept?.hrv ?? null,
+    resting_hr: slept?.resting_hr ?? null,
+  }
+}
+
+// By night; on a night, the notes by time, then a day supplements began without one
+const orderOf = (tagged: TaggedNight) =>
+  `${tagged.night} ${tagged.source === 'journal' ? `0 ${tagged.time}` : '1'}`
+
+// The tagged notes and the days supplements began without a note, each with the night after it
+// from `from` on, and the supplements' comparison over the history and the span
 export const tagsOf = ({
   notes,
+  started,
   from,
   span,
   history,
 }: {
   readonly notes: ReadonlyArray<Note>
+  readonly started: ReadonlyArray<Started>
   readonly from: string
   readonly span: ReadonlyArray<SleptNight>
   readonly history: ReadonlyArray<SleptNight>
 }): Tags => {
   const byDay = new Map(span.map((night) => [night.day, night]))
-  const since = supplementsSince(notes)
+  const starts = startsByDay(started)
+  const carriers = firstSupplementNotes(notes)
+  const noted = new Set(supplementNotes(notes).map((note) => note.day))
+  const since = supplementsSince(notes, started)
+  const journal = notes.flatMap((note): Array<TaggedNight> => {
+    const tags = tagsIn(note.text)
+    if (tags.length === 0) return []
+    const begun = carriers.has(note.time) ? (starts.get(note.day) ?? []) : []
+    return [
+      {
+        source: 'journal',
+        time: note.time,
+        text: note.text,
+        tags,
+        day: note.day,
+        started: begun,
+        ...nightAfter(note.day, byDay),
+      },
+    ]
+  })
+  const unnoted = Array.from(starts)
+    .filter(([day]) => !noted.has(day))
+    .map(([day, begun]): TaggedNight => ({
+      source: 'supplements',
+      tags: ['supplements'],
+      day,
+      started: begun,
+      ...nightAfter(day, byDay),
+    }))
   return {
-    nights: notes.flatMap((note) => {
-      const tags = tagsIn(note.text)
-      const night = addDays(note.day, 1)
-      if (tags.length === 0 || night < from) return []
-      const slept = byDay.get(night)
-      return [
-        {
-          time: note.time,
-          tags,
-          note_day: note.day,
-          night,
-          text: note.text,
-          sleep_score: slept?.sleep_score ?? null,
-          hrv: slept?.hrv ?? null,
-          resting_hr: slept?.resting_hr ?? null,
-        },
-      ]
-    }),
+    nights: [...journal, ...unnoted]
+      .filter((tagged) => tagged.night >= from)
+      .toSorted((a, b) => (orderOf(a) < orderOf(b) ? -1 : 1)),
     supplements: since === null ? null : sinceOf(since, [...history, ...span]),
   }
 }
 
 // The whole analysis: `span` the nights from `from` to `today`, `history` the nights before it
-// that the supplements' before side reads
+// that the supplements' before side reads, `started` the supplements begun (startedBy)
 export const insightsOf = ({
   from,
   today,
@@ -733,6 +798,7 @@ export const insightsOf = ({
   history,
   tomorrow,
   notes,
+  started,
 }: {
   readonly from: string
   readonly today: string
@@ -740,6 +806,7 @@ export const insightsOf = ({
   readonly history: ReadonlyArray<SleptNight>
   readonly tomorrow: Classified
   readonly notes: ReadonlyArray<Note>
+  readonly started: ReadonlyArray<Started>
 }): SleepInsights => {
   const bedtime = bedtimeBuckets(span)
   const duration = durationBuckets(span)
@@ -759,6 +826,6 @@ export const insightsOf = ({
       tomorrow,
     }),
     regularity: regularityOf(span),
-    tags: tagsOf({ notes, from, span, history }),
+    tags: tagsOf({ notes, started, from, span, history }),
   }
 }

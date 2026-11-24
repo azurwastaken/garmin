@@ -157,9 +157,3 @@ export const placeSessions = (input: {
   }
   return { week, already, slots: [], missing: wanted, rejected }
 }
-
-// The Monday of `day`'s week
-export const mondayOf = (day: string) => {
-  const weekday = new Date(`${day}T00:00:00Z`).getUTCDay()
-  return addDays(day, -((weekday + 6) % 7))
-}

@@ -124,7 +124,8 @@ token: `--header "Authorization: Bearer <password>"`.
   and by how long you slept, with n and a 95 % interval, nothing under 5 nights. The window it
   points to: up at your weekday wake time, asleep the sleep where the score levels off before it.
   The regularity and the weekend's shift, the 7-night debt, tonight's target, and the nights your
-  notes tag (supplements, alcohol). Associations, never causes.
+  notes tag (supplements, alcohol) or your supplements begin, one row a night. Associations, never
+  causes.
 - `weekly_load`: acute and chronic load.
 - `planned_workouts`.
 - `sync_status`: the Garmin session, the last syncs, how fresh the data is.
@@ -150,7 +151,8 @@ token: `--header "Authorization: Bearer <password>"`.
 - `delete_caffeine`: one intake logged by mistake, by its time: its file, then its row.
 - `caffeine_today`: the day's total against EFSA 2015's limits (400 mg a day, 200 mg at once), the
   caffeine in the body now and at bedtime (an estimate: a 5 h half-life), and the cut-off for the
-  last coffee (a 95 mg coffee down to 25 mg by 23:30), beside the 8.8 h rule of Gardiner et al. 2023.
+  last coffee (a 95 mg coffee down to 25 mg by bedtime), beside the 8.8 h rule of Gardiner et al. 2023. Bedtime is tonight's from `sleep_insights`, 23:30 while the nights are too few; it says
+  which.
 - `caffeine_vs_sleep`: per night, the caffeine left at sleep onset and the last intake, against the
   sleep score, HRV, resting HR and deep sleep; nights over 50 mg against the others once there are
   10 of each. An association, never a cause. `/cafe` shows it with 30 days of history.

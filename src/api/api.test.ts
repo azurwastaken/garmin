@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createRouterClient, ORPCError } from '@orpc/server'
@@ -8,11 +8,10 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { anatomyCatalog, dataDir, put, testLayer } from '../../test/fixtures.ts'
 import { gpxText, syntheticCourse } from '../../test/races.ts'
 import { Services } from '../app.ts'
-import { addDays, parisToday } from '../days.ts'
+import { addDays, mondayOf, parisToday } from '../days.ts'
 import { Ingest } from '../ingest.ts'
 import { DEFAULT_PLAN, PLAN_PATH } from '../nutrition/plan.ts'
 import { DEFAULT_PROGRAM, phaseOn, PROGRAM_PATH } from '../strength/program.ts'
-import { mondayOf } from '../strength/schedule.ts'
 
 import { makeHandlers, makeRun } from './handlers.ts'
 import { router } from './router.ts'
@@ -60,6 +59,7 @@ const call = async (name: string, args: object) => {
 
 interface ListedTool {
   readonly name: string
+  readonly description: string
   readonly inputSchema: {
     readonly properties?: Record<string, unknown>
     readonly required?: Array<string>
@@ -190,6 +190,24 @@ describe('the MCP', () => {
     expect(byName['list_activities']?.inputSchema.properties?.['limit']).toMatchObject({
       type: 'integer',
     })
+  })
+
+  it('is counted and named in the README, each write once in the data model', async () => {
+    const { tools } = (await mcp('tools/list')) as { tools: Array<ListedTool> }
+    const readme = readFileSync(new URL('../../README.md', import.meta.url), 'utf8')
+    const counts = Array.from(readme.matchAll(/(\d+) tools/gu), (match) => Number(match[1]))
+    // Its summary and its list's title
+    expect(counts).toEqual([tools.length, tools.length])
+    expect(tools.filter((tool) => !readme.includes(`\`${tool.name}\``))).toEqual([])
+    // DATA_MODEL's first line, after the schema tool's own sentence: what each write does
+    const model = tools.find((tool) => tool.name === 'schema')?.description.split('\n\n')[1]
+    const writes = model?.split('\n')[0] ?? ''
+    const written = tools.filter((tool) => tool.annotations['readOnlyHint'] === false)
+    expect(written.length).toBeGreaterThan(0)
+    const unwritten = written.filter(
+      (tool) => writes.match(new RegExp(`\\b${tool.name}\\b`, 'gu'))?.length !== 1
+    )
+    expect(unwritten.map((tool) => tool.name)).toEqual([])
   })
 
   it('answers a call, and an error the model can read', async () => {

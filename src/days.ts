@@ -72,10 +72,6 @@ export const months = (from: string, to: string) => {
   return all
 }
 
-// shortcut: stats.ts keeps its own mondayOf and minutesFromNoon (it imports the nutrition module,
-// so importing from it would close a cycle, and the sleep branch edits it): fold them into these
-// once jarvis-sleep lands
-
 // The Monday of the ISO week of `day`
 export const mondayOf = (day: string) =>
   addDays(day, -((new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7))

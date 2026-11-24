@@ -58,10 +58,11 @@ export const Services = Layer.mergeAll(
   Journal.layer,
   Caffeine.layer,
   Races.layer.pipe(Layer.provideMerge(Terrain.layer)),
-  Stats.layer,
   Auth.layer,
   OAuth.layer
 ).pipe(
+  // The caffeine tracker's bedtime is the sleep analysis's
+  Layer.provideMerge(Stats.layer),
   Layer.provideMerge(Strength.layer),
   Layer.provideMerge(Nutrition.layer),
   Layer.provideMerge(Anatomy.layer),

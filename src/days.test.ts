@@ -20,6 +20,8 @@ describe('parisMinutesFromNoon', () => {
     ['2026-07-01T22:31:00.000Z', 751],
     // Before midnight sorts before it
     ['2026-11-23T22:00:00.000Z', 660],
+    // A wake time: 06:15 in Paris
+    ['2026-12-02T05:15:00.000Z', 1095],
   ])('reads %s in Paris time as %i', (iso, minutes) => {
     expect(parisMinutesFromNoon(iso)).toBe(minutes)
   })

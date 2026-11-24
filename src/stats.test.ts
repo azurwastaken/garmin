@@ -9,14 +9,7 @@ import { addDays, parisToday } from './days.ts'
 import { Ingest, Storage } from './ingest.ts'
 import { Nutrition } from './nutrition/nutrition.ts'
 import { DEFAULT_PLAN } from './nutrition/plan.ts'
-import {
-  minutesFromNoon,
-  minutesOf,
-  sleepAverages,
-  Stats,
-  withClock,
-  type SleepNight,
-} from './stats.ts'
+import { minutesOf, sleepAverages, Stats, withClock, type SleepNight } from './stats.ts'
 import { DEFAULT_PROGRAM, phaseOn } from './strength/program.ts'
 import { Strength } from './strength/strength.ts'
 
@@ -281,19 +274,12 @@ const night = (overrides: Partial<SleepNight>): SleepNight => ({
 
 describe('stats helpers', () => {
   it('puts bedtimes and wake times on one axis, in Paris time', () => {
-    // 22:30 in Paris in winter (UTC+1), 23:30 in summer (UTC+2)
-    expect(minutesFromNoon('2026-12-01T21:30:00.000Z')).toBe(630)
-    expect(minutesFromNoon('2026-07-01T21:30:00.000Z')).toBe(690)
-    // After midnight
-    expect(minutesFromNoon('2026-12-02T05:15:00.000Z')).toBe(1095)
-    expect(minutesFromNoon(null)).toBeNull()
     // Asleep at 03:00, awake at 13:15: the wake time goes past the axis's end, after the bedtime
     expect(
       withClock(
         night({ sleep_start: '2026-12-02T02:00:00.000Z', sleep_end: '2026-12-02T12:15:00.000Z' })
       )
     ).toMatchObject({ bed_min: 900, wake_min: 1515 })
-    expect(minutesFromNoon('nope')).toBeNull()
   })
 
   it('averages the nights that have data', () => {
