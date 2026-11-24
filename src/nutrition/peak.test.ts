@@ -166,6 +166,15 @@ describe('peakWeight', () => {
     expect(by({ kind: 'deficit', to: '2026-12-17' })).toMatchObject({ deficit: 'fastest-only' })
     expect(by({ kind: 'deficit', to: '2026-12-08' })).toMatchObject({ deficit: 'fastest-only' })
     expect(by({ kind: 'deficit', to: '2026-12-07' })).toMatchObject({ deficit: 'after' })
+    // No slowest date (no slowest loss): only the fastest can fit, never both
+    expect(
+      targetOf(
+        peak(steady(3), {
+          plan: { target_kg: 79, loss_kg_per_week: { min: 0, max: 0.5 } },
+          phase: { kind: 'deficit', to: '2026-12-08' },
+        })
+      )
+    ).toMatchObject({ slowest: null, deficit: 'fastest-only' })
     expect(by({ kind: 'maintenance', to: '2027-04-04' })).toMatchObject({ deficit: null })
     expect(by(null)).toMatchObject({ deficit: null })
   })
