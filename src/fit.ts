@@ -3,9 +3,10 @@ import { Effect, Predicate, Schema } from 'effect'
 
 import { round } from './numbers.ts'
 import { encode, simplify, type Point } from './polyline.ts'
+import { fitSets, type StrengthSet } from './strength/sets.ts'
 
-// An activity's FIT file, decoded with Garmin's FIT SDK, into the columns of activities, laps
-// and samples (see schema.ts)
+// An activity's FIT file, decoded with Garmin's FIT SDK, into the columns of activities, laps,
+// samples and a strength session's strength_sets (see schema.ts)
 
 export class FitError extends Schema.TaggedError<FitError>()('FitError', {
   message: Schema.String,
@@ -81,6 +82,8 @@ export interface FitActivity {
   readonly polyline: string | null
   readonly laps: ReadonlyArray<Lap>
   readonly samples: ReadonlyArray<Sample>
+  // A strength session's active sets (strength/sets.ts); none for a run
+  readonly sets: ReadonlyArray<StrengthSet>
 }
 
 // The FIT epoch (1989-12-31T00:00:00Z) in Unix seconds: local timestamps count from it
@@ -263,5 +266,6 @@ const decode = (bytes: Uint8Array): FitActivity | string => {
     polyline: route.length < 2 ? null : encode(simplify(route)),
     laps,
     samples,
+    sets: fitSets(messages.setMesgs ?? []),
   }
 }

@@ -76,6 +76,14 @@ const mesgNum = (name: string) => {
 // The FIT epoch in Unix seconds
 const fitEpoch = 631_065_600
 
+export interface FitSet {
+  readonly category: string
+  readonly subtype: number
+  readonly reps?: number
+  readonly weight?: number
+  readonly duration: number
+}
+
 // A run: one record a second at `speed` m/s, HR climbing from 130, laps of `lapSeconds`
 export const fitRun = ({
   start = new Date('2026-10-31T06:12:40Z'),
@@ -85,6 +93,7 @@ export const fitRun = ({
   lapSeconds = 600,
   utcOffset = 3600,
   type = 'activity',
+  sets = [],
 }: {
   readonly start?: Date
   readonly seconds?: number
@@ -93,6 +102,9 @@ export const fitRun = ({
   readonly lapSeconds?: number
   readonly utcOffset?: number
   readonly type?: string
+  // A strength session's sets, as the watch writes them: its FIT category ('lunge') and the
+  // exercise's number in it, a rest between each
+  readonly sets?: ReadonlyArray<FitSet>
 } = {}) => {
   const encoder = new Encoder()
   // The profile's fields by name, strings for its enums (the decoder's own options)
@@ -139,6 +151,29 @@ export const fitRun = ({
       messageIndex: lap,
     })
   }
+  let clock = 60
+  sets.forEach((set, index) => {
+    write('SET', {
+      timestamp: at(clock + set.duration),
+      startTime: at(clock),
+      duration: set.duration,
+      repetitions: set.reps,
+      weight: set.weight,
+      setType: 'active',
+      category: [set.category],
+      categorySubtype: [set.subtype],
+      messageIndex: index * 2,
+    })
+    clock += set.duration
+    write('SET', {
+      timestamp: at(clock + 90),
+      startTime: at(clock),
+      duration: 90,
+      setType: 'rest',
+      messageIndex: index * 2 + 1,
+    })
+    clock += 90
+  })
   write('SESSION', {
     timestamp: at(seconds),
     startTime: start,
@@ -199,6 +234,58 @@ export const apiSummary = (id: number, overrides: Record<string, unknown> = {}) 
   vO2MaxValue: 41,
   gear: [{ displayName: 'Road Shoes' }],
   ...overrides,
+})
+
+// Garmin Connect's /activity-service/activity/{id}/exerciseSets, in the shape the community
+// clients document (python-garminconnect's get_activity_exercise_sets): never checked against a
+// live account here. The weight in grams, Connect's guesses with their probability.
+export const exerciseSetsAnswer = (activityId: number) => ({
+  activityId,
+  exerciseSets: [
+    {
+      exercises: [
+        { probability: 12.5, category: 'SQUAT', name: 'DUMBBELL_SPLIT_SQUAT' },
+        { probability: 87.5, category: 'LUNGE', name: 'DUMBBELL_BULGARIAN_SPLIT_SQUAT' },
+      ],
+      duration: 48.215,
+      repetitionCount: 10,
+      weight: 12_000,
+      setType: 'ACTIVE',
+      startTime: '2026-11-30T18:02:13.0',
+      wktStepIndex: 0,
+      messageIndex: 0,
+    },
+    {
+      exercises: [],
+      duration: 120,
+      repetitionCount: null,
+      weight: null,
+      setType: 'REST',
+      startTime: '2026-11-30T18:03:01.0',
+      wktStepIndex: 1,
+      messageIndex: 1,
+    },
+    {
+      exercises: [{ probability: 100, category: 'PLANK', name: 'SIDE_PLANK_WITH_FEET_ON_BENCH' }],
+      duration: 20.4,
+      repetitionCount: 0,
+      weight: -1,
+      setType: 'ACTIVE',
+      startTime: '2026-11-30T18:05:01.0',
+      wktStepIndex: 2,
+      messageIndex: 2,
+    },
+    {
+      exercises: [{ probability: 100, category: 'UNKNOWN', name: null }],
+      duration: 30,
+      repetitionCount: 8,
+      weight: 0,
+      setType: 'ACTIVE',
+      startTime: '2026-11-30T18:06:01.0',
+      wktStepIndex: 3,
+      messageIndex: 3,
+    },
+  ],
 })
 
 // The sync's daily file, trimmed to what the app reads
