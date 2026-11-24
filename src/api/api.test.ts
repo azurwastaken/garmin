@@ -11,6 +11,8 @@ import { Services } from '../app.ts'
 import { addDays, parisToday } from '../days.ts'
 import { Ingest } from '../ingest.ts'
 import { DEFAULT_PLAN, PLAN_PATH } from '../nutrition/plan.ts'
+import { DEFAULT_PROGRAM, PROGRAM_PATH } from '../strength/program.ts'
+import { mondayOf } from '../strength/schedule.ts'
 
 import { makeHandlers, makeRun } from './handlers.ts'
 import { router } from './router.ts'
@@ -87,10 +89,14 @@ describe('the MCP', () => {
       'nutrition_today',
       'plan_race',
       'planned_workouts',
+      'schedule_strength',
       'schedule_workout',
       'schema',
       'set_nutrition_plan',
+      'set_strength_program',
       'sql',
+      'strength_history',
+      'strength_program',
       'sync_status',
       'unschedule_workout',
       'weekly_load',
@@ -414,6 +420,76 @@ describe('the nutrition tools', () => {
       'today',
       'trend',
     ])
+  })
+})
+
+describe('the strength tools', () => {
+  // The body tests above left the fixture's few structures as the model's catalog
+  const knee = {
+    ...DEFAULT_PROGRAM,
+    sessions: [{ id: 'A', name: 'Genou', focus: 'Vastes', exercises: ['split_squat'] }],
+    exercises: [
+      {
+        ...DEFAULT_PROGRAM.exercises[0],
+        primary: ['vastus_lateralis_l', 'vastus_lateralis_r'],
+        secondary: ['patellar_ligament_r'],
+      },
+    ],
+  }
+
+  it('reads the default programme, refuses a muscle the live model lacks, writes one it has', async () => {
+    const file = join(await runtime.runPromise(dataDir), PROGRAM_PATH)
+    expect(await call('strength_program', {})).toEqual({
+      isError: false,
+      data: { program: DEFAULT_PROGRAM, saved: false },
+    })
+    expect(existsSync(file)).toBe(false)
+    const refused = await call('set_strength_program', DEFAULT_PROGRAM)
+    expect(refused).toMatchObject({ isError: true, data: { code: 'BAD_REQUEST' } })
+    expect((refused.data as { message: string }).message).toContain(
+      'split_squat : vastus_medialis_l inconnu'
+    )
+    expect(existsSync(file)).toBe(false)
+    expect(
+      await call('set_strength_program', {
+        ...knee,
+        exercises: [{ ...knee.exercises[0], primary: ['quadriceps_r'] }],
+      })
+    ).toMatchObject({ isError: true, data: { code: 'BAD_REQUEST' } })
+    expect(await call('set_strength_program', knee)).toEqual({ isError: false, data: knee })
+    expect(await call('strength_program', {})).toEqual({
+      isError: false,
+      data: { program: knee, saved: true },
+    })
+    await runtime.runPromise(put(PROGRAM_PATH, DEFAULT_PROGRAM))
+  })
+
+  it('says no session was done yet', async () => {
+    const { isError, data } = await call('strength_history', {})
+    expect(isError).toBe(false)
+    expect(data).toMatchObject({ target: 2, total: 0, progressions: [], last: null })
+    expect((data as { weeks: Array<{ sessions: number }> }).weeks).toHaveLength(12)
+  })
+
+  it('places a week and returns its workouts in a dry run, calling nothing on Garmin', async () => {
+    const today = await runtime.runPromise(parisToday)
+    const week = addDays(mondayOf(today), 7)
+    const { isError, data } = await call('schedule_strength', { week, dry_run: true })
+    expect(isError).toBe(false)
+    const answer = data as {
+      dry_run: boolean
+      week: string
+      sessions: Array<{ day: string; session: string; workout_name: string }>
+      workouts: Array<{ schedule: Array<string>; steps: Array<string>; payload: unknown }>
+    }
+    expect(answer).toMatchObject({ dry_run: true, week })
+    // No run in the test database: an empty week, two sessions as far apart as can be
+    expect(answer.sessions.map((session) => session.session)).toEqual(['A', 'B'])
+    expect(answer.workouts).toHaveLength(answer.sessions.length)
+    expect(answer.workouts[0]?.schedule).toEqual([answer.sessions[0]?.day])
+    expect(answer.workouts[0]?.payload).toMatchObject({
+      sportType: { sportTypeKey: 'strength_training' },
+    })
   })
 })
 

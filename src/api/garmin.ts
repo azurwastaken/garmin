@@ -2,8 +2,9 @@ import { ORPCError } from '@orpc/server'
 import { Effect, Option, Schema } from 'effect'
 
 import { Anatomy, readableCatalog } from '../anatomy/anatomy.ts'
+import { addDays, parisToday } from '../days.ts'
 import { GarminLogin } from '../garmin/login.ts'
-import { findExercises, WorkoutSchema } from '../garmin/workout-builder.ts'
+import { buildWorkout, findExercises, WorkoutSchema } from '../garmin/workout-builder.ts'
 import { GarminWorkouts } from '../garmin/workouts.ts'
 import { bodyHistory } from '../journal/history.ts'
 import { Journal } from '../journal/log.ts'
@@ -13,6 +14,9 @@ import { NutritionPlanJson } from '../nutrition/plan.ts'
 import { FactsInputSchema, MAX_GPX_BYTES, PlanInputSchema, SlugSchema } from '../races/race.ts'
 import { Races } from '../races/races.ts'
 import { MAX_ROWS, Reader } from '../reader.ts'
+import { StrengthProgramJson } from '../strength/program.ts'
+import { mondayOf } from '../strength/schedule.ts'
+import { proposalOf, Strength, StrengthError } from '../strength/strength.ts'
 import { Tools } from '../tools.ts'
 import { withingsStatus } from '../withings/sync.ts'
 
@@ -21,7 +25,7 @@ import { Day, standard, tool } from './base.ts'
 // The Garmin data and the watch's workouts: each procedure an MCP tool (its name), an OpenAPI
 // operation (under /api) and an RPC call (under /rpc). The tools' names and inputs are the MCP's.
 
-const DATA_MODEL = `Data: the user's Garmin history (watch, scale): every activity from its FIT file (laps, per-second samples) and Garmin Connect's summary, plus daily wellness (sleep, HRV, resting HR, body battery, readiness), weigh-ins and the Garmin calendar's planned workouts. Synced from Garmin Connect every 3 hours (sync_status tells when). The SQL is read-only; the workout tools (create_workout, schedule_workout, unschedule_workout, delete_workout) write to the Garmin calendar and refresh planned_workouts right after; log_note adds a note to the user's journal, body_history reads the pains pinned on the web app's 3D body map; add_race and plan_race write the user's target races and their plans; set_nutrition_plan writes the nutrition plan agreed with the user.
+const DATA_MODEL = `Data: the user's Garmin history (watch, scale): every activity from its FIT file (laps, per-second samples) and Garmin Connect's summary, plus daily wellness (sleep, HRV, resting HR, body battery, readiness), weigh-ins and the Garmin calendar's planned workouts. Synced from Garmin Connect every 3 hours (sync_status tells when). The SQL is read-only; the workout tools (create_workout, schedule_workout, unschedule_workout, delete_workout) write to the Garmin calendar and refresh planned_workouts right after; log_note adds a note to the user's journal, body_history reads the pains pinned on the web app's 3D body map; add_race and plan_race write the user's target races and their plans; set_nutrition_plan writes the nutrition plan agreed with the user; set_strength_program writes the strength programme, schedule_strength places a week's strength sessions and pushes them to the Garmin calendar.
 Conventions: timestamps ISO 8601 UTC text, start_local local wall time, day YYYY-MM-DD (local). Metres, seconds, m/s, bpm, kg. Cadence is steps/min on foot, rpm on a bike.
 Tables and views:
 - activities: one row per Garmin Connect activity (id = its activity id). sport (Connect's type: running, trail_running, cycling, lap_swimming, hiking, strength_training…), name, start_time, start_local, day, elapsed_s, moving_s, distance_m, ascent_m, descent_m, avg_hr, max_hr, avg_speed, max_speed, avg_cadence, max_cadence, avg_power, max_power, norm_power, calories, training_load (Garmin's EPOC load), aerobic_te / anaerobic_te (training effect 0-5), te_label (TEMPO, BASE…), vo2max, rpe (0-10) and feel (0-100) entered after it, hr_z1_s…hr_z5_s (seconds in the watch's HR zones), hr_zone_bounds (JSON: the zones' top bounds [z0, z1…z5]), workout_name (the structured workout run, as in planned_workouts.name), gear, device, start_lat/start_lon, polyline (Google encoded, precision 5).
@@ -35,6 +39,8 @@ Tables and views:
 - journal: the user's notes (log_note): time (the instant written, its key), day (the day it is about), text, body (JSON, NULL unless the note is a pain pinned on the body map: structure (the anatomy model's id, e.g. vastus_lateralis_r), side, point [x, y, z] (metres on the model, Y up, origin between the feet, right side at -x), pain 0-10, kind, when (array), since; read it with json_extract(body, '$.pain'), body_history names the structures); one file each in data/journal/.
 - races are not in SQL: list_races, get_race (files in data/races/: <slug>.gpx, <slug>.json, <slug>.plan.json).
 - the nutrition plan is not in SQL: nutrition_plan, and nutrition_today for today's target and the weight trend against it (file data/nutrition/plan.json).
+- strength_sets: a strength session's active sets, in order: activity_id (activities.sport = 'strength_training'), idx, start_time, category and exercise_name (Garmin's catalog keys, find_exercises: LUNGE / DUMBBELL_BULGARIAN_SPLIT_SQUAT; NULL when the watch did not know it), reps, weight_kg, duration_s, source ('connect': Garmin Connect's exercise sets, as corrected there; else 'fit': the watch's). strength_history aggregates them.
+- the strength programme is not in SQL: strength_program (file data/strength/program.json).
 - raw_files: the source files ingested (path, error).
 - sync_runs: each sync with Garmin Connect: started_at, finished_at, ok, logged_out, account, since, files_written, warnings (JSON), error.`
 
@@ -499,6 +505,135 @@ const nutritionToday = tool({
   )
 )
 
+// --- The strength programme (the Renfo page): planned, pushed to the watch, tracked
+
+const STRENGTH_MODEL = `The strength programme (data/strength/program.json; without the file, the runner's programme agreed on 2026-11-24): sessions a week (2), hours between two sessions (48), the pain rule (an exercise loading a structure pinned on the body map with a pain of threshold/10 or more in the last days takes its regression: 3/10 over 14 days), the phases tied to the races (base, build, taper, mont-blanc: their doses and their volume, a taper's sets halved; a day in none is a recovery week without sessions), the sessions (A: heavy and slow for the patellar tendon and the quads; B: hips, posterior chain, core, pogo hops in the build) and the exercises: French name, Garmin's catalog key (match exact, or closest when the catalog has none: the step's note on the watch names the real exercise), the base dose and the build's and Mont-Blanc's (sets, reps or seconds, tempo down-pause-up, load cue: RPE, reps in reserve), per_side, rest, primary and secondary muscles as the anatomy model's structure ids (body_history's), how to do it, its regression, and a home variant (maison: bodyweight, band, backpack) or null when the same works at home.`
+
+const strengthProgram = tool({
+  name: 'strength_program',
+  title: 'Read the strength programme',
+  description: `The strength programme agreed with the user, and saved: false when it is the default (no file yet). ${STRENGTH_MODEL}`,
+  method: 'GET',
+  path: '/strength/program',
+  tags: ['strength'],
+  readOnly: true,
+  openWorld: false,
+}).handler(({ context }) => context.run(Strength.use((strength) => strength.program)))
+
+const setStrengthProgram = tool({
+  name: 'set_strength_program',
+  title: 'Write the strength programme',
+  description: `Replace the strength programme, sent whole (as strength_program returns it). Write it once agreed with the user. Every muscle must be a muscle or tendon of the anatomy model (refused with the closest ids), every Garmin key in the catalog (find_exercises). Returns the programme saved. ${STRENGTH_MODEL}`,
+  method: 'POST',
+  path: '/strength/program',
+  tags: ['strength'],
+  readOnly: false,
+  destructive: true,
+  idempotent: true,
+  openWorld: false,
+})
+  .input(standard(StrengthProgramJson))
+  .handler(({ input, context }) =>
+    context.run(Strength.use((strength) => strength.setProgram(input)))
+  )
+
+const strengthHistory = tool({
+  name: 'strength_history',
+  title: 'The strength sessions done',
+  description:
+    "The strength sessions done (activities of sport strength_training, their sets in strength_sets): the sessions per week (Monday) against the programme's target, the total, per exercise (the programme's, then any other done twice) its progression session by session (sets, reps, top load, Epley's estimated 1RM from 1 to 12 reps, volume = Σ load × reps, seconds held), and the last session's sets by exercise.",
+  method: 'GET',
+  path: '/strength/history',
+  tags: ['strength'],
+  readOnly: true,
+  openWorld: false,
+})
+  .input(
+    standard(
+      Schema.Struct({
+        weeks: opt(
+          Schema.Int.check(Schema.isBetween({ minimum: 4, maximum: 52 })).annotate({
+            description: 'Weeks of counts, default 12',
+          })
+        ),
+      })
+    )
+  )
+  .handler(({ input, context }) =>
+    context.run(Strength.use((strength) => strength.history(input.weeks ?? 12)))
+  )
+
+const scheduleStrength = tool({
+  name: 'schedule_strength',
+  title: "Place the week's strength sessions on the watch",
+  description: `Place a week's strength sessions around its runs and push them to the Garmin calendar as strength workouts (create_workout's, one per session, scheduled on its day). Rules: never the day before a quality session or a long run (from planned_workouts and the runs done, judged as nutrition_today's day type), never on the long run's day, best right after the quality session (hard days hard), then an easy day, then a day without a run; at least min_hours_apart from another strength session, the neighbouring weeks' included; never a past day; sessions already done or in the calendar that week count toward the target. Sessions follow the programme's order after the last one named "Renfo X - …". Each session carries the pain rule's regressions (also in the workout's description on the watch). A day that already holds a calendar entry gets a warning (two scheduled workouts a day can stop the watch offering the run): the push refuses it unless allow_shared_days. ${WATCH}
+dry_run: true returns the proposal and the exact workouts (Garmin's JSON, the steps as the watch shows them), sending nothing and calling nothing on Garmin.`,
+  method: 'POST',
+  path: '/strength/schedule',
+  tags: ['strength', 'workouts'],
+  readOnly: false,
+  openWorld: true,
+})
+  .input(
+    standard(
+      Schema.Struct({
+        week: opt(
+          Day.annotate({
+            description: 'Any day of the week to place (YYYY-MM-DD); default next week',
+          })
+        ),
+        variant: opt(
+          Schema.Literals(['gym', 'maison']).annotate({
+            description: 'maison: the home variants (a weekend at the parents’); default gym',
+          })
+        ),
+        dry_run: opt(
+          Schema.Boolean.annotate({ description: 'Return the proposal without sending it' })
+        ),
+        allow_shared_days: opt(
+          Schema.Boolean.annotate({
+            description: 'Push even on a day that already holds a calendar entry',
+          })
+        ),
+      })
+    )
+  )
+  .handler(({ input, context }) =>
+    context.run(
+      Effect.gen(function* () {
+        const day = input.week ?? addDays(mondayOf(yield* parisToday), 7)
+        const proposal = yield* Strength.use((strength) =>
+          strength.week(day, input.variant ?? 'gym')
+        )
+        const answer = proposalOf(proposal)
+        if (input.dry_run === true) {
+          return {
+            dry_run: true,
+            ...answer,
+            workouts: proposal.sessions.map((session) => {
+              const built = buildWorkout(session.workout)
+              return built.ok
+                ? { schedule: [session.day], steps: built.steps, payload: built.payload }
+                : { schedule: [session.day], errors: built.errors }
+            }),
+          }
+        }
+        const shared = proposal.sessions.filter((session) => session.warning !== null)
+        if (shared.length > 0 && input.allow_shared_days !== true) {
+          return yield* new StrengthError({
+            message: `Nothing pushed: ${shared.map((session) => `${session.day} (${session.warning ?? ''})`).join(' ; ')}. Pass allow_shared_days, or place the week again once the calendar changed.`,
+          })
+        }
+        const pushed = yield* Effect.forEach(proposal.sessions, (session) =>
+          GarminWorkouts.use((workouts) =>
+            workouts.create(session.workout, { schedule: [session.day] })
+          )
+        )
+        return { ...answer, pushed }
+      })
+    )
+  )
+
 // --- The workouts on the watch: these change the user's real Garmin Connect account
 
 const createWorkout = tool({
@@ -669,6 +804,12 @@ export const garmin = {
   body: { history: bodyHistoryTool },
   races: { list: listRaces, get: getRace, add: addRace, plan: planRace },
   nutrition: { plan: nutritionPlan, setPlan: setNutritionPlan, today: nutritionToday },
+  strength: {
+    program: strengthProgram,
+    setProgram: setStrengthProgram,
+    history: strengthHistory,
+    schedule: scheduleStrength,
+  },
   workouts: {
     create: createWorkout,
     schedule: scheduleWorkout,

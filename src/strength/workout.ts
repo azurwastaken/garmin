@@ -40,9 +40,20 @@ const stepsOf = (exercise: Prescribed): TopStepInput => {
   return { repeat: exercise.sets, steps: [...work, ...rest] }
 }
 
-export const strengthWorkout = (plan: SessionPlan, day: string): WorkoutInput => ({
+// `painNotes`: the pain rule's regressions that day, read on the watch before starting
+export const strengthWorkout = (
+  plan: SessionPlan,
+  day: string,
+  painNotes: ReadonlyArray<string>
+): WorkoutInput => ({
   name: workoutName(plan, day),
   sport: 'strength_training',
-  description: `${plan.phase.label}. ${plan.session.focus}. Échauffement 5–10 min (vélo, rameur) avant ; douleur ≤ 3/10 pendant et le lendemain.`,
+  description: [
+    `${plan.phase.label}. ${plan.session.focus}.`,
+    'Échauffement 5–10 min (vélo, rameur) avant ; douleur ≤ 3/10 pendant et le lendemain.',
+    ...painNotes,
+  ]
+    .join(' ')
+    .slice(0, 1000),
   steps: plan.exercises.map(stepsOf),
 })

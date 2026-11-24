@@ -177,7 +177,7 @@ describe('the session on the watch', () => {
   it('builds a Garmin strength workout: a repeat group per exercise, each side, then the rest', () => {
     const plan = sessionPlan(DEFAULT_PROGRAM, 'A', '2026-11-30', 'gym')
     if (plan === null) throw new Error('no plan')
-    const input = strengthWorkout(plan, '2026-11-30')
+    const input = strengthWorkout(plan, '2026-11-30', [])
     expect(input.name).toBe('Renfo A - lun 30/11 - Lourd et lent')
     const built = buildWorkout(input)
     if (!built.ok) throw new Error(built.errors.join('\n'))
@@ -198,7 +198,7 @@ describe('the session on the watch', () => {
     expect(workoutName(plan, '2026-12-10')).toBe(
       'Renfo B - jeu 10/12 - Hanches et chaîne postérieure (maison)'
     )
-    const built = buildWorkout(strengthWorkout(plan, '2026-12-10'))
+    const built = buildWorkout(strengthWorkout(plan, '2026-12-10', []))
     expect(
       built.ok && built.steps.find((step) => step.includes('SIDE_PLANK_WITH_FEET_ON_BENCH'))
     ).toContain('SIDE_PLANK_WITH_FEET_ON_BENCH 0:30')
@@ -207,7 +207,7 @@ describe('the session on the watch', () => {
         for (const variant of ['gym', 'maison'] as const) {
           const each = sessionPlan(DEFAULT_PROGRAM, id, day, variant)
           if (each === null) throw new Error(`no plan ${id} ${day}`)
-          const result = buildWorkout(strengthWorkout(each, day))
+          const result = buildWorkout(strengthWorkout(each, day, []))
           expect(result.ok ? [] : result.errors).toEqual([])
         }
       }

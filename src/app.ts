@@ -16,6 +16,7 @@ import { Races } from './races/races.ts'
 import { Terrain } from './races/terrain.ts'
 import { Reader } from './reader.ts'
 import { Stats } from './stats.ts'
+import { Strength } from './strength/strength.ts'
 import { Tools } from './tools.ts'
 import { WithingsSession } from './withings/session.ts'
 import { WithingsSync } from './withings/sync.ts'
@@ -45,7 +46,7 @@ export const Withings = WithingsSync.layer.pipe(
 
 // Everything the server runs: Garmin, Withings, the MCP's and the web pages' queries, the journal,
 // the races (their files and the elevation tiles), the nutrition plan and the weight trend, the
-// anatomy model of the body map, the password and the MCP's OAuth server. A layer is built once
+// strength programme and its sessions, the anatomy model of the body map, the password and the MCP's OAuth server. A layer is built once
 // however many parts use it: Storage is one SQLite connection, the only writer.
 export const Services = Layer.mergeAll(
   Garmin,
@@ -58,6 +59,7 @@ export const Services = Layer.mergeAll(
   Auth.layer,
   OAuth.layer
 ).pipe(
+  Layer.provideMerge(Strength.layer),
   Layer.provideMerge(Nutrition.layer),
   Layer.provideMerge(Anatomy.layer),
   Layer.provideMerge(Storage)
