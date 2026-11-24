@@ -76,6 +76,14 @@ layer(TestLayer, { excludeTestServices: true })('Stats', (it) => {
       expect(sleep.last).toMatchObject({ day: today, hrv_baseline_low: 46 })
       expect(sleep.averages).toMatchObject({ nights: 2, sleep_s: 26_400, sleep_score: 78 })
       expect(sleep.previous.nights).toBe(0)
+      // The analysis reads 90 nights even on the 30-night page: 2 slept, too few for a window
+      expect(sleep.insights).toMatchObject({
+        from: addDays(today, -89),
+        to: today,
+        nights: 2,
+        plan: { kind: 'too-few', missing: ['plateau', 'anchor'] },
+      })
+      expect(yield* stats.sleepInsights(30)).toMatchObject({ from: addDays(today, -29), nights: 2 })
       // The whole history: from the first night (at least 30)
       expect(yield* stats.sleep('all')).toMatchObject({ span: 'all', days: 30 })
       expect((yield* stats.runs('all')).weeks).toHaveLength(26)
@@ -267,6 +275,7 @@ const night = (overrides: Partial<SleepNight>): SleepNight => ({
   spo2_avg: null,
   body_battery_charged: null,
   body_battery_wake: null,
+  readiness: null,
   ...overrides,
 })
 

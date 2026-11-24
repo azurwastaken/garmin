@@ -99,6 +99,7 @@ describe('the MCP', () => {
       'set_nutrition_plan',
       'set_strength_program',
       'set_supplements',
+      'sleep_insights',
       'sql',
       'strength_history',
       'strength_program',
@@ -176,6 +177,15 @@ describe('the MCP', () => {
       idempotentHint: true,
     })
     expect(byName['set_supplements']?.inputSchema.required).toEqual(['supplements'])
+    expect(byName['sleep_insights']?.annotations).toMatchObject({ readOnlyHint: true })
+    expect(byName['sleep_insights']?.inputSchema.properties?.['days']).toMatchObject({
+      anyOf: [
+        { type: 'number', enum: [30] },
+        { type: 'number', enum: [90] },
+        { type: 'number', enum: [365] },
+        { type: 'string', enum: ['all'] },
+      ],
+    })
     // Plain JSON Schema numbers for the model
     expect(byName['list_activities']?.inputSchema.properties?.['limit']).toMatchObject({
       type: 'integer',
@@ -384,6 +394,39 @@ describe("the body map's pains", () => {
     const texts = data.pins.map((pin) => pin.text)
     expect(texts).toContain('premier jour')
     expect(texts).not.toContain('hors période')
+  })
+})
+
+describe('the sleep insights', () => {
+  it('reads 90 nights by default, and says what is missing on an empty history', async () => {
+    const today = await runtime.runPromise(parisToday)
+    const { isError, data } = await call('sleep_insights', {})
+    expect(isError).toBe(false)
+    expect(data).toMatchObject({
+      from: addDays(today, -89),
+      to: today,
+      nights: 0,
+      plan: { kind: 'too-few', missing: ['plateau', 'anchor', 'awake'], mornings: 0 },
+      regularity: {
+        bed_sd: { kind: 'few', nights: 0 },
+        social_jetlag: { kind: 'few', weekend: 0, weekday: 0 },
+      },
+      tags: { nights: [], supplements: null },
+    })
+    expect(await call('sleep_insights', { days: 30 })).toMatchObject({
+      data: { from: addDays(today, -29) },
+    })
+    expect(await call('sleep_insights', { days: 7 })).toMatchObject({
+      isError: true,
+      data: { code: 'BAD_REQUEST' },
+    })
+  })
+
+  it('takes its period as text over OpenAPI', async () => {
+    const all = await handleApi(new Request(`${ORIGIN}/api/sleep/insights?days=all`))
+    expect(all.status).toBe(200)
+    const ninety = await handleApi(new Request(`${ORIGIN}/api/sleep/insights?days=90`))
+    expect(ninety.status).toBe(200)
   })
 })
 

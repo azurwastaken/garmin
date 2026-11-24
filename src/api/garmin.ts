@@ -34,6 +34,7 @@ import { CAUTIONS, SupplementsJson, UPPER_LIMITS } from '../nutrition/supplement
 import { FactsInputSchema, MAX_GPX_BYTES, PlanInputSchema, SlugSchema } from '../races/race.ts'
 import { Races } from '../races/races.ts'
 import { MAX_ROWS, Reader } from '../reader.ts'
+import { Stats } from '../stats.ts'
 import { StrengthProgramJson } from '../strength/program.ts'
 import { mondayOf } from '../strength/schedule.ts'
 import { proposalOf, Strength, StrengthError } from '../strength/strength.ts'
@@ -41,11 +42,12 @@ import { Tools } from '../tools.ts'
 import { withingsStatus } from '../withings/sync.ts'
 
 import { Day, standard, tool } from './base.ts'
+import { SLEEP_PERIODS } from './periods.ts'
 
 // The Garmin data and the watch's workouts: each procedure an MCP tool (its name), an OpenAPI
 // operation (under /api) and an RPC call (under /rpc). The tools' names and inputs are the MCP's.
 
-const DATA_MODEL = `Data: the user's Garmin history (watch, scale): every activity from its FIT file (laps, per-second samples) and Garmin Connect's summary, plus daily wellness (sleep, HRV, resting HR, body battery, readiness), weigh-ins and the Garmin calendar's planned workouts. Synced from Garmin Connect every 3 hours (sync_status tells when). The SQL is read-only; the workout tools (create_workout, schedule_workout, unschedule_workout, delete_workout) write to the Garmin calendar and refresh planned_workouts right after; log_note adds a note to the user's journal, body_history reads the pains pinned on the web app's 3D body map; add_race and plan_race write the user's target races and their plans; set_nutrition_plan writes the nutrition plan agreed with the user; set_supplements writes the supplements the user takes; set_strength_program writes the strength programme, schedule_strength places a week's strength sessions and pushes them to the Garmin calendar.
+const DATA_MODEL = `Data: the user's Garmin history (watch, scale): every activity from its FIT file (laps, per-second samples) and Garmin Connect's summary, plus daily wellness (sleep, HRV, resting HR, body battery, readiness), weigh-ins and the Garmin calendar's planned workouts. Synced from Garmin Connect every 3 hours (sync_status tells when). The SQL is read-only; the workout tools (create_workout, schedule_workout, unschedule_workout, delete_workout) write to the Garmin calendar and refresh planned_workouts right after; log_note adds a note to the user's journal, body_history reads the pains pinned on the web app's 3D body map; add_race and plan_race write the user's target races and their plans; set_nutrition_plan writes the nutrition plan agreed with the user; set_supplements writes the supplements the user takes; set_strength_program writes the strength programme, schedule_strength places a week's strength sessions and pushes them to the Garmin calendar; sleep_insights analyses the nights (bedtime and duration against recovery, the window they point to, tonight's advice).
 Conventions: timestamps ISO 8601 UTC text, start_local local wall time, day YYYY-MM-DD (local). Metres, seconds, m/s, bpm, kg. Cadence is steps/min on foot, rpm on a bike.
 Tables and views:
 - activities: one row per Garmin Connect activity (id = its activity id). sport (Connect's type: running, trail_running, cycling, lap_swimming, hiking, strength_training…), name, start_time, start_local, day, elapsed_s, moving_s, distance_m, ascent_m, descent_m, avg_hr, max_hr, avg_speed, max_speed, avg_cadence, max_cadence, avg_power, max_power, norm_power, calories, training_load (Garmin's EPOC load), aerobic_te / anaerobic_te (training effect 0-5), te_label (TEMPO, BASE…), vo2max, rpe (0-10) and feel (0-100) entered after it, hr_z1_s…hr_z5_s (seconds in the watch's HR zones), hr_zone_bounds (JSON: the zones' top bounds [z0, z1…z5]), workout_name (the structured workout run, as in planned_workouts.name), gear, device, start_lat/start_lon, polyline (Google encoded, precision 5).
@@ -188,6 +190,32 @@ const dailyReadiness = tool({
     )
   )
   .handler(({ input, context }) => context.run(Tools.use((tools) => tools.dailyReadiness(input))))
+
+const sleepInsights = tool({
+  name: 'sleep_insights',
+  title: 'Sleep insights',
+  description:
+    "What the user's own nights say about sleep, descriptive (associated with, not caused by): over the last nights (days: 30, 90, 365 or all, default 90) the nights by sleep onset (before 23:30, hour by hour to 02:30, after) and by duration (under 6 h, half-hours to 8 h, 8 h and more), each with its count and, from 5 nights, the mean and t-based 95 % interval of sleep score, HRV, resting HR, body battery at wake and the morning's readiness ('few' under 5: draw nothing from it). The plan: the plateau (the shortest duration bucket from which no bucket up to the best scores more than 3 points higher), the wake time anchored on the median of the weekday mornings, the bedtime (asleep by: wake − plateau sleep − median time awake, never past the end of the best bedtime bucket; Garmin measures no sleep latency) with a French sentence giving its numbers, the 7-night debt against the plateau sleep, and tonight's target (30 min earlier on a debt of 2 h, a night 1 h short, or a quality or long day planned tomorrow). Regularity: the SD of bedtimes and wake times, social jetlag (Friday and Saturday nights' mid-sleep minus the others'), each evening of the week. Tags: journal notes about supplements or alcohol with the night after them (a note's day D is the night ending D+1), and the supplements' nights since their first note against the 28 days before, from 14 nights each side. Times are minutes from noon the day before, Paris time (22:30 is 630, 06:15 is 1095).",
+  method: 'GET',
+  path: '/sleep/insights',
+  tags: ['wellness'],
+  readOnly: true,
+  openWorld: false,
+})
+  .input(
+    standard(
+      Schema.Struct({
+        days: opt(
+          Schema.Literals(SLEEP_PERIODS).annotate({
+            description: 'Nights analysed: 30, 90, 365 or all; default 90',
+          })
+        ),
+      })
+    )
+  )
+  .handler(({ input, context }) =>
+    context.run(Stats.use((stats) => stats.sleepInsights(input.days ?? 90)))
+  )
 
 const weeklyLoad = tool({
   name: 'weekly_load',
@@ -928,6 +956,7 @@ const findExercisesTool = tool({
 export const garmin = {
   activities: { list: listActivities, get: getActivity, compare: compareRuns },
   readiness: dailyReadiness,
+  sleepInsights,
   weeklyLoad,
   plannedWorkouts,
   syncStatus,
