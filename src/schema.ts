@@ -9,6 +9,7 @@ import {
   text,
 } from 'drizzle-orm/sqlite-core'
 
+import type { DrinkKind, Instant } from './caffeine/intake.ts'
 import type { NoteBody } from './journal/note.ts'
 
 // The schema; `pnpm db:generate <name>` writes its next migration into drizzle/. Every row is
@@ -270,6 +271,22 @@ export const journal = sqliteTable(
     body: text({ mode: 'json' }).$type<NoteBody>(),
   },
   (table) => [index('journal_day').on(table.day)]
+)
+
+// The caffeine the user drank (the MCP's log_caffeine, the Café card), one file each in
+// data/caffeine/ (see caffeine/intake.ts); rebuilt whenever one of them changes or goes
+export const caffeine = sqliteTable(
+  'caffeine',
+  {
+    // The instant it was drunk
+    time: text().$type<Instant>().primaryKey(),
+    // Its day in Paris
+    day: text().notNull(),
+    kind: text().$type<DrinkKind>().notNull(),
+    mg: real().notNull(),
+    note: text(),
+  },
+  (table) => [index('caffeine_day').on(table.day)]
 )
 
 // Every file of data/ ingested: one whose size and mtime have not changed is not read again

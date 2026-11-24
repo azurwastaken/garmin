@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index.tsx'
 import { Route as AccessRouteImport } from './routes/access.tsx'
 import { Route as AuthorizeRouteImport } from './routes/authorize.ts'
 import { Route as BodyRouteImport } from './routes/body.tsx'
+import { Route as CafeRouteImport } from './routes/cafe.tsx'
 import { Route as GarminRouteImport } from './routes/garmin.tsx'
 import { Route as HealthzRouteImport } from './routes/healthz.ts'
 import { Route as LoginRouteImport } from './routes/login.tsx'
@@ -62,6 +63,11 @@ const AuthorizeRoute = AuthorizeRouteImport.update({
 const BodyRoute = BodyRouteImport.update({
   id: '/body',
   path: '/body',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CafeRoute = CafeRouteImport.update({
+  id: '/cafe',
+  path: '/cafe',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GarminRoute = GarminRouteImport.update({
@@ -220,6 +226,7 @@ export interface FileRoutesByFullPath {
   '/access': typeof AccessRoute
   '/authorize': typeof AuthorizeRoute
   '/body': typeof BodyRoute
+  '/cafe': typeof CafeRoute
   '/garmin': typeof GarminRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
@@ -256,6 +263,7 @@ export interface FileRoutesByTo {
   '/access': typeof AccessRoute
   '/authorize': typeof AuthorizeRoute
   '/body': typeof BodyRoute
+  '/cafe': typeof CafeRoute
   '/garmin': typeof GarminRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
@@ -293,6 +301,7 @@ export interface FileRoutesById {
   '/access': typeof AccessRoute
   '/authorize': typeof AuthorizeRoute
   '/body': typeof BodyRoute
+  '/cafe': typeof CafeRoute
   '/garmin': typeof GarminRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
@@ -331,6 +340,7 @@ export interface FileRouteTypes {
     | '/access'
     | '/authorize'
     | '/body'
+    | '/cafe'
     | '/garmin'
     | '/healthz'
     | '/login'
@@ -367,6 +377,7 @@ export interface FileRouteTypes {
     | '/access'
     | '/authorize'
     | '/body'
+    | '/cafe'
     | '/garmin'
     | '/healthz'
     | '/login'
@@ -403,6 +414,7 @@ export interface FileRouteTypes {
     | '/access'
     | '/authorize'
     | '/body'
+    | '/cafe'
     | '/garmin'
     | '/healthz'
     | '/login'
@@ -440,6 +452,7 @@ export interface RootRouteChildren {
   AccessRoute: typeof AccessRoute
   AuthorizeRoute: typeof AuthorizeRoute
   BodyRoute: typeof BodyRoute
+  CafeRoute: typeof CafeRoute
   GarminRoute: typeof GarminRoute
   HealthzRoute: typeof HealthzRoute
   LoginRoute: typeof LoginRoute
@@ -500,6 +513,13 @@ declare module '@tanstack/react-router' {
       path: '/body'
       fullPath: '/body'
       preLoaderRoute: typeof BodyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cafe': {
+      id: '/cafe'
+      path: '/cafe'
+      fullPath: '/cafe'
+      preLoaderRoute: typeof CafeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/garmin': {
@@ -720,6 +740,7 @@ const rootRouteChildren: RootRouteChildren = {
   AccessRoute: AccessRoute,
   AuthorizeRoute: AuthorizeRoute,
   BodyRoute: BodyRoute,
+  CafeRoute: CafeRoute,
   GarminRoute: GarminRoute,
   HealthzRoute: HealthzRoute,
   LoginRoute: LoginRoute,

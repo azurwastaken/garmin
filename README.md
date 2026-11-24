@@ -23,7 +23,7 @@ it and write workouts to your watch.
 | 🔄  | **Syncs Garmin Connect by itself.** Logs in like the mobile app (SSO + MFA), keeps only its tokens, and pulls activities, sleep, HRV, readiness, weigh-ins and the calendar every 3 hours. The whole history on demand.                                                                                              |
 | 📊  | **A web app to look at it.** Today first: the night against your own 28-day normal (green, orange, red, and why), the planned workout, the day's planned burn, your notes. Then stats, runs, every activity with its route and its curves, sleep night by night. Plain SVG charts, on a dark HUD.                    |
 | ⚖️  | **Withings weigh-ins too.** Connect a Withings scale once (OAuth): its weight, fat, muscle, water, bone mass and visceral fat land in the same `body` table every 3 hours, on a loop of their own.                                                                                                                   |
-| 🤖  | **An MCP for Claude.** 28 tools: list and compare runs, a morning readiness check, training load, the planned workouts, your notes, the pains pinned on the body map, your races and their plans, the nutrition plan and the weight trend, the strength programme and its sessions, and read-only SQL on everything. |
+| 🤖  | **An MCP for Claude.** 32 tools: list and compare runs, a morning readiness check, training load, the planned workouts, your notes, the pains pinned on the body map, your races and their plans, the nutrition plan and the weight trend, the strength programme and its sessions, and read-only SQL on everything. |
 | 🏃  | **Workouts on the watch.** Claude creates, schedules, moves and deletes structured workouts: paces like `"6'05/km"`, HR in bpm, repeat groups, strength circuits from Garmin's catalog. Every write has a dry run.                                                                                                   |
 | 🧩  | **One API, three faces.** One [oRPC](https://orpc.dev) router serves the MCP (`/mcp`), OpenAPI (`/api`) and a typed RPC client (`/rpc`).                                                                                                                                                                             |
 | 🫀  | **A 3D body map.** Click a 3D anatomical model (lower body and trunk) exactly where it hurts: the pain goes to your journal with its structure, and Claude reads it back (`body_history`) to triage it.                                                                                                              |
@@ -113,7 +113,7 @@ apps you allowed and revokes any of them. You can also pass the app's password a
 token: `--header "Authorization: Bearer <password>"`.
 
 <details>
-<summary><b>The 28 tools</b></summary>
+<summary><b>The 32 tools</b></summary>
 
 **Your data (read-only)**
 
@@ -135,6 +135,19 @@ token: `--header "Authorization: Bearer <password>"`.
   against the model's catalog when written.
 - `body_history`: the pains pinned over a period, with their structures' French, English and
   Latin names, and per structure its intensity note by note, in day order, and its trend.
+
+**Your caffeine** (one file per drink in `data/caffeine/`, the `caffeine` table for the SQL)
+
+- `log_caffeine`: a drink and its time ("un double expresso à 15h"), its mg from a cited catalog
+  (espresso 63, filtre 95, thé noir 47…) or given. The Café card on the home page logs the usual
+  ones in one tap, and the last tap can be undone.
+- `delete_caffeine`: one intake logged by mistake, by its time: its file, then its row.
+- `caffeine_today`: the day's total against EFSA 2015's limits (400 mg a day, 200 mg at once), the
+  caffeine in the body now and at bedtime (an estimate: a 5 h half-life), and the cut-off for the
+  last coffee (a 95 mg coffee down to 25 mg by 23:30), beside the 8.8 h rule of Gardiner et al. 2023.
+- `caffeine_vs_sleep`: per night, the caffeine left at sleep onset and the last intake, against the
+  sleep score, HRV, resting HR and deep sleep; nights over 50 mg against the others once there are
+  10 of each. An association, never a cause. `/cafe` shows it with 30 days of history.
 
 **Your races** (files in `data/races/`, read on each call)
 

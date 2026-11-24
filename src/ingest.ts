@@ -1,11 +1,24 @@
 import { join } from 'node:path'
 import process from 'node:process'
 
-import { and, eq, getTableColumns, getTableName, gte, isNull, lte, ne, or, sql } from 'drizzle-orm'
+import {
+  and,
+  eq,
+  getTableColumns,
+  getTableName,
+  gte,
+  inArray,
+  isNull,
+  lte,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
 import { Config, Console, Context, Effect, FileSystem, Layer, Option, Schedule } from 'effect'
 import { Command, Flag } from 'effect/cli'
 
+import { caffeineRows } from './caffeine/intake.ts'
 import {
   apiActivity,
   apiBody,
@@ -25,6 +38,7 @@ import { runMain } from './main.ts'
 import {
   activities,
   body,
+  caffeine,
   daily,
   journal,
   laps,
@@ -59,6 +73,7 @@ type Kind =
   | { readonly kind: 'body' }
   | { readonly kind: 'withings' }
   | { readonly kind: 'journal' }
+  | { readonly kind: 'caffeine' }
   | { readonly kind: 'calendar' }
   | { readonly kind: 'workout'; readonly id: number }
   | { readonly kind: 'export' }
@@ -75,6 +90,7 @@ const classify = (path: string): Kind | null => {
   if (/^connect\/body\/\d{4}-\d{2}\.json$/u.test(path)) return { kind: 'body' }
   if (/^withings\/\d{4}-\d{2}\.json$/u.test(path)) return { kind: 'withings' }
   if (/^journal\/\d{4}\/[^/]+\.json$/u.test(path)) return { kind: 'journal' }
+  if (/^caffeine\/\d{4}\/[^/]+\.json$/u.test(path)) return { kind: 'caffeine' }
   if (/^connect\/calendar\/\d{4}-\d{2}\.json$/u.test(path)) return { kind: 'calendar' }
   match = /^connect\/workouts\/(\d+)\.json$/u.exec(path)
   if (match) return { kind: 'workout', id: Number(match[1]) }
@@ -227,6 +243,7 @@ export class Ingest extends Context.Service<
                 body,
                 plannedWorkouts,
                 journal,
+                caffeine,
                 rawFiles,
               ]) {
                 tx.delete(table).run()
@@ -396,6 +413,32 @@ export class Ingest extends Context.Service<
             )
           }
           yield* done(file, Option.isNone(note) ? 'not a journal note' : null)
+        }
+
+        // Caffeine: rebuilt from every intake's file once one of them changed or went (a deleted
+        // intake's row goes with its file, and its path leaves raw_files)
+        const caffeineFiles = files.filter((f) => f.kind?.kind === 'caffeine')
+        const onDisk = new Set(caffeineFiles.map((file) => file.path))
+        const gone = [...known.keys()].filter(
+          (path) => classify(path)?.kind === 'caffeine' && !onDisk.has(path)
+        )
+        const caffeineChanged = changed.filter((f) => f.kind?.kind === 'caffeine')
+        if (caffeineChanged.length > 0 || gone.length > 0) {
+          const read = yield* Effect.forEach(caffeineFiles, (file) =>
+            Effect.map(readJson(file.path).pipe(Effect.option), (json) => ({
+              path: file.path,
+              json,
+            }))
+          )
+          const { rows, errors: refused } = caffeineRows(read)
+          yield* use((db) =>
+            db.transaction((tx) => {
+              tx.delete(caffeine).run()
+              for (const chunk of chunks(rows)) tx.insert(caffeine).values(chunk).run()
+              if (gone.length > 0) tx.delete(rawFiles).where(inArray(rawFiles.path, gone)).run()
+            })
+          )
+          for (const file of caffeineChanged) yield* done(file, refused.get(file.path) ?? null)
         }
 
         // Activities: each one touched by a changed FIT file, summary or exercise sets, rebuilt

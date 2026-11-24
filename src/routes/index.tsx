@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
 import { api } from '#src/api/client.ts'
+import { CafeCard } from '#src/components/caffeine.tsx'
 import { LineChart, shortDay, StackedColumns } from '#src/components/charts.tsx'
 import { dayLabel, fmt, hours, longDay, numericDay, pace, sport } from '#src/components/format.ts'
 import { measureFraction, shownLimit } from '#src/components/gauge.ts'
@@ -358,7 +359,7 @@ const WEEK_SERIES = [
 ]
 
 function Dashboard() {
-  const { dashboard: d, garmin } = Route.useLoaderData()
+  const { dashboard: d, garmin, caffeine } = Route.useLoaderData()
   const last = garmin.runs.find((run) => run.finished_at !== null)
   const lastOk = garmin.runs.find((run) => run.ok === true)
   const l7: Period = d.last7
@@ -405,6 +406,7 @@ function Dashboard() {
       </div>
 
       <Today morning={d.morning} />
+      <CafeCard today={caffeine} />
 
       {empty ? (
         <section className="card">

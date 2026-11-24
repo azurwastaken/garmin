@@ -16,6 +16,44 @@ export const parisToday = Effect.map(DateTime.now, (now) =>
   )
 )
 
+// The instant (epoch ms) of a Paris wall time (HH:MM) on a day; a time the clocks skip moves later
+export const parisInstant = (day: string, clock: string) =>
+  DateTime.makeZoned(
+    {
+      year: Number(day.slice(0, 4)),
+      month: Number(day.slice(5, 7)),
+      day: Number(day.slice(8, 10)),
+      hour: Number(clock.slice(0, 2)),
+      minute: Number(clock.slice(3, 5)),
+    },
+    { timeZone: 'Europe/Paris', adjustForTimeZone: true }
+  ).pipe(Option.map(DateTime.toEpochMillis))
+
+const parisParts = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Paris',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+// An instant's day and wall clock (HH:MM) in Paris
+export const parisWall = (at: number) => {
+  const parts = Object.fromEntries(
+    parisParts.formatToParts(at).map((part) => [part.type, part.value])
+  )
+  return {
+    day: `${parts['year']}-${parts['month']}-${parts['day']}`,
+    clock: `${parts['hour']}:${parts['minute']}`,
+  }
+}
+
+// Minutes after midnight of an HH:MM
+export const minuteOf = (clock: string) =>
+  Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3, 5))
+
 export const monthOf = (day: string) => `${day.slice(0, 7)}-01`
 const nextMonth = (month: string) => {
   const date = new Date(`${month}T00:00:00Z`)

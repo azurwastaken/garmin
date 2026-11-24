@@ -1,5 +1,6 @@
 import { Effect, Option, Schema } from 'effect'
 
+import { Caffeine } from '../caffeine/caffeine.ts'
 import { explain, GarminLogin } from '../garmin/login.ts'
 import { GarminSync } from '../garmin/sync.ts'
 import { Nutrition } from '../nutrition/nutrition.ts'
@@ -96,7 +97,11 @@ export const web = {
     context.run(
       Effect.gen(function* () {
         const stats = yield* Stats
-        return { dashboard: yield* stats.dashboard, garmin: yield* garminView }
+        return {
+          dashboard: yield* stats.dashboard,
+          garmin: yield* garminView,
+          caffeine: yield* Caffeine.use((caffeine) => caffeine.today),
+        }
       })
     )
   ),
@@ -205,6 +210,9 @@ export const web = {
     ),
 
   races: base.handler(({ context }) => context.run(Races.use((races) => races.list))),
+
+  // The /cafe page: 30 days of caffeine, today's curve, the nights compared
+  caffeine: base.handler(({ context }) => context.run(Caffeine.use((caffeine) => caffeine.page))),
 
   // A race: get_race's view, its course point by point (every 25 m: lon, lat, altitude, metres
   // from the start, predicted seconds or null) for the map and the profile, the elevation tiles

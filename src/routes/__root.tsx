@@ -56,6 +56,7 @@ function Layout() {
           <Link to="/body">Corps</Link>
           <Link to="/renfo">Renfo</Link>
           <Link to="/nutrition">Nutrition</Link>
+          <Link to="/cafe">Café</Link>
           <Link to="/garmin">Connexion Garmin</Link>
           <Link to="/access">Accès MCP</Link>
           <Link to="/password">Mot de passe</Link>

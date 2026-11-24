@@ -2,6 +2,17 @@ import { ORPCError } from '@orpc/server'
 import { Effect, Option, Schema } from 'effect'
 
 import { Anatomy, readableCatalog } from '../anatomy/anatomy.ts'
+import { Caffeine } from '../caffeine/caffeine.ts'
+import {
+  ClockSchema,
+  DRINK_KINDS,
+  DRINKS,
+  CaffeineIntakeJson,
+  InstantSchema,
+  Mg,
+} from '../caffeine/intake.ts'
+import { TARGET_BEDTIME } from '../caffeine/kinetics.ts'
+import { HIGH_MG, MIN_NIGHTS } from '../caffeine/sleep.ts'
 import { addDays, parisToday } from '../days.ts'
 import { GarminLogin } from '../garmin/login.ts'
 import { buildWorkout, findExercises, WorkoutSchema } from '../garmin/workout-builder.ts'
@@ -37,6 +48,7 @@ Tables and views:
 - body: weigh-ins: time, day, weight_kg, bmi, body_fat_pct, body_water_pct, muscle_mass_kg, bone_mass_kg, visceral_fat, source ('WITHINGS' for the Withings scale, synced on its own every 3 hours; else Garmin's source type, e.g. INDEX_SCALE, MANUAL).
 - planned_workouts: the Garmin calendar's scheduled workouts: id (the calendar entry: unschedule_workout's schedule_id), day, workout_id (the library's workout: schedule_workout, delete_workout), name, sport, description, estimated_duration_s, estimated_distance_m, steps (one readable line per step: "interval 3:00 HR 165-172", "5× [...]").
 - journal: the user's notes (log_note): time (the instant written, its key), day (the day it is about), text, body (JSON, NULL unless the note is a pain pinned on the body map: structure (the anatomy model's id, e.g. vastus_lateralis_r), side, point [x, y, z] (metres on the model, Y up, origin between the feet, right side at -x), pain 0-10, kind, when (array), since; read it with json_extract(body, '$.pain'), body_history names the structures); one file each in data/journal/.
+- caffeine: what the user drank (log_caffeine; delete_caffeine removes a mistake): time (the instant drunk, its key), day (Paris), kind (espresso, double_espresso, filter, capsule, cappuccino, black_tea, green_tea, cola, red_bull, monster, custom), mg, note; one file each in data/caffeine/. caffeine_today and caffeine_vs_sleep estimate what is left in the body.
 - races are not in SQL: list_races, get_race (files in data/races/: <slug>.gpx, <slug>.json, <slug>.plan.json).
 - the nutrition plan is not in SQL: nutrition_plan, and nutrition_today for today's target and the weight trend against it (file data/nutrition/plan.json).
 - strength_sets: a strength session's active sets, in order: activity_id (activities.sport = 'strength_training'), idx, start_time, category and exercise_name (Garmin's catalog keys, find_exercises: LUNGE / DUMBBELL_BULGARIAN_SPLIT_SQUAT; NULL when the watch did not know it), reps, weight_kg, duration_s, source ('connect': Garmin Connect's exercise sets, as corrected there; else 'fit': the watch's). strength_history aggregates them.
@@ -351,6 +363,83 @@ const bodyHistoryTool = tool({
       })
     )
   )
+
+// --- The caffeine the user drinks: what is left at bedtime, and the nights after
+
+const CAFFEINE_MODEL = `Estimates, not measurements: caffeine left = Σ mg · 0.5^(hours since / 5), with EFSA 2015's mean adult half-life of 5 h (anyone's own lies between ~2 and ~10 h). EFSA 2015's limits for a healthy adult: 400 mg a day, 200 mg at once. Bedtime is ${TARGET_BEDTIME} in Paris for now. cutoff: the latest a standard 95 mg coffee is down to 25 mg at bedtime (bedtime − 5 h·log2(95/25), 9 h 38), what the web app shows as "dernier café conseillé"; rule_cutoff: Gardiner et al. 2023's meta-analysis, coffee at least 8.8 h before bed. Instants are UTC (at, time), each with its Paris clock (clock).`
+
+const logCaffeine = tool({
+  name: 'log_caffeine',
+  title: 'Log a caffeinated drink',
+  description: `Log a drink with caffeine the user had ("un double expresso à 15h"): its kind, and its time when it was not just now. It is written to its own file in data/caffeine/ and shows on the web app's Café card and /cafe page. mg defaults to the kind's: ${DRINK_KINDS.map((kind) => `${kind} ${DRINKS[kind].mg ?? '(give mg)'}`).join(', ')}. Refused: a day without a time, a time in the future, custom without mg. Returns the intake as saved (its time is the key delete_caffeine takes).`,
+  method: 'POST',
+  path: '/caffeine',
+  tags: ['caffeine'],
+  readOnly: false,
+  openWorld: false,
+})
+  .input(
+    standard(
+      Schema.Struct({
+        kind: CaffeineIntakeJson.fields.kind,
+        mg: opt(Mg.annotate({ description: "Caffeine in mg (1-1000), default the kind's" })),
+        day: opt(Day.annotate({ description: 'YYYY-MM-DD in Paris, default today; needs time' })),
+        time: opt(ClockSchema.annotate({ description: 'HH:MM in Paris, default now' })),
+        note: opt(
+          CaffeineIntakeJson.fields.note.annotate({ description: 'At most 200 characters' })
+        ),
+      })
+    )
+  )
+  .handler(({ input, context }) => context.run(Caffeine.use((caffeine) => caffeine.log(input))))
+
+const caffeineToday = tool({
+  name: 'caffeine_today',
+  title: "Today's caffeine",
+  description: `Today's caffeine (Paris): the intakes (with their Paris clock), total_mg and over_day_limit, strong (intakes over 200 mg at once), now_mg (left in the body now), bedtime_mg (left at bedtime), cutoff and cutoff_passed, rule_cutoff. ${CAFFEINE_MODEL}`,
+  method: 'GET',
+  path: '/caffeine/today',
+  tags: ['caffeine'],
+  readOnly: true,
+  openWorld: false,
+}).handler(({ context }) => context.run(Caffeine.use((caffeine) => caffeine.today)))
+
+const deleteCaffeine = tool({
+  name: 'delete_caffeine',
+  title: 'Delete a caffeine intake',
+  description:
+    "Delete one intake logged by mistake, named by its time (log_caffeine's answer, caffeine_today's intakes, or the caffeine table): its file goes, then its row. Returns the intake deleted.",
+  method: 'DELETE',
+  path: '/caffeine/{time}',
+  tags: ['caffeine'],
+  readOnly: false,
+  destructive: true,
+  idempotent: true,
+  openWorld: false,
+})
+  .input(
+    standard(
+      Schema.Struct({
+        time: InstantSchema.annotate({
+          description: 'The intake’s time, e.g. 2026-11-24T14:00:00.000Z',
+        }),
+      })
+    )
+  )
+  .handler(({ input, context }) =>
+    context.run(Caffeine.use((caffeine) => caffeine.remove(input.time)))
+  )
+
+const caffeineVsSleep = tool({
+  name: 'caffeine_vs_sleep',
+  title: 'Caffeine against sleep',
+  description: `Each night fully tracked (from the second day after the first intake), the caffeine left at its sleep onset (Garmin's sleep_start; the time it took to fall asleep is not in the data) and the last intake in the 24 h before, with the sleep score, HRV, resting HR and deep sleep (nights). comparison: the nights with more than ${HIGH_MG} mg left against the others, n and means per measure, diff = high − low; too-few under ${MIN_NIGHTS} nights a side (and per measure). An association, never a cause: say "associé à". ${CAFFEINE_MODEL}`,
+  method: 'GET',
+  path: '/caffeine/sleep',
+  tags: ['caffeine'],
+  readOnly: true,
+  openWorld: false,
+}).handler(({ context }) => context.run(Caffeine.use((caffeine) => caffeine.sleep)))
 
 // --- The races the user prepares: a course (GPX), its facts, and the plan per segment
 
@@ -802,6 +891,12 @@ export const garmin = {
   sql,
   journal: { log: logNote },
   body: { history: bodyHistoryTool },
+  caffeine: {
+    log: logCaffeine,
+    today: caffeineToday,
+    delete: deleteCaffeine,
+    vsSleep: caffeineVsSleep,
+  },
   races: { list: listRaces, get: getRace, add: addRace, plan: planRace },
   nutrition: { plan: nutritionPlan, setPlan: setNutritionPlan, today: nutritionToday },
   strength: {

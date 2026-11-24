@@ -74,9 +74,12 @@ describe('the MCP', () => {
     expect(Object.keys(byName).toSorted()).toEqual([
       'add_race',
       'body_history',
+      'caffeine_today',
+      'caffeine_vs_sleep',
       'compare_runs',
       'create_workout',
       'daily_readiness',
+      'delete_caffeine',
       'delete_workout',
       'find_exercises',
       'get_activity',
@@ -84,6 +87,7 @@ describe('the MCP', () => {
       'list_activities',
       'list_races',
       'list_workouts',
+      'log_caffeine',
       'log_note',
       'nutrition_plan',
       'nutrition_today',
@@ -493,6 +497,46 @@ describe('the strength tools', () => {
         sportType: { sportTypeKey: 'strength_training' },
       })
     }
+  })
+})
+
+describe('the caffeine tools', () => {
+  it('logs an intake, reads today, deletes it by its time over REST', async () => {
+    const today = await runtime.runPromise(parisToday)
+    const logged = await call('log_caffeine', { kind: 'double_espresso', time: '00:01' })
+    expect(logged).toMatchObject({
+      isError: false,
+      data: { kind: 'double_espresso', mg: 126, time: expect.any(String) },
+    })
+    const { time } = logged.data as { time: string }
+    const { data } = await call('caffeine_today', {})
+    expect(data).toMatchObject({
+      today,
+      total_mg: 126,
+      intakes: [{ time, day: today, clock: '00:01', mg: 126, note: null }],
+      bedtime: { clock: '23:30' },
+      cutoff: { clock: '13:52' },
+      rule_cutoff: { clock: '14:42' },
+    })
+    expect(await call('log_caffeine', { kind: 'custom' })).toMatchObject({
+      isError: true,
+      data: { code: 'BAD_REQUEST', message: 'Un « autre » a besoin de ses mg de caféine.' },
+    })
+
+    const deleted = await handleApi(
+      new Request(`${ORIGIN}/api/caffeine/${encodeURIComponent(time)}`, { method: 'DELETE' })
+    )
+    expect(deleted.status).toBe(200)
+    expect(await deleted.json()).toEqual({ time, kind: 'double_espresso', mg: 126 })
+    expect(await call('delete_caffeine', { time })).toMatchObject({
+      isError: true,
+      data: { code: 'BAD_REQUEST', message: `No caffeine intake at ${time}.` },
+    })
+    expect(await call('delete_caffeine', { time: '../journal' })).toMatchObject({ isError: true })
+    expect(await call('caffeine_vs_sleep', {})).toEqual({
+      isError: false,
+      data: { comparison: { kind: 'too-few', high: 0, low: 0, needed: 10 }, nights: [] },
+    })
   })
 })
 
