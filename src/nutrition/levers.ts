@@ -57,7 +57,7 @@ export interface LeverFacts {
   readonly active_days: number
   // strength_training activities, in `weeks`
   readonly strength_sessions: number
-  // Km of running (running, treadmill_running, trail_running), in `weeks`
+  // Km of every running sport (running, treadmill_running, trail_running, track…), in `weeks`
   readonly running_km: number
   // Each day's steps, in `days`: days without any left out
   readonly steps: ReadonlyArray<number>
@@ -113,7 +113,9 @@ export const leverWindows = (today: string): LeverWindows => {
 // A window's days, its first and last included
 const daysIn = (window: Window) => daysBetween(window.from, window.to) + 1
 
-const plural = (count: number, word: string) => `${fmt(count)} ${word}${count > 1 ? 's' : ''}`
+// A count and its word, with an s past one
+export const plural = (count: number, word: string) =>
+  `${fmt(count)} ${word}${count > 1 ? 's' : ''}`
 
 const kcalEach = (kcal: number) => {
   const whole = Math.round(kcal)

@@ -70,6 +70,12 @@ export interface NutritionView extends NutritionToday {
   readonly days: ReadonlyArray<WeightDay>
 }
 
+// The weight protein is counted per kg of: the peak window's mean, else the latest weigh-in
+const proteinWeight = (peak: PeakWeight, latest: WeighIn | null) => {
+  if (peak.kind !== 'no-weigh-in') return { kg: peak.weight_kg, from: peak.from, to: peak.to }
+  return latest === null ? null : { kg: latest.weight_kg, from: latest.day, to: latest.day }
+}
+
 // The page's whole answer from what was read: the phase that clips the trend is the one judged
 export const nutritionView = (input: {
   readonly plan: NutritionPlan
@@ -103,12 +109,7 @@ export const nutritionView = (input: {
       facts: input.facts,
       windows: input.windows,
       plan,
-      weight:
-        peak.kind === 'no-weigh-in'
-          ? latest === null
-            ? null
-            : { kg: latest.weight_kg, from: latest.day, to: latest.day }
-          : { kg: peak.weight_kg, from: peak.from, to: peak.to },
+      weight: proteinWeight(peak, latest),
     }),
     span,
     plan,

@@ -163,7 +163,8 @@ export type NutrientTotal = {
 // The daily average of each nutrient over the supplements given (its amount × the units taken a
 // day ÷ the serving's units ÷ every_days), in its limit's unit when it has one, else in its first
 // amount's; in the order they first appear
-// shortcut: a `run` intake counts as daily, upgrade when one is entered (none today)
+// shortcut: a `run` intake counts as daily here and is listed on every dose day by
+// supplementsOn, run or not; upgrade both when one is entered (none today)
 export const nutrientTotals = (supplements: ReadonlyArray<Supplement>): Array<NutrientTotal> => {
   const doses = supplements.flatMap((supplement) => {
     const units = supplement.intakes.reduce((sum, intake) => sum + intake.units, 0)
@@ -209,7 +210,7 @@ export interface SupplementDay {
     readonly name: string
     readonly brand: string
     readonly every_days: number
-    readonly schedule: Schedule
+    readonly schedule: Exclude<Schedule, { readonly kind: 'stopped' }>
   }>
   // The daily averages from `from` (the latest start among the supplements not stopped, today at
   // the earliest), over the supplements taken that day

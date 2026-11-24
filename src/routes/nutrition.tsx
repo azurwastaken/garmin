@@ -6,9 +6,16 @@ import { LineChart, shortDay } from '#src/components/charts.tsx'
 import { dayLabel, fmt, numericDay } from '#src/components/format.ts'
 import { daysBetween } from '#src/days.ts'
 import type { Classified } from '#src/nutrition/day-type.ts'
-import type { Lever, LeverKey } from '#src/nutrition/levers.ts'
+import { type Lever, type LeverKey, plural } from '#src/nutrition/levers.ts'
 import type { NutritionView } from '#src/nutrition/nutrition.ts'
-import type { Goal, PeakWeight } from '#src/nutrition/peak.ts'
+import {
+  BIA_ERROR_POINTS,
+  type Goal,
+  LEAN_WINDOW_DAYS,
+  MIN_LEAN_WEIGH_INS,
+  type PeakWeight,
+  RUNNER_BODY_FAT_PCT,
+} from '#src/nutrition/peak.ts'
 import type { DayType, NutritionPlan, Phase } from '#src/nutrition/plan.ts'
 import type { Moment, NutrientTotal, SupplementDay } from '#src/nutrition/supplements.ts'
 import {
@@ -220,8 +227,6 @@ const NUTRIENT_LABEL: Record<string, string> = {
 // A nutrient's French name, or its slug in words
 const nutrientName = (slug: string) => NUTRIENT_LABEL[slug] ?? slug.replaceAll('_', ' ')
 
-const units = (count: number, name: string) => `${count} ${name}${count > 1 ? 's' : ''}`
-
 // A supplement's rhythm when it is not a daily dose already listed by moment; null for those
 const rhythmLine = (item: SupplementDay['items'][number]): string | null => {
   const { schedule, every_days: every } = item
@@ -235,8 +240,6 @@ const rhythmLine = (item: SupplementDay['items'][number]): string | null => {
       return `pas aujourd’hui (${each}) · ${next(schedule.next)}`
     case 'dose':
       return every > 1 ? `à prendre aujourd’hui (${each}) · ${next(schedule.next)}` : null
-    case 'stopped':
-      return null
   }
 }
 
@@ -260,7 +263,7 @@ function LimitCell({ total }: { total: NutrientTotal }) {
 function SupplementsSection({ day }: { day: SupplementDay }) {
   const rhythms = day.items.flatMap((item) => {
     const line = rhythmLine(item)
-    return line === null ? [] : [{ name: item.name, line }]
+    return line === null ? [] : [{ key: `${item.name}·${item.brand}`, name: item.name, line }]
   })
   const { from, nutrients } = day.totals
   const over = nutrients.flatMap((total) => (total.status === 'over' ? [total] : []))
@@ -290,17 +293,17 @@ function SupplementsSection({ day }: { day: SupplementDay }) {
                   <div key={moment}>
                     <dt>{MOMENT_LABEL[moment]}</dt>
                     {take.map((intake) => (
-                      <dd key={intake.name}>
+                      <dd key={`${intake.name}·${intake.brand}`}>
                         {intake.name} <span className="muted">({intake.brand})</span> ·{' '}
-                        {units(intake.units, intake.unit_name)}
+                        {plural(intake.units, intake.unit_name)}
                       </dd>
                     ))}
                   </div>
                 ))}
               </dl>
             )}
-            {rhythms.map(({ name, line }) => (
-              <p key={name} className="note">
+            {rhythms.map(({ key, name, line }) => (
+              <p key={key} className="note">
                 <b>{name}</b> : {line}
               </p>
             ))}
@@ -336,9 +339,10 @@ function SupplementsSection({ day }: { day: SupplementDay }) {
             </div>
             {over.map((total) => (
               <p key={total.nutrient} className="note">
-                <b>{nutrientName(total.nutrient)}</b> : {fmt(total.per_day, 2)} {total.unit} par
-                jour, au-dessus des {fmt(total.limit.amount)} {total.limit.unit} (
-                {total.limit.source}) : le risque est {total.limit.risk}.
+                <b>{nutrientName(total.nutrient)}</b> :{' '}
+                {`${fmt(total.per_day, 2)}\u00A0${total.unit}`} par jour, au-dessus des{' '}
+                {`${fmt(total.limit.amount)}\u00A0${total.limit.unit}`} ({total.limit.source}) : le
+                risque est {total.limit.risk}.
               </p>
             ))}
             {cautions.map((total) => (
@@ -362,9 +366,16 @@ function SupplementsSection({ day }: { day: SupplementDay }) {
 const range = (low: number, high: number) =>
   low === high ? kg(low) : `${fmt(low, 1)} à ${kg(high)}`
 
+// What a goal is measured against: the plan's pace, today's phase and the phases after it
+interface Pace {
+  readonly loss: NutritionPlan['loss_kg_per_week']
+  readonly phase: Phase | null
+  readonly phases: ReadonlyArray<Phase>
+}
+
 // When a goal comes at the plan's pace, and whether before the deficit ends; after it, the phase
 // that follows names when
-const goalLines = (goal: Goal, view: NutritionView): Array<string> => {
+const goalLines = (goal: Goal, { loss, phase, phases }: Pace): Array<string> => {
   switch (goal.kind) {
     case 'reached':
       return ['Atteint.']
@@ -374,7 +385,7 @@ const goalLines = (goal: Goal, view: NutritionView): Array<string> => {
       ]
     case 'dated': {
       const { fastest, slowest } = goal
-      const { min, max } = view.plan.loss_kg_per_week
+      const { min, max } = loss
       const when =
         slowest === null
           ? `au plus tôt le ${numericDay(fastest.by)}`
@@ -386,13 +397,13 @@ const goalLines = (goal: Goal, view: NutritionView): Array<string> => {
       const lines = [
         `Encore ${range(goal.gap_kg.min, goal.gap_kg.max)} : ${weeks} à ${fmt(min, 2)}–${fmt(max, 2)} kg par semaine, ${when}.`,
       ]
-      if (goal.before_deficit_end === true && view.phase !== null) {
-        lines.push(`Possible dans le déficit en cours (jusqu’au ${numericDay(view.phase.to)}).`)
+      if (goal.before_deficit_end === true && phase !== null) {
+        lines.push(`Possible dans le déficit en cours (jusqu’au ${numericDay(phase.to)}).`)
       }
-      if (goal.before_deficit_end === false && view.phase !== null) {
-        const after = view.plan.phases.find((phase) => phase.from > (view.phase?.to ?? ''))
+      if (goal.before_deficit_end === false && phase !== null) {
+        const after = phases.find((next) => next.from > phase.to)
         lines.push(
-          `Au-delà du déficit en cours (jusqu’au ${numericDay(view.phase.to)})${after?.label === undefined ? '' : ` : plutôt après ${after.label}`}.`
+          `Au-delà du déficit en cours (jusqu’au ${numericDay(phase.to)})${after?.label === undefined ? '' : ` : plutôt après ${after.label}`}.`
         )
       }
       return lines
@@ -412,10 +423,11 @@ function PeakCard({ peak, view }: { peak: PeakWeight; view: NutritionView }) {
       </div>
     )
   }
+  const pace = { loss: view.plan.loss_kg_per_week, phase: view.phase, phases: view.plan.phases }
   const target = (
     <p className="note">
       <b>Cible proche du plan : {kg(view.plan.target_kg, 0)}</b> (moyenne actuelle{' '}
-      {kg(peak.weight_kg)}). {goalLines(peak.target, view).join(' ')}
+      {kg(peak.weight_kg)}). {goalLines(peak.target, pace).join(' ')}
     </p>
   )
   if (peak.kind === 'too-few') {
@@ -424,8 +436,8 @@ function PeakCard({ peak, view }: { peak: PeakWeight; view: NutritionView }) {
         <div className="label">Poids de forme</div>
         <div className="value">–</div>
         <p className="note">
-          Il faut au moins 3 pesées avec la masse grasse sur 14 jours : {peak.weigh_ins.with_fat} du{' '}
-          {numericDay(peak.from)} au {numericDay(peak.to)}.
+          Il faut au moins {MIN_LEAN_WEIGH_INS} pesées avec la masse grasse sur {LEAN_WINDOW_DAYS}{' '}
+          jours : {peak.weigh_ins.with_fat} du {numericDay(peak.from)} au {numericDay(peak.to)}.
         </p>
         {target}
       </div>
@@ -442,20 +454,20 @@ function PeakCard({ peak, view }: { peak: PeakWeight; view: NutritionView }) {
       <p className="note">
         Ta masse maigre, {kg(peak.lean_kg)} ({kg(peak.weight_kg)} à {fmt(peak.body_fat_pct, 1)} % de
         graisse, {peak.weigh_ins.with_fat} pesées du {numericDay(peak.from)} au{' '}
-        {numericDay(peak.to)}), gardée, à 10–13 % de graisse : la fourchette d’un coureur
-        d’endurance.
+        {numericDay(peak.to)}), gardée, à {RUNNER_BODY_FAT_PCT.min}–{RUNNER_BODY_FAT_PCT.max} % de
+        graisse : la fourchette d’un coureur d’endurance.
       </p>
       <p className="note">
-        La balance mesure la graisse par impédance, à ±5 points près : avec cette erreur, la
-        fourchette va de {kg(peak.bia_kg.min)} à {kg(peak.bia_kg.max)}. Une fourchette, pas un
-        chiffre.
+        La balance mesure la graisse par impédance, à ±{BIA_ERROR_POINTS} points près : avec cette
+        erreur, la fourchette va de {kg(peak.bia_kg.min)} à {kg(peak.bia_kg.max)}. Une fourchette,
+        pas un chiffre.
       </p>
-      <p className="note">{goalLines(goal, view).join(' ')}</p>
+      <p className="note">{goalLines(goal, pace).join(' ')}</p>
       {target}
       <p className="note muted">
-        Plancher : {kg(goal.kg.min)} (10 % de graisse), ne vise pas en dessous. Manger trop peu pour
-        ton entraînement (faible disponibilité énergétique, RED-S) coûte de la fatigue, des
-        blessures et de la performance.
+        Plancher : {kg(goal.kg.min)} ({RUNNER_BODY_FAT_PCT.min} % de graisse), ne vise pas en
+        dessous. Manger trop peu pour ton entraînement (faible disponibilité énergétique, RED-S)
+        coûte de la fatigue, des blessures et de la performance.
       </p>
     </div>
   )
@@ -501,18 +513,21 @@ function LeversCard({ levers }: { levers: ReadonlyArray<Lever> }) {
         Classés : d’abord ce que tes données montrent à travailler, l’effet le plus grand en tête
       </p>
       <ol className="levers">
-        {levers.map((lever) => (
-          <li key={lever.key}>
-            <div className="lever-head">
-              <h3>{LEVER_TITLE[lever.key]}</h3>
-              <span className={LEVER_STATUS[lever.status].tone}>
-                {LEVER_STATUS[lever.status].word}
-              </span>
-            </div>
-            {leverFacts(lever) === '' ? null : <p className="note muted">{leverFacts(lever)}</p>}
-            <p className="note">{lever.text}</p>
-          </li>
-        ))}
+        {levers.map((lever) => {
+          const facts = leverFacts(lever)
+          return (
+            <li key={lever.key}>
+              <div className="lever-head">
+                <h3>{LEVER_TITLE[lever.key]}</h3>
+                <span className={LEVER_STATUS[lever.status].tone}>
+                  {LEVER_STATUS[lever.status].word}
+                </span>
+              </div>
+              {facts === '' ? null : <p className="note muted">{facts}</p>}
+              <p className="note">{lever.text}</p>
+            </li>
+          )
+        })}
       </ol>
     </div>
   )
@@ -603,8 +618,8 @@ function Nutrition() {
       <section>
         <h2>Poids de forme</h2>
         <p className="sub">
-          Estimé depuis la masse maigre des pesées Withings des 14 derniers jours, en la gardant ;
-          la cible du plan reste l’étape proche
+          Estimé depuis la masse maigre des pesées Withings des {LEAN_WINDOW_DAYS} derniers jours,
+          en la gardant ; la cible du plan reste l’étape proche
         </p>
         <div className="grid cols-2">
           <PeakCard peak={view.peak} view={view} />

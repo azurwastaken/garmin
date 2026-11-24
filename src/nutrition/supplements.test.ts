@@ -91,6 +91,17 @@ describe('scheduleOn', () => {
     expect(scheduleOn(rhythm, day)).toEqual(schedule)
   })
 
+  it.each([
+    // A year on, no stop: 365 days from the start is odd, 366 even
+    [2, '2027-11-26', { kind: 'off', next: '2027-11-27' }],
+    [2, '2027-11-27', { kind: 'dose', next: '2027-11-29' }],
+    // Every 3 days: 366 is a multiple, 367 one past it
+    [3, '2027-11-27', { kind: 'dose', next: '2027-11-30' }],
+    [3, '2027-11-28', { kind: 'off', next: '2027-11-30' }],
+  ] as const)('every %i days, far from its start, on %s: %o', (every, day, schedule) => {
+    expect(scheduleOn({ start: '2026-11-26', every_days: every }, day)).toEqual(schedule)
+  })
+
   it('makes every day of a daily one a dose day, with tomorrow next', () => {
     expect(scheduleOn(daily(), '2026-11-24')).toEqual({ kind: 'dose', next: '2026-11-25' })
   })
