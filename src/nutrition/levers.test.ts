@@ -69,23 +69,22 @@ describe('the levers', () => {
     })
   })
 
-  it('judges the plan’s protein per kg: room under 1.8 g/kg, none without a weight', () => {
+  it('judges the plan’s protein per kg: room under 1.8 g/kg, above past 2.2, none without a weight', () => {
     // 130 g: 1.8 g/kg at 72.2 kg, under it a kg heavier
     expect(lever('protein', {}, { kg: 72.2, from: TODAY, to: TODAY })).toMatchObject({
       status: 'fine',
       measured: { value: 1.8, unit: 'g/kg', from: TODAY, to: TODAY },
       text: expect.stringContaining('Les apports ne sont pas suivis'),
     })
-    expect(lever('protein', {}, { kg: 73.2, from: TODAY, to: TODAY })).toMatchObject({
-      status: 'room',
-      measured: { value: 1.78 },
-    })
-    // Past 2.2 g/kg: above the range, not in it, and no advice to eat more
-    expect(lever('protein', {}, { kg: 59, from: TODAY, to: TODAY })).toMatchObject({
-      status: 'fine',
-      measured: { value: 2.2 },
-      text: expect.stringContaining('dans la fourchette'),
-    })
+    const under = lever('protein', {}, { kg: 73.2, from: TODAY, to: TODAY })
+    expect(under).toMatchObject({ status: 'room', measured: { value: 1.78 } })
+    expect(under.text).toContain('sous la fourchette')
+    expect(under.text).not.toContain('vise le haut')
+    // In the range up to 2.2 g/kg, with the advice; past it, above the range and no advice to eat more
+    const top = lever('protein', {}, { kg: 59, from: TODAY, to: TODAY })
+    expect(top).toMatchObject({ status: 'fine', measured: { value: 2.2 } })
+    expect(top.text).toContain('dans la fourchette')
+    expect(top.text).toContain('vise le haut les jours durs')
     const above = lever('protein', {}, { kg: 58.9, from: TODAY, to: TODAY })
     expect(above).toMatchObject({ status: 'fine', measured: { value: 2.21 } })
     expect(above.text).toContain('au-dessus de la fourchette')
