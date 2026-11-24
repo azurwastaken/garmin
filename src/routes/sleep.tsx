@@ -11,15 +11,17 @@ import {
 } from '#src/components/charts.tsx'
 import { clock, dayLabel, fmt, hours, longDay, numericDay } from '#src/components/format.ts'
 import { STAGES, stageParts } from '#src/components/parts.ts'
-import type {
-  BedtimeBucket,
-  DurationBucket,
-  Measured,
-  Plan,
-  Regularity,
-  SleepInsights,
-  Spread,
-  Tags,
+import {
+  type BedtimeBucket,
+  type DurationBucket,
+  type Measured,
+  MIN_NIGHTS,
+  type Plan,
+  type Regularity,
+  type SleepInsights,
+  type Spread,
+  TAG_BEFORE_DAYS,
+  type Tags,
 } from '#src/sleep-insights.ts'
 import type { SleepAverages, SleepNight } from '#src/stats.ts'
 
@@ -436,7 +438,7 @@ function TaggedNights({ tags }: { readonly tags: Tags }) {
       ) : (
         <div className="table-wrap">
           <table
-            aria-label={`Compléments : les nuits depuis le ${numericDay(since.first_night)} contre les 28 jours d'avant`}
+            aria-label={`Compléments : les nuits depuis le ${numericDay(since.first_night)} contre les ${TAG_BEFORE_DAYS} jours d'avant`}
           >
             <thead>
               <tr>
@@ -450,7 +452,7 @@ function TaggedNights({ tags }: { readonly tags: Tags }) {
             <tbody>
               {(
                 [
-                  ['28 jours avant', since.before],
+                  [`${TAG_BEFORE_DAYS} jours avant`, since.before],
                   [`depuis le ${numericDay(since.first_night)}`, since.after],
                 ] as const
               ).map(([label, side]) => (
@@ -479,7 +481,7 @@ const bedtimeSummary = (buckets: ReadonlyArray<BedtimeBucket>) => {
       : []
   )
   const few = buckets.filter((b) => b.nights > 0 && b.recovery.score.kind === 'few')
-  return `Score de sommeil moyen selon l'heure d'endormissement : ${measured.join(', ') || 'aucune tranche de 5 nuits'}${few.length === 0 ? '' : ` ; trop peu de nuits ${few.map((b) => b.label).join(', ')}`}`
+  return `Score de sommeil moyen selon l'heure d'endormissement : ${measured.join(', ') || `aucune tranche de ${MIN_NIGHTS} nuits`}${few.length === 0 ? '' : ` ; trop peu de nuits ${few.map((b) => b.label).join(', ')}`}`
 }
 
 // What the nights say: the window, tonight, recovery by bedtime and duration, regularity, the
@@ -518,7 +520,9 @@ function Insights({
 
       <section className="card">
         <h2>Score selon l'heure d'endormissement</h2>
-        <p className="sub">Moyenne des tranches de 5 nuits ou plus · ± l'intervalle à 95 %</p>
+        <p className="sub">
+          Moyenne des tranches de {MIN_NIGHTS} nuits ou plus · ± l'intervalle à 95 %
+        </p>
         {columns.length === 0 ? null : (
           <StackedColumns
             rows={columns}

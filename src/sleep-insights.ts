@@ -514,6 +514,7 @@ export const tonightOf = ({
   readonly last_s: number | null
   readonly tomorrow: Classified
 }): Tonight => {
+  const hard = HARD_DAY[tomorrow.type]
   const reasons = present([
     debt.debt_s >= DEBT_LIMIT_S
       ? `${hours(debt.debt_s)} de dette sur les ${debt.nights} dernières nuits`
@@ -521,9 +522,7 @@ export const tonightOf = ({
     last_s !== null && last_s <= window.sleep_s - SHORT_NIGHT_S
       ? `nuit dernière courte (${hours(last_s)})`
       : null,
-    HARD_DAY[tomorrow.type] === null
-      ? null
-      : `demain, ${HARD_DAY[tomorrow.type]} (${tomorrow.reason})`,
+    hard === null ? null : `demain, ${hard} (${tomorrow.reason})`,
   ])
   const earlier_min = reasons.length > 0 ? EARLIER_MIN : 0
   const bed = window.bed_min - earlier_min

@@ -313,43 +313,56 @@ describe('tonightOf', () => {
     tonightOf({ window: window satisfies Window, debt: debt(debt_s), last_s, tomorrow })
 
   it.each([
-    { name: 'nothing', debt_s: 0, last_s: null, tomorrow: REST, earlier: 0 },
-    { name: 'a debt of 1 h 59', debt_s: 7199, last_s: null, tomorrow: REST, earlier: 0 },
-    { name: 'a debt of 2 h', debt_s: 7200, last_s: null, tomorrow: REST, earlier: 30 },
-    { name: 'a night 59 min short', debt_s: 0, last_s: 25_920 - 3599, tomorrow: REST, earlier: 0 },
-    { name: 'a night 1 h short', debt_s: 0, last_s: 25_920 - 3600, tomorrow: REST, earlier: 30 },
+    { name: 'nothing', debt_s: 0, last_s: null, tomorrow: REST, reasons: [] },
+    { name: 'a debt of 1 h 59', debt_s: 7199, last_s: null, tomorrow: REST, reasons: [] },
+    {
+      name: 'a debt of 2 h',
+      debt_s: 7200,
+      last_s: null,
+      tomorrow: REST,
+      reasons: ['2 h 00 de dette sur les 7 dernières nuits'],
+    },
+    { name: 'a night 59 min short', debt_s: 0, last_s: 25_920 - 3599, tomorrow: REST, reasons: [] },
+    {
+      name: 'a night 1 h short',
+      debt_s: 0,
+      last_s: 25_920 - 3600,
+      tomorrow: REST,
+      reasons: ['nuit dernière courte (6 h 12)'],
+    },
     {
       name: 'an easy day tomorrow',
       debt_s: 0,
       last_s: null,
       tomorrow: { type: 'easy', from: 'planned', reason: 'séance prévue sans intensité' },
-      earlier: 0,
+      reasons: [],
     },
     {
       name: 'a quality day tomorrow',
       debt_s: 0,
       last_s: null,
       tomorrow: { type: 'quality', from: 'planned', reason: 'seuil' },
-      earlier: 30,
+      reasons: ['demain, séance de qualité (seuil)'],
     },
     {
       name: 'a long day tomorrow',
       debt_s: 0,
       last_s: null,
       tomorrow: { type: 'long', from: 'planned', reason: '1 h 30 prévus' },
-      earlier: 30,
+      reasons: ['demain, sortie longue (1 h 30 prévus)'],
     },
   ] satisfies ReadonlyArray<{
     name: string
     debt_s: number
     last_s: number | null
     tomorrow: Classified
-    earlier: number
-  }>)('moves tonight $earlier min earlier for $name', ({ debt_s, last_s, tomorrow, earlier }) => {
+    reasons: ReadonlyArray<string>
+  }>)('moves tonight for $name: $reasons', ({ debt_s, last_s, tomorrow, reasons }) => {
     const tonight = advise(debt_s, last_s, tomorrow)
+    const earlier = reasons.length === 0 ? 0 : 30
+    expect(tonight.reasons).toEqual(reasons)
     expect(tonight.earlier_min).toBe(earlier)
     expect(tonight.bed_min).toBe(window.bed_min - earlier)
-    expect(tonight.reasons).toHaveLength(earlier === 0 ? 0 : 1)
   })
 
   it.each([
