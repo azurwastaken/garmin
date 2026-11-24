@@ -10,7 +10,7 @@ import { Database, type DatabaseError } from '../db.ts'
 import { writeAtomic } from '../files.ts'
 import { EXERCISES, type WorkoutInput } from '../garmin/workout-builder.ts'
 import { type BodyNote, type BodyPin, bodyHistory } from '../journal/history.ts'
-import { dayType } from '../nutrition/day-type.ts'
+import { dayType, type DoneSession, type PlannedSession } from '../nutrition/day-type.ts'
 import { sessionsOn } from '../nutrition/nutrition.ts'
 import { journal } from '../schema.ts'
 
@@ -137,6 +137,36 @@ export const labelFrom =
     const structure = structureOf(catalog, id)
     return structure === undefined ? id : structureLabel(structure.french, structure.side)
   }
+
+// A sport's family: every run one (a treadmill run replaces the run planned)
+const familyOf = (sport: string | null) =>
+  sport !== null && /running/u.test(sport) ? 'running' : sport
+
+// A day as the scheduler reads it: its runs (and other sessions) judged by day-type.ts, the
+// calendar's entries still to do (one a session done has replaced is done), a strength session
+// done or planned
+export const weekDayOf = (
+  day: string,
+  done: ReadonlyArray<DoneSession>,
+  planned: ReadonlyArray<PlannedSession>,
+  z4FloorBpm: number | null
+): WeekDay => {
+  const judged = dayType(
+    done.filter((session) => session.sport !== STRENGTH),
+    planned.filter((session) => session.sport !== STRENGTH),
+    z4FloorBpm
+  )
+  const doneFamilies = new Set(done.map((session) => familyOf(session.sport)))
+  return {
+    day,
+    type: judged.type,
+    reason: judged.reason,
+    calendar: planned
+      .filter((session) => !doneFamilies.has(familyOf(session.sport)))
+      .map((session) => session.name),
+    strength: [...done, ...planned].some((session) => session.sport === STRENGTH),
+  }
+}
 
 // The pains of the pinned notes
 const painsOf = (notes: ReadonlyArray<BodyNote>): Array<RecentPain> =>
@@ -297,26 +327,11 @@ export class Strength extends Context.Service<
         ([row]) => row?.floor ?? null
       )
 
-      // A day as the scheduler reads it: its runs (and other sessions) judged by day-type.ts, its
-      // calendar, a strength session done or planned
       const weekDay = Effect.fnUntraced(function* (day: string, floor: number | null) {
         const { done, planned } = yield* sessionsOn(day).pipe(
           Effect.provideService(Database, database)
         )
-        const judged = dayType(
-          done.filter((session) => session.sport !== STRENGTH),
-          planned.filter((session) => session.sport !== STRENGTH),
-          floor
-        )
-        return {
-          day,
-          type: judged.type,
-          reason: judged.reason,
-          calendar: planned.map((session) => session.name),
-          strength:
-            done.some((session) => session.sport === STRENGTH) ||
-            planned.some((session) => session.sport === STRENGTH),
-        } satisfies WeekDay
+        return weekDayOf(day, done, planned, floor)
       })
 
       // Every strength session named in the activities and the calendar, newest first

@@ -301,7 +301,7 @@ export const DEFAULT_PROGRAM: StrengthProgram = {
       maison: {
         name: 'Fente bulgare, sac à dos lesté',
         garmin: garmin('LUNGE/DUMBBELL_BULGARIAN_SPLIT_SQUAT', 'closest'),
-        load: 'Sac à dos de 8–12 kg, 12 répétitions à RPE 7',
+        load: 'Sac à dos de 8–12 kg, RPE 7',
       },
     },
     {
@@ -358,7 +358,7 @@ export const DEFAULT_PROGRAM: StrengthProgram = {
       maison: {
         name: 'Soulevé de terre roumain sur une jambe (sac à dos)',
         garmin: garmin('DEADLIFT/SINGLE_LEG_ROMANIAN_DEADLIFT_WITH_DUMBBELL', 'closest'),
-        load: 'Sac à dos 8–12 kg, 10 par jambe',
+        load: 'Sac à dos de 8–12 kg, sur une jambe, RPE 7',
       },
     },
     {
@@ -378,7 +378,7 @@ export const DEFAULT_PROGRAM: StrengthProgram = {
       maison: {
         name: 'Mollets sur une jambe, sur une marche',
         garmin: garmin('CALF_RAISE/SINGLE_LEG_STANDING_CALF_RAISE'),
-        load: 'Poids du corps puis sac à dos, 15 lentes',
+        load: 'Poids du corps puis sac à dos, RPE 7',
       },
     },
     {
@@ -398,7 +398,7 @@ export const DEFAULT_PROGRAM: StrengthProgram = {
       maison: {
         name: 'Mollets genou fléchi sur une jambe',
         garmin: garmin('CALF_RAISE/SINGLE_LEG_BENT_KNEE_CALF_RAISE'),
-        load: 'Poids du corps, 15 lentes par jambe',
+        load: 'Poids du corps, une jambe puis l’autre, RPE 7',
       },
     },
     {

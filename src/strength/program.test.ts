@@ -159,7 +159,7 @@ describe('the phases', () => {
     expect(split).toMatchObject({
       name: 'Fente bulgare, sac à dos lesté',
       instead_of: 'Fente bulgare',
-      load: 'Sac à dos de 8–12 kg, 12 répétitions à RPE 7',
+      load: 'Sac à dos de 8–12 kg, RPE 7',
     })
     expect(split?.primary).toContain('vastus_medialis_r')
     expect(home?.exercises.find((e) => e.id === 'step_down')?.instead_of).toBeNull()

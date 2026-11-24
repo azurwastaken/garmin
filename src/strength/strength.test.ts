@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { anatomyCatalog } from '../../test/fixtures.ts'
 
 import { DEFAULT_PROGRAM } from './program.ts'
-import { labelFrom, proposalOf, proposeWeek, unknownStructures } from './strength.ts'
+import { labelFrom, proposalOf, proposeWeek, unknownStructures, weekDayOf } from './strength.ts'
 
 const PAIN = [{ structure: 'rectus_femoris_r', day: '2026-11-22', pain: 3 }]
 
@@ -62,6 +62,47 @@ describe('the week’s proposal', () => {
       sets: 3,
       reps: 10,
     })
+  })
+})
+
+describe('a day for the scheduler', () => {
+  const run = {
+    name: "Plan - mar 24/11 - Reprise 25' EF < 150",
+    description: null,
+    sport: 'running',
+    steps: 'interval 25:00 HR 125-150',
+    minutes: 30,
+    km: null,
+  }
+
+  it('warns of a calendar run still to do, not of one a run done replaced', () => {
+    expect(weekDayOf('2026-11-24', [], [run], 160)).toMatchObject({
+      type: 'easy',
+      calendar: [run.name],
+      strength: false,
+    })
+    const treadmill = { sport: 'treadmill_running', minutes: 33, km: 4.3, z45_minutes: 0 }
+    expect(weekDayOf('2026-11-24', [treadmill], [run], 160)).toMatchObject({
+      type: 'easy',
+      calendar: [],
+    })
+  })
+
+  it('judges the runs alone, and marks a strength session done or planned', () => {
+    const renfo = { ...run, name: 'Renfo A', sport: 'strength_training', steps: null }
+    expect(weekDayOf('2026-11-30', [], [renfo], 160)).toMatchObject({
+      type: 'rest',
+      calendar: ['Renfo A'],
+      strength: true,
+    })
+    expect(
+      weekDayOf(
+        '2026-11-30',
+        [{ sport: 'strength_training', minutes: 50, km: null, z45_minutes: 0 }],
+        [],
+        160
+      )
+    ).toMatchObject({ type: 'rest', strength: true })
   })
 })
 
