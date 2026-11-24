@@ -671,7 +671,7 @@ export const supplementsSince = (
     ...started.map((supplement) => supplement.start),
   ].reduce<string | null>((first, day) => (first === null ? day : earlierDay(first, day)), null)
 
-// The first night of the before side, for supplements first noted on `since`
+// The first night of the before side, for supplements first taken on `since`
 const beforeFrom = (since: string) => addDays(since, 1 - TAG_BEFORE_DAYS)
 
 // The first day the analysis reads: the span's first, or the before side of the supplements begun
@@ -687,7 +687,8 @@ const sideOf = (nights: ReadonlyArray<SleptNight>): Side => ({
   resting_hr: measure(nights.map((night) => night.resting_hr)),
 })
 
-// The nights after the supplements' first note against the 28 days before, from 14 nights each
+// The nights since the supplements' first day (a note's or a start's) against the 28 days before,
+// from 14 nights each
 const sinceOf = (since: string, nights: ReadonlyArray<SleptNight>): Since => {
   const first_night = addDays(since, 1)
   const before = nights.filter((night) => night.day >= beforeFrom(since) && night.day < first_night)
@@ -712,12 +713,16 @@ const startsByDay = (started: ReadonlyArray<Started>) =>
     )
   )
 
-// The time of each day's earliest note naming a supplement: the one that carries its starts
+// By day, the time of its earliest note naming a supplement: the one that carries its starts
 const firstSupplementNotes = (notes: ReadonlyArray<Note>) =>
-  new Set(
-    Array.from(Map.groupBy(supplementNotes(notes), (note) => note.day).values(), (ofDay) =>
-      ofDay.reduce((first, note) => (note.time < first.time ? note : first))
-    ).map((note) => note.time)
+  new Map(
+    Array.from(
+      Map.groupBy(supplementNotes(notes), (note) => note.day),
+      ([day, ofDay]) => [
+        day,
+        ofDay.reduce((first, note) => (note.time < first.time ? note : first)).time,
+      ]
+    )
   )
 
 // The night after `day` and its numbers, from the nights by day
@@ -754,12 +759,11 @@ export const tagsOf = ({
   const byDay = new Map(span.map((night) => [night.day, night]))
   const starts = startsByDay(started)
   const carriers = firstSupplementNotes(notes)
-  const noted = new Set(supplementNotes(notes).map((note) => note.day))
   const since = supplementsSince(notes, started)
   const journal = notes.flatMap((note): Array<TaggedNight> => {
     const tags = tagsIn(note.text)
     if (tags.length === 0) return []
-    const begun = carriers.has(note.time) ? (starts.get(note.day) ?? []) : []
+    const begun = carriers.get(note.day) === note.time ? (starts.get(note.day) ?? []) : []
     return [
       {
         source: 'journal',
@@ -773,7 +777,7 @@ export const tagsOf = ({
     ]
   })
   const unnoted = Array.from(starts)
-    .filter(([day]) => !noted.has(day))
+    .filter(([day]) => !carriers.has(day))
     .map(([day, begun]): TaggedNight => ({
       source: 'supplements',
       tags: ['supplements'],
@@ -784,7 +788,7 @@ export const tagsOf = ({
   return {
     nights: [...journal, ...unnoted]
       .filter((tagged) => tagged.night >= from)
-      .toSorted((a, b) => (orderOf(a) < orderOf(b) ? -1 : 1)),
+      .toSorted((a, b) => orderOf(a).localeCompare(orderOf(b))),
     supplements: since === null ? null : sinceOf(since, [...history, ...span]),
   }
 }

@@ -243,6 +243,34 @@ layer(TestLayer, { excludeTestServices: true })('Stats, the morning', (it) => {
       expect(yield* protein).toBeNull()
     })
   )
+
+  it.effect('tags the night after a supplement begun, none while its file is broken', () =>
+    Effect.gen(function* () {
+      const today = yield* parisToday
+      const yesterday = addDays(today, -1)
+      const begun = Effect.map(
+        Stats.use((stats) => stats.sleepInsights(30)),
+        ({ tags }) => tags.nights.filter((tagged) => tagged.source === 'supplements')
+      )
+      yield* put('nutrition/supplements.json', '{"broken"')
+      expect(yield* begun).toEqual([])
+      yield* put('nutrition/supplements.json', {
+        supplements: [
+          {
+            name: 'Ashwa+',
+            brand: 'ESN',
+            unit_name: 'gélule',
+            intakes: [{ moment: 'dinner', units: 2 }],
+            serving_units: 2,
+            contents: [{ nutrient: 'ashwagandha', amount: 600, unit: 'mg' }],
+            every_days: 1,
+            start: yesterday,
+          },
+        ],
+      })
+      expect(yield* begun).toMatchObject([{ day: yesterday, night: today, started: ['Ashwa+'] }])
+    })
+  )
 })
 
 const night = (overrides: Partial<SleepNight>): SleepNight => ({

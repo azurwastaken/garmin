@@ -63,6 +63,8 @@ layer(TestLayer)('Caffeine', (it) => {
           reason:
             "Pas assez de nuits : aucune tranche de durée n'a 5 nuits avec un score, 0 réveil en semaine sur les 5 qu'il faut, pas de temps d'éveil mesuré.",
         })
+        // The page's history line, from today's midnight: 23:30 and 13:52
+        expect(yield* caffeine.page).toMatchObject({ bedtime_min: 1410, cutoff_min: 832 })
 
         const first = yield* caffeine.log({ kind: 'espresso' })
         expect(first).toEqual({ time: '1970-01-01T00:00:00.000Z', kind: 'espresso', mg: 63 })

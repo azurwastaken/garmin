@@ -151,7 +151,8 @@ token: `--header "Authorization: Bearer <password>"`.
 - `delete_caffeine`: one intake logged by mistake, by its time: its file, then its row.
 - `caffeine_today`: the day's total against EFSA 2015's limits (400 mg a day, 200 mg at once), the
   caffeine in the body now and at bedtime (an estimate: a 5 h half-life), and the cut-off for the
-  last coffee (a 95 mg coffee down to 25 mg by bedtime), beside the 8.8 h rule of Gardiner et al. 2023. Bedtime is tonight's from `sleep_insights`, 23:30 while the nights are too few; it says
+  last coffee (a 95 mg coffee down to 25 mg by bedtime), beside the 8.8 h rule of Gardiner et al.
+  (2023). Bedtime is tonight's from `sleep_insights`, 23:30 while the nights are too few; it says
   which.
 - `caffeine_vs_sleep`: per night, the caffeine left at sleep onset and the last intake, against the
   sleep score, HRV, resting HR and deep sleep; nights over 50 mg against the others once there are

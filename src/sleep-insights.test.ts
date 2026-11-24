@@ -651,6 +651,20 @@ describe('the tags', () => {
       expect(tags.supplements).toMatchObject({ kind: 'too-few', first_night: '2026-11-11' })
     })
 
+    it('keeps a start beside a note naming no supplement, after it on their night', () => {
+      const tags = tagsOf({
+        notes: [{ time: '2026-11-10T20:00:00.000Z', day: '2026-11-10', text: 'une bière' }],
+        started: [{ name: 'Ashwa+', start: '2026-11-10' }],
+        from: '2026-11-01',
+        span: [],
+        history: [],
+      })
+      expect(tags.nights.map((tagged) => [tagged.night, tagged.source, tagged.started])).toEqual([
+        ['2026-11-11', 'journal', []],
+        ['2026-11-11', 'supplements', ['Ashwa+']],
+      ])
+    })
+
     it('leaves out a start whose night is before the span', () => {
       const tags = tagsOf({
         notes: [],
