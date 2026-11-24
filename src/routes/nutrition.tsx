@@ -8,7 +8,12 @@ import { daysBetween } from '#src/days.ts'
 import type { Classified } from '#src/nutrition/day-type.ts'
 import type { NutritionView } from '#src/nutrition/nutrition.ts'
 import type { DayType, NutritionPlan, Phase } from '#src/nutrition/plan.ts'
-import type { Status, Trend } from '#src/nutrition/trend.ts'
+import {
+  MIN_SLOPE_SPAN_DAYS,
+  MIN_SLOPE_WEIGH_INS,
+  type Status,
+  type Trend,
+} from '#src/nutrition/trend.ts'
 
 // Weight and nutrition: today's target from the day's type, the weight trend against the plan
 // agreed with the coach and the phase; the weigh-ins with their 7-day mean and the deficit's
@@ -47,7 +52,7 @@ const kg = (value: number, digits = 1) => `${fmt(value, digits)} kg`
 const perWeek = (value: number) => `${fmt(value, 2)} kg / semaine`
 
 // The status as words too, never as a color alone, with the plan's own thresholds
-const statusOf = (
+const statusText = (
   status: Status,
   plan: NutritionPlan
 ): { readonly label: string; readonly tone: 'good' | 'wait' | 'bad'; readonly advice: string } => {
@@ -81,8 +86,7 @@ const statusOf = (
       return {
         label: 'Pas assez de pesées',
         tone: 'wait',
-        advice:
-          'Il faut au moins 4 pesées et deux semaines de moyennes sur 7 jours dans la phase pour une tendance fiable : pèse-toi le matin, plusieurs fois par semaine.',
+        advice: `Il faut au moins ${MIN_SLOPE_WEIGH_INS} pesées et ${MIN_SLOPE_SPAN_DAYS} jours de moyennes sur 7 jours dans la phase pour une tendance fiable : pèse-toi le matin, plusieurs fois par semaine.`,
       }
     case 'maintenance':
       return {
@@ -128,7 +132,7 @@ function TargetCard({ view }: { view: NutritionView }) {
 
 function TrendCard({ view }: { view: NutritionView }) {
   const { trend, latest } = view
-  const status = statusOf(view.status, view.plan)
+  const status = statusText(view.status, view.plan)
   return (
     <div className="card tile">
       <div className="label">Tendance du poids</div>
@@ -206,7 +210,7 @@ function Nutrition() {
       : `dernière pesée ${kg(latest.weight_kg)} le ${dayLabel(latest.day)}`,
     lastMean === null ? null : `moyenne sur 7 jours ${kg(lastMean)}`,
     `tendance : ${trendLine(trend)}`,
-    `statut : ${statusOf(view.status, view.plan).label}`,
+    `statut : ${statusText(view.status, view.plan).label}`,
   ]
     .filter((part) => part !== null)
     .join(', ')

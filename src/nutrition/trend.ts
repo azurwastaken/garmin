@@ -1,3 +1,5 @@
+import { Brand } from 'effect'
+
 import { addDays, daysBetween } from '../days.ts'
 import { mean, round } from '../numbers.ts'
 
@@ -22,15 +24,16 @@ export interface WeighIn {
   readonly muscle_mass_kg: number | null
 }
 
-declare const daily: unique symbol
 // Weigh-ins, one a day in day order: only dailyWeighIns makes one
-export type DailyWeighIns = ReadonlyArray<WeighIn> & { readonly [daily]: true }
+export type DailyWeighIns = ReadonlyArray<WeighIn> & Brand.Brand<'DailyWeighIns'>
+const makeDaily = Brand.nominal<DailyWeighIns>()
 
 const MEAN_DAYS = 7
 const MIN_IN_MEAN = 2
 const SLOPE_DAYS = 28
-const MIN_SLOPE_SPAN_DAYS = 14
-const MIN_SLOPE_WEIGH_INS = 4
+// What a slope takes (the page says so too)
+export const MIN_SLOPE_SPAN_DAYS = 14
+export const MIN_SLOPE_WEIGH_INS = 4
 
 // The morning's weigh-in of each day (its earliest), in day order: Withings and Garmin may both have
 // one
@@ -39,8 +42,7 @@ export const dailyWeighIns = (rows: ReadonlyArray<BodyRow>): DailyWeighIns => {
   for (const { time: _time, ...weighIn } of rows.toSorted((a, b) => a.time.localeCompare(b.time))) {
     if (!first.has(weighIn.day)) first.set(weighIn.day, weighIn)
   }
-  // The brand's only constructor
-  return [...first.values()].toSorted((a, b) => a.day.localeCompare(b.day)) as never
+  return makeDaily([...first.values()].toSorted((a, b) => a.day.localeCompare(b.day)))
 }
 
 // Every day from `from` to `to`

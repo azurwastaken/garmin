@@ -116,8 +116,12 @@ describe('trendOf', () => {
     })
     // Means only from the phase's 7th day: 7 days of them, under 14
     expect(trendOf(series(START, 14, 0.4), addDays(START, 13), START).kind).toBe('too-few')
-    // 3 weigh-ins over 3 weeks
-    expect(trendOf(series(START, 21, 0.4, 8), addDays(START, 20), START).kind).toBe('too-few')
+    // Means over 27 days, but only 3 weigh-ins in the window
+    const today = '2026-12-20'
+    const three = dailyWeighIns(
+      [-30, -27, -6, 0].map((offset, index) => row(addDays(today, offset), 71 - index * 0.3))
+    )
+    expect(trendOf(three, today, '2026-09-01')).toMatchObject({ kind: 'too-few', weigh_ins: 3 })
   })
 })
 
