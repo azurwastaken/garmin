@@ -247,9 +247,13 @@ const ALCOHOL = /alcool|bi[èe]re|\bvins?\b|ap[ée]ro|whisky|cocktail|champagne|
 const NO_ALCOHOL =
   /sans (?:boire d['’])?alcool|pas (?:bu |pris )?d['’]alcool|z[ée]ro alcool|aucun alcool/iu
 
+// To one decimal
 const tenth = (value: number) => Math.round(value * 10) / 10
-const tenths = (value: number) => Math.round(value * 10)
+// A count of tenths, for comparisons without float error
+const inTenths = (value: number) => Math.round(value * 10)
+// Down to 5 minutes
 const floorTo5 = (minutes: number) => Math.floor(minutes / 5) * 5
+// To the nearest 5 minutes
 const roundTo5 = (minutes: number) => Math.round(minutes / 5) * 5
 
 // The nights that have a sleep measured
@@ -355,7 +359,7 @@ export const plateauOf = (buckets: ReadonlyArray<DurationBucket>): Plateau | nul
   // The best bucket, the earlier on a tie
   const best = measured.findIndex((m) => m.score === top)
   const close = (m: { readonly score: number }) =>
-    tenths(top) - tenths(m.score) <= PLATEAU_POINTS * 10
+    inTenths(top) - inTenths(m.score) <= PLATEAU_POINTS * 10
   const start = measured.findIndex((_, at) => measured.slice(at, best + 1).every((m) => close(m)))
   const found = measured[start]
   if (found === undefined) return null
