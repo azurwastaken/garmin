@@ -286,7 +286,9 @@ function BodySection({ view }: { readonly view: StrengthView }) {
           <p className="renfo-legend">
             <i className="renfo-swatch primary" /> travaillé en principal{' '}
             <i className="renfo-swatch secondary" /> en secondaire{' '}
-            <i className="renfo-swatch pain" /> douleur notée
+            <i className="renfo-swatch pain-low" />
+            <i className="renfo-swatch pain-mid" />
+            <i className="renfo-swatch pain-high" /> douleur notée (0–3, 4–6, 7–10)
           </p>
           <h2>En principal</h2>
           <p className="note">{muscles(primary, view.labels) || '—'}</p>

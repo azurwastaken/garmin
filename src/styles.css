@@ -1118,6 +1118,8 @@ td a:hover {
 
 /* The Renfo page: the body map's stage, shorter; what to regress, in the warning's ink */
 .renfo-stage {
+  /* Not sticky as on /body: nothing to click beside it */
+  position: relative;
   height: min(64vh, 600px);
   min-height: 380px;
 }
@@ -1157,8 +1159,14 @@ p.renfo-warn {
 .renfo-swatch.secondary {
   background: var(--series-3);
 }
-.renfo-swatch.pain {
+.renfo-swatch.pain-low {
+  background: var(--good);
+}
+.renfo-swatch.pain-mid {
   background: var(--warning-ink);
+}
+.renfo-swatch.pain-high {
+  background: var(--critical);
 }
 .renfo-session {
   margin-top: 14px;
