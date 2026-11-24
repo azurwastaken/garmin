@@ -10,9 +10,6 @@ import type { SleepNight } from './stats.ts'
 // advice and the nights the journal tags. Descriptive only: under 5 nights a bucket says nothing,
 // every number carries its n, and a difference is "associé à", never a cause.
 
-// The thresholds the page shares (api/periods.ts, for the browser's bundle)
-export { MIN_NIGHTS, TAG_BEFORE_DAYS }
-
 // A night with its sleep measured; its day is the morning it ends, bed_min and wake_min are on the
 // noon axis (minutes from noon the day before, Paris time: see stats.ts withClock)
 export type SleptNight = Pick<
@@ -36,9 +33,9 @@ export interface Note {
 }
 
 // Score points under which a longer sleep no longer counts as better
-export const PLATEAU_POINTS = 3
+const PLATEAU_POINTS = 3
 // Nights on each side of a "since" comparison
-export const TAG_MIN_NIGHTS = 14
+const TAG_MIN_NIGHTS = 14
 // Tonight earlier from a 7-night debt of 2 h, or after a night 1 h short of the target
 const DEBT_LIMIT_S = 2 * 3600
 const SHORT_NIGHT_S = 3600
