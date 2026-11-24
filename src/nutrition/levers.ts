@@ -141,7 +141,8 @@ const BREAKFAST_LEVER: Lever = {
 }
 
 // The plan's protein per kg of the weight (intake is not recorded: it judges the plan's target);
-// room under PROTEIN_G_PER_KG.min; no-data without a weight
+// room under PROTEIN_G_PER_KG.min, fine in it or above it (more is no lever); no-data without a
+// weight
 const proteinLever = (
   weight: { readonly kg: number; readonly from: string; readonly to: string } | null,
   proteinG: number
@@ -157,13 +158,14 @@ const proteinLever = (
   }
   const perKg = round(proteinG / weight.kg, 2) ?? 0
   const range = `${fmt(PROTEIN_G_PER_KG.min, 1)} à ${fmt(PROTEIN_G_PER_KG.max, 1)} g/kg, soit ${fmt(PROTEIN_G_PER_KG.min * weight.kg)} à ${fmt(PROTEIN_G_PER_KG.max * weight.kg)} g pour ${fmt(weight.kg, 1)} kg`
-  const room = perKg < PROTEIN_G_PER_KG.min
+  const place =
+    perKg < PROTEIN_G_PER_KG.min ? 'sous' : perKg > PROTEIN_G_PER_KG.max ? 'au-dessus de' : 'dans'
   return {
     key: 'protein',
-    status: room ? 'room' : 'fine',
+    status: place === 'sous' ? 'room' : 'fine',
     measured: { value: perKg, unit: 'g/kg', from: weight.from, to: weight.to },
     kcal_per_day: null,
-    text: `Le plan prévoit ${fmt(proteinG)} g de protéines, ${fmt(perKg, 2)} g/kg : ${room ? 'sous' : 'dans'} la fourchette qui garde le muscle en déficit (${range}). Les apports ne sont pas suivis${room ? '' : ' : vise le haut les jours durs'}.`,
+    text: `Le plan prévoit ${fmt(proteinG)} g de protéines, ${fmt(perKg, 2)} g/kg : ${place} la fourchette qui garde le muscle en déficit (${range}). Les apports ne sont pas suivis${place === 'dans' ? ' : vise le haut les jours durs' : ''}.`,
   }
 }
 
@@ -229,7 +231,7 @@ const stepsLever = (steps: ReadonlyArray<number>, days: Window): Lever => {
       status: 'fine',
       measured,
       kcal_per_day: null,
-      text: `${fmt(perDay)} pas par jour en moyenne sur ${plural(steps.length, 'jour')} : au-dessus de ${fmt(STEPS_GOAL)}, la marche fait déjà sa part.`,
+      text: `${fmt(perDay)} pas par jour en moyenne sur ${plural(steps.length, 'jour')} : ${fmt(STEPS_GOAL)} ou plus, la marche fait déjà sa part.`,
     }
   }
   const kcal = kcalEach(((STEPS_GOAL - perDay) / 2000) * KCAL_PER_2000_STEPS)

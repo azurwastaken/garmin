@@ -80,6 +80,16 @@ describe('the levers', () => {
       status: 'room',
       measured: { value: 1.78 },
     })
+    // Past 2.2 g/kg: above the range, not in it, and no advice to eat more
+    expect(lever('protein', {}, { kg: 59, from: TODAY, to: TODAY })).toMatchObject({
+      status: 'fine',
+      measured: { value: 2.2 },
+      text: expect.stringContaining('dans la fourchette'),
+    })
+    const above = lever('protein', {}, { kg: 58.9, from: TODAY, to: TODAY })
+    expect(above).toMatchObject({ status: 'fine', measured: { value: 2.21 } })
+    expect(above.text).toContain('au-dessus de la fourchette')
+    expect(above.text).not.toContain('vise le haut')
     expect(lever('protein', {}, null)).toMatchObject({ status: 'no-data', measured: null })
   })
 
