@@ -810,6 +810,26 @@ td a:hover {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* Satellite | Relief: one control, the ground shown filled */
+.hud-toggle {
+  display: inline-flex;
+}
+.hud-toggle .hud-button + .hud-button {
+  margin-left: -1px;
+}
+.hud-toggle .hud-button:first-child {
+  border-radius: 3px 0 0 3px;
+}
+.hud-toggle .hud-button:last-child {
+  border-radius: 0 3px 3px 0;
+}
+.hud-button[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.hud-button[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--accent);
+}
 .hud-legend {
   display: inline-flex;
   align-items: center;

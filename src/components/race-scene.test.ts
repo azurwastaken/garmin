@@ -4,6 +4,7 @@ import type { TrackPoint } from './race-map.tsx'
 import {
   followCamera,
   GLIDE_MS,
+  groundOf,
   middle,
   type Mode,
   type Motion,
@@ -132,5 +133,20 @@ describe('pressed', () => {
 describe('middle', () => {
   it('is the centre of a box', () => {
     expect(middle([2, 48, 3, 49])).toStrictEqual([2.5, 48.5])
+  })
+})
+
+describe('groundOf', () => {
+  it('drapes the photos unless the visitor chose the relief', () => {
+    expect(groundOf(null, true)).toBe('satellite')
+    expect(groundOf('satellite', true)).toBe('satellite')
+    expect(groundOf('relief', true)).toBe('relief')
+    // A value from another version, or a hand-edited one, is no choice
+    expect(groundOf('moon', true)).toBe('satellite')
+  })
+
+  it('keeps the relief for a course without photos, whatever was chosen', () => {
+    expect(groundOf(null, false)).toBe('relief')
+    expect(groundOf('satellite', false)).toBe('relief')
   })
 })

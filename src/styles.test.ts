@@ -155,6 +155,8 @@ describe('the HUD palette', () => {
     // The casing puts --page next to each mark; past it, the hillshade and the distance fog blend
     // these in sRGB with weights summing to at most 1, and sRGB → linear is convex, so no blend is
     // lighter than its lightest color
+    // (The relief only: the aerial photos have no palette, so on them --page in the casing is
+    // the whole contrast, the 'page' row below; see race-map.tsx's route-casing)
     const ground = [
       'page',
       'grid',

@@ -46,7 +46,7 @@ import {
   slugOf,
 } from './race.ts'
 import { Terrain, type TerrainError } from './terrain.ts'
-import { type Dem, demFor } from './terrarium.ts'
+import { type Dem, demFor, type Ortho, orthoFor } from './terrarium.ts'
 
 // The races (data/races/, the source of truth, as data/journal): written here, then read and
 // computed on each request, never copied into SQLite (a plan written shows at once, and
@@ -60,6 +60,8 @@ export interface RaceDetail {
   readonly view: RaceView
   readonly course: Course
   readonly dem: Dem
+  // The aerial photos of the area holding the course, else none
+  readonly ortho: Ortho | null
   // The predicted time at each course point, without a reference run none
   readonly times: Timeline | null
 }
@@ -192,9 +194,11 @@ export class Races extends Context.Service<
         const { facts, plan, course } = loaded.value
         const best = yield* reference
         const view = raceView({ slug, facts, plan, course, reference: best })
-        const dem = demFor(yield* terrain.areas, totals(course).bbox)
+        const { bbox } = totals(course)
+        const dem = demFor(yield* terrain.areas, bbox)
+        const ortho = orthoFor(yield* terrain.photos, bbox)
         const times = raceTimes({ course, plan, reference: best })
-        return Option.some<RaceDetail>({ view, course, dem, times })
+        return Option.some<RaceDetail>({ view, course, dem, ortho, times })
       })
 
       const list = Effect.gen(function* () {

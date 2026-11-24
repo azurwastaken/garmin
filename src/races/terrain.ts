@@ -12,6 +12,8 @@ import {
   decodePng,
   type Dem,
   demFor,
+  type Ortho,
+  orthoFile,
   type Raster,
   terrainFile,
   terrariumAt,
@@ -19,24 +21,47 @@ import {
 } from './terrarium.ts'
 
 // The elevation tiles: the local areas of data/terrain (IGN, served read-only at /terrain) and
-// AWS's, for the race page's 3D map and for a GPX without altitudes.
+// AWS's, for the race page's 3D map and for a GPX without altitudes; and the aerial photos the map
+// drapes on them, the areas of data/ortho (IGN, served read-only at /ortho).
 
 export class TerrainError extends Schema.TaggedError<TerrainError>()('TerrainError', {
   message: Schema.String,
 }) {}
 
-// An area's tiles.json (TileJSON 3), as the terrain pipeline writes it
-const TileJson = Schema.Struct({
+// An area's tiles.json (TileJSON 3), as the terrain and ortho pipelines write it
+const AreaJson = Schema.Struct({
   name: Schema.optionalKey(Schema.String),
   attribution: Schema.String,
   tiles: Schema.Array(Schema.String),
   minzoom: Schema.Int,
   maxzoom: Schema.Int,
   bounds: Schema.Tuple([Schema.Finite, Schema.Finite, Schema.Finite, Schema.Finite]),
-  encoding: Schema.Literal('terrarium'),
   tileSize: Schema.Literal(256),
 })
-const decodeTileJson = Schema.decodeUnknownEffect(Schema.fromJsonString(TileJson))
+type AreaTiles = typeof AreaJson.Type
+const decodeTerrainJson = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Struct({ ...AreaJson.fields, encoding: Schema.Literal('terrarium') })
+  )
+)
+const decodeOrthoJson = Schema.decodeUnknownEffect(Schema.fromJsonString(AreaJson))
+
+// What a served area's file is: its bytes and content type
+export interface AreaFile {
+  readonly bytes: Uint8Array
+  readonly type: string
+}
+
+// A served area's file as the answer: 404 when none, else cached a day (start.ts's default is
+// no-store, and a map asks for hundreds of tiles)
+export const tileResponse = (found: Option.Option<AreaFile>) =>
+  Option.match(found, {
+    onNone: () => new Response('Not found\n', { status: 404 }),
+    onSome: ({ bytes, type }) =>
+      new Response(new Uint8Array(bytes), {
+        headers: { 'content-type': type, 'cache-control': 'private, max-age=86400' },
+      }),
+  })
 
 // The zoom the server samples at: 9.5 m a pixel at 46° N, past the DEM's own detail at AWS
 const SAMPLE_ZOOM = 14
@@ -48,9 +73,11 @@ export class Terrain extends Context.Service<
     // The local areas (an unreadable tiles.json skipped, logged)
     readonly areas: Effect.Effect<ReadonlyArray<Dem>>
     // A file of data/terrain by its path under /terrain: none when not one of the shapes served
-    readonly file: (
-      splat: string
-    ) => Effect.Effect<Option.Option<{ readonly bytes: Uint8Array; readonly type: string }>>
+    readonly file: (splat: string) => Effect.Effect<Option.Option<AreaFile>>
+    // The areas of aerial photos (an unreadable tiles.json skipped, logged)
+    readonly photos: Effect.Effect<ReadonlyArray<Ortho>>
+    // A file of data/ortho by its path under /ortho: none when not one of the shapes served
+    readonly photo: (splat: string) => Effect.Effect<Option.Option<AreaFile>>
     // The altitude under each point, from the area holding them all, else AWS; and that DEM
     readonly elevations: (
       points: ReadonlyArray<LatLon>
@@ -62,56 +89,73 @@ export class Terrain extends Context.Service<
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem
       const http = yield* HttpClient.HttpClient
-      const root = join(yield* Config.String('DATA_DIR'), 'terrain')
+      const dataDir = yield* Config.String('DATA_DIR')
+      const root = join(dataDir, 'terrain')
 
-      const areas = Effect.gen(function* () {
-        const names = yield* fs.readDirectory(root).pipe(Effect.orElseSucceed(() => []))
-        const found = yield* Effect.forEach(
-          names.toSorted((a, b) => a.localeCompare(b)),
-          (name) =>
-            terrainFile(`${name}/tiles.json`) === null
-              ? Effect.succeed([])
-              : fs.readFileString(join(root, name, 'tiles.json')).pipe(
-                  Effect.flatMap(decodeTileJson),
-                  Effect.map((tiles): Array<Dem> => [
-                    {
-                      area: name,
-                      tiles: `/terrain/${name}/{z}/{x}/{y}.png`,
-                      minzoom: tiles.minzoom,
-                      maxzoom: tiles.maxzoom,
-                      attribution: tiles.attribution,
-                      bounds: tiles.bounds,
-                    },
-                  ]),
-                  Effect.catch((error) =>
-                    // No tiles.json is not an area (data/terrain/work, scripts)
-                    error._tag === 'PlatformError' && error.reason._tag === 'NotFound'
-                      ? Effect.succeed([])
-                      : Effect.as(
-                          Effect.logWarning(`terrain: ${name}/tiles.json unreadable`, error),
-                          []
-                        )
+      // The areas of a folder, in name order: each <area>/tiles.json its guard serves, decoded
+      const areasOf = (
+        folder: 'terrain' | 'ortho',
+        extension: 'png' | 'jpg',
+        guard: (splat: string) => unknown,
+        decode: (text: string) => Effect.Effect<AreaTiles, Schema.SchemaError>
+      ) =>
+        Effect.gen(function* () {
+          const dir = join(dataDir, folder)
+          const names = yield* fs.readDirectory(dir).pipe(Effect.orElseSucceed(() => []))
+          const found = yield* Effect.forEach(
+            names.toSorted((a, b) => a.localeCompare(b)),
+            (name) =>
+              guard(`${name}/tiles.json`) === null
+                ? Effect.succeed([])
+                : fs.readFileString(join(dir, name, 'tiles.json')).pipe(
+                    Effect.flatMap(decode),
+                    Effect.map((tiles): Array<Ortho> => [
+                      {
+                        area: name,
+                        tiles: `/${folder}/${name}/{z}/{x}/{y}.${extension}`,
+                        minzoom: tiles.minzoom,
+                        maxzoom: tiles.maxzoom,
+                        attribution: tiles.attribution,
+                        bounds: tiles.bounds,
+                      },
+                    ]),
+                    Effect.catch((error) =>
+                      // No tiles.json is not an area (data/terrain/work, scripts)
+                      error._tag === 'PlatformError' && error.reason._tag === 'NotFound'
+                        ? Effect.succeed([])
+                        : Effect.as(
+                            Effect.logWarning(`${folder}: ${name}/tiles.json unreadable`, error),
+                            []
+                          )
+                    )
                   )
-                )
-        )
-        return found.flat()
-      })
-
-      const file = (splat: string) => {
-        const served = terrainFile(splat)
-        if (served === null) return Effect.succeedNone
-        return fs.readFile(join(root, served.path)).pipe(
-          Effect.map((bytes) => Option.some({ bytes, type: served.type })),
-          Effect.catch((error) =>
-            error.reason._tag === 'NotFound'
-              ? Effect.succeedNone
-              : Effect.as(
-                  Effect.logWarning(`terrain: ${served.path} unreadable`, error),
-                  Option.none()
-                )
           )
-        )
-      }
+          return found.flat()
+        })
+
+      // A file of a folder by its path there, when its guard serves it
+      const fileOf =
+        (folder: string, guard: (splat: string) => { path: string; type: string } | null) =>
+        (splat: string) => {
+          const served = guard(splat)
+          if (served === null) return Effect.succeedNone
+          return fs.readFile(join(dataDir, folder, served.path)).pipe(
+            Effect.map((bytes) => Option.some<AreaFile>({ bytes, type: served.type })),
+            Effect.catch((error) =>
+              error.reason._tag === 'NotFound'
+                ? Effect.succeedNone
+                : Effect.as(
+                    Effect.logWarning(`${folder}: ${served.path} unreadable`, error),
+                    Option.none()
+                  )
+            )
+          )
+        }
+
+      const areas = areasOf('terrain', 'png', terrainFile, decodeTerrainJson)
+      const photos = areasOf('ortho', 'jpg', orthoFile, decodeOrthoJson)
+      const file = fileOf('terrain', terrainFile)
+      const photo = fileOf('ortho', orthoFile)
 
       const refused = (path: string, why: string) =>
         new TerrainError({ message: `tile ${path}: ${why}` })
@@ -179,7 +223,7 @@ export class Terrain extends Context.Service<
         })
       )
 
-      return Terrain.of({ areas, file, elevations })
+      return Terrain.of({ areas, file, photos, photo, elevations })
     })
   )
 }

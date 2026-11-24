@@ -58,6 +58,7 @@ layer(TestLayer, { excludeTestServices: true })('Races', (it) => {
         attribution: '© Mapzen/AWS Terrain Tiles',
       })
       expect(race.dem.area).toBeNull()
+      expect(race.ortho).toBeNull()
 
       // No data in the tiles: refused, nothing written
       noData = true
@@ -103,6 +104,16 @@ layer(TestLayer, { excludeTestServices: true })('Races', (it) => {
         )
       }
       yield* put('terrain/work/notes.txt', 'not an area')
+      // Its photos, and an area of photos too small to hold the course
+      yield* put('ortho/tar/tiles.json', {
+        ...tiles,
+        attribution: '© IGN – BD ORTHO',
+        tiles: ['/ortho/tar/{z}/{x}/{y}.jpg'],
+        maxzoom: 17,
+        encoding: undefined,
+      })
+      yield* put('ortho/brevent/tiles.json', { ...tiles, bounds: [6.8, 45.9, 6.85, 45.95] })
+      yield* put('ortho/scripts/ortho.py', 'not an area')
       const before = aws.log.length
       const races = yield* Races
       const slug = yield* races.add({ facts: facts('Local'), gpx: withoutAltitudes })
@@ -111,20 +122,43 @@ layer(TestLayer, { excludeTestServices: true })('Races', (it) => {
       expect(race.view.facts.elevation).toEqual({ source: 'dem', attribution: '© IGN' })
       expect(race.view.ele_min).toBe(2000)
       expect(race.dem).toMatchObject({ area: 'tar', tiles: '/terrain/tar/{z}/{x}/{y}.png' })
+      expect(race.ortho).toEqual({
+        area: 'tar',
+        tiles: '/ortho/tar/{z}/{x}/{y}.jpg',
+        minzoom: 8,
+        maxzoom: 17,
+        attribution: '© IGN – BD ORTHO',
+        bounds: [6.7, 45.85, 7, 46.2],
+      })
     })
   )
 
-  it.effect('serves data/terrain read-only, nothing beside it', () =>
+  it.effect('serves data/terrain and data/ortho read-only, nothing beside them', () =>
     Effect.gen(function* () {
       yield* put('terrain/paris/tiles.json', { tiles: [] })
       yield* put('terrain/paris/12/2075/1409.png', 'png')
+      yield* put('ortho/paris/tiles.json', { tiles: [] })
+      yield* put('ortho/paris/12/2075/1409.jpg', 'jpg')
+      yield* put('ortho/paris/blank.json', [])
       yield* put('secret.txt', 'health data')
       yield* put('terrain/secret.txt', 'not served either')
+      yield* put('ortho/secret.txt', 'nor this')
       const terrain = yield* Terrain
       const served = (splat: string) => Effect.map(terrain.file(splat), Option.isSome)
+      const photo = (splat: string) =>
+        Effect.map(
+          terrain.photo(splat),
+          Option.map(({ type }) => type)
+        )
       expect(yield* served('paris/tiles.json')).toBe(true)
       expect(yield* served('paris/12/2075/1409.png')).toBe(true)
       expect(yield* served('paris/12/2075/1410.png')).toBe(false)
+      expect(yield* photo('paris/tiles.json')).toEqual(Option.some('application/json'))
+      expect(yield* photo('paris/12/2075/1409.jpg')).toEqual(Option.some('image/jpeg'))
+      expect(yield* photo('paris/12/2075/1410.jpg')).toEqual(Option.none())
+      // Each folder its own files: no elevation under /ortho, no photo under /terrain
+      expect(yield* photo('paris/12/2075/1409.png')).toEqual(Option.none())
+      expect(yield* served('paris/12/2075/1409.jpg')).toBe(false)
       for (const splat of [
         '../secret.txt',
         'secret.txt',
@@ -134,8 +168,11 @@ layer(TestLayer, { excludeTestServices: true })('Races', (it) => {
         '/etc/passwd',
         'paris\\..\\..\\secret.txt',
         '..%2fsecret.txt',
+        '../terrain/paris/12/2075/1409.png',
+        'paris/blank.json',
       ]) {
         expect([splat, yield* served(splat)]).toEqual([splat, false])
+        expect([splat, Option.isSome(yield* photo(splat))]).toEqual([splat, false])
       }
     })
   )

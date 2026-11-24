@@ -34,6 +34,7 @@ import { Route as OauthAuthorizeRouteImport } from './routes/oauth/authorize.ts'
 import { Route as OauthRegisterRouteImport } from './routes/oauth/register.ts'
 import { Route as OauthRevokeRouteImport } from './routes/oauth/revoke.ts'
 import { Route as OauthTokenRouteImport } from './routes/oauth/token.ts'
+import { Route as OrthoSplatRouteImport } from './routes/ortho.$.ts'
 import { Route as RacesIndexRouteImport } from './routes/races.index.tsx'
 import { Route as RacesSlugRouteImport } from './routes/races.$slug.tsx'
 import { Route as RpcSplatRouteImport } from './routes/rpc.$.ts'
@@ -166,6 +167,11 @@ const OauthTokenRoute = OauthTokenRouteImport.update({
   path: '/oauth/token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OrthoSplatRoute = OrthoSplatRouteImport.update({
+  id: '/ortho/$',
+  path: '/ortho/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RacesIndexRoute = RacesIndexRouteImport.update({
   id: '/races/',
   path: '/races/',
@@ -222,6 +228,7 @@ export interface FileRoutesByFullPath {
   '/oauth/register': typeof OauthRegisterRoute
   '/oauth/revoke': typeof OauthRevokeRoute
   '/oauth/token': typeof OauthTokenRoute
+  '/ortho/$': typeof OrthoSplatRoute
   '/races/$slug': typeof RacesSlugRoute
   '/rpc/$': typeof RpcSplatRoute
   '/terrain/$': typeof TerrainSplatRoute
@@ -255,6 +262,7 @@ export interface FileRoutesByTo {
   '/oauth/register': typeof OauthRegisterRoute
   '/oauth/revoke': typeof OauthRevokeRoute
   '/oauth/token': typeof OauthTokenRoute
+  '/ortho/$': typeof OrthoSplatRoute
   '/races/$slug': typeof RacesSlugRoute
   '/rpc/$': typeof RpcSplatRoute
   '/terrain/$': typeof TerrainSplatRoute
@@ -289,6 +297,7 @@ export interface FileRoutesById {
   '/oauth/register': typeof OauthRegisterRoute
   '/oauth/revoke': typeof OauthRevokeRoute
   '/oauth/token': typeof OauthTokenRoute
+  '/ortho/$': typeof OrthoSplatRoute
   '/races/$slug': typeof RacesSlugRoute
   '/rpc/$': typeof RpcSplatRoute
   '/terrain/$': typeof TerrainSplatRoute
@@ -324,6 +333,7 @@ export interface FileRouteTypes {
     | '/oauth/register'
     | '/oauth/revoke'
     | '/oauth/token'
+    | '/ortho/$'
     | '/races/$slug'
     | '/rpc/$'
     | '/terrain/$'
@@ -357,6 +367,7 @@ export interface FileRouteTypes {
     | '/oauth/register'
     | '/oauth/revoke'
     | '/oauth/token'
+    | '/ortho/$'
     | '/races/$slug'
     | '/rpc/$'
     | '/terrain/$'
@@ -390,6 +401,7 @@ export interface FileRouteTypes {
     | '/oauth/register'
     | '/oauth/revoke'
     | '/oauth/token'
+    | '/ortho/$'
     | '/races/$slug'
     | '/rpc/$'
     | '/terrain/$'
@@ -424,6 +436,7 @@ export interface RootRouteChildren {
   OauthRegisterRoute: typeof OauthRegisterRoute
   OauthRevokeRoute: typeof OauthRevokeRoute
   OauthTokenRoute: typeof OauthTokenRoute
+  OrthoSplatRoute: typeof OrthoSplatRoute
   RacesSlugRoute: typeof RacesSlugRoute
   RpcSplatRoute: typeof RpcSplatRoute
   TerrainSplatRoute: typeof TerrainSplatRoute
@@ -610,6 +623,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OauthTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ortho/$': {
+      id: '/ortho/$'
+      path: '/ortho/$'
+      fullPath: '/ortho/$'
+      preLoaderRoute: typeof OrthoSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/races/': {
       id: '/races/'
       path: '/races'
@@ -680,6 +700,7 @@ const rootRouteChildren: RootRouteChildren = {
   OauthRegisterRoute: OauthRegisterRoute,
   OauthRevokeRoute: OauthRevokeRoute,
   OauthTokenRoute: OauthTokenRoute,
+  OrthoSplatRoute: OrthoSplatRoute,
   RacesSlugRoute: RacesSlugRoute,
   RpcSplatRoute: RpcSplatRoute,
   TerrainSplatRoute: TerrainSplatRoute,

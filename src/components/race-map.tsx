@@ -1,10 +1,12 @@
 import type { GeoJSONSource, MapMovementEvent } from 'maplibre-gl'
 import { useEffect, useRef, useState } from 'react'
 
-import type { Bounds, Dem } from '../races/terrarium.ts'
+import type { Bounds, Dem, Ortho } from '../races/terrarium.ts'
 
 import {
   followCamera,
+  type Ground,
+  groundOf,
   middle,
   type Mode,
   type Motion,
@@ -16,10 +18,12 @@ import {
 } from './race-scene.ts'
 
 // A race's course in 3D, on its elevation tiles (MapLibre GL, in the browser only: loaded once the
-// page is there, never during server rendering). No basemap vendor, no key: the same tiles tinted
-// by altitude over the course's own range and shaded from three directions, the route colored by
-// grade on a dark casing, its segment cuts, aid stations and cutoffs; a flight along it, an orbit
-// around it and turns of 22.5° (step by step when the visitor asks for less motion).
+// page is there, never during server rendering). No basemap vendor, no key: IGN's aerial photos of
+// the area, served by this app, draped on the relief and lightly shaded; or, at the visitor's
+// choice and wherever there are no photos, the same tiles tinted by altitude over the course's own
+// range and shaded from three directions. On either, the route colored by grade on a dark casing,
+// its segment cuts, aid stations and cutoffs; a flight along it, an orbit around it and turns of
+// 22.5° (step by step when the visitor asks for less motion).
 
 // A course point: longitude, latitude, altitude (m), metres from the start, predicted seconds
 export type TrackPoint = readonly [number, number, number, number, number | null]
@@ -34,11 +38,18 @@ type MapLibre = typeof import('maplibre-gl')
 type MapInstance = InstanceType<MapLibre['Map']>
 
 const EXAGGERATION = 1.3
+// The photos' shading: the slopes away from the sun darkened by a third at most. Enough for the
+// couloirs and ridges to read at Chamonix; at half, the photo lost an eighth of its brightness
+const PHOTO_SHADOW = 'rgba(0, 0, 0, 0.35)'
 // The tint and the shading read tiles up to z14: finer LiDAR only adds speckle
 const RELIEF_MAXZOOM = 14
 // A ↺/↻ press, and an Orbite press under reduced motion (°)
 const TURN = 22.5
 const ORBIT_STEP = 45
+// The layers of the photos, hidden on the relief
+const PHOTO_LAYERS = ['photos', 'photo-shade'] as const
+// Where the visitor's ground is remembered, per browser
+const GROUND_KEY = 'garmin.race-map.ground'
 // The visitor's hand on the map: it stops a flight or an orbit before the next frame overrides it
 const INPUTS = ['mousedown', 'touchstart', 'wheel'] as const
 // The flight: 12 s a 10 km, between 20 s and 2 min
@@ -47,6 +58,32 @@ const flightMs = (km: number) => Math.min(120_000, Math.max(20_000, km * 1200))
 // A CSS token's value on the page (MapLibre takes colors, not variables)
 const token = (element: Element, name: string, fallback: string) =>
   getComputedStyle(element).getPropertyValue(name).trim() || fallback
+
+// The ground the visitor chose last, none when never chosen or the storage is blocked (a private
+// window, site data refused)
+const storedGround = () => {
+  try {
+    return window.localStorage.getItem(GROUND_KEY)
+  } catch {
+    return null
+  }
+}
+
+// The ground chosen, remembered when the storage lets it (else for this page only)
+const storeGround = (ground: Ground) => {
+  try {
+    window.localStorage.setItem(GROUND_KEY, ground)
+  } catch {
+    // Not remembered: the map still shows it
+  }
+}
+
+const visibility = (ground: Ground): 'visible' | 'none' =>
+  ground === 'satellite' ? 'visible' : 'none'
+
+// A tile URL as MapLibre's worker takes it: absolute
+const absolute = (tiles: string) =>
+  tiles.startsWith('/') ? `${window.location.origin}${tiles}` : tiles
 
 // The index of the course point nearest a position (a few thousand points: a scan is enough)
 const nearest = (track: ReadonlyArray<TrackPoint>, lon: number, lat: number) => {
@@ -110,6 +147,7 @@ export function RaceMap({
   cuts,
   marks,
   dem,
+  ortho,
   bounds,
   hover,
   onHover,
@@ -121,6 +159,8 @@ export function RaceMap({
   readonly cuts: ReadonlyArray<number>
   readonly marks: ReadonlyArray<MapMark>
   readonly dem: Dem
+  // The area's aerial photos, none outside every area of data/ortho
+  readonly ortho: Ortho | null
   readonly hover: number | null
   readonly onHover: (index: number | null) => void
 }) {
@@ -130,10 +170,12 @@ export function RaceMap({
   hoverHandler.current = onHover
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [motion, setMotion] = useState<Motion>('still')
+  // The default on the server and the first render; the visitor's own once the map starts
+  const [ground, setGround] = useState<Ground>(() => groundOf(null, ortho !== null))
   // The next segment cut a reduced-motion flight shows
   const cut = useRef(0)
 
-  // The map, once: rebuilt only for another course or DEM
+  // The map, once: rebuilt only for another course, DEM or photos
   useEffect(() => {
     const element = container.current
     if (element === null) return
@@ -147,10 +189,11 @@ export function RaceMap({
       if (removed) return
       maplibre.setWorkerUrl(worker.default)
       const color = (name: string, fallback: string) => token(element, name, fallback)
-      const tiles = dem.tiles.startsWith('/') ? `${window.location.origin}${dem.tiles}` : dem.tiles
+      const first = groundOf(storedGround(), ortho !== null)
+      setGround(first)
       const source = {
         type: 'raster-dem' as const,
-        tiles: [tiles],
+        tiles: [absolute(dem.tiles)],
         tileSize: 256,
         encoding: 'terrarium' as const,
         minzoom: dem.minzoom,
@@ -179,6 +222,19 @@ export function RaceMap({
           sources: {
             dem: source,
             relief: { ...source, maxzoom: Math.min(dem.maxzoom, RELIEF_MAXZOOM) },
+            ...(ortho === null
+              ? {}
+              : {
+                  photos: {
+                    type: 'raster' as const,
+                    tiles: [absolute(ortho.tiles)],
+                    tileSize: 256,
+                    minzoom: ortho.minzoom,
+                    maxzoom: ortho.maxzoom,
+                    bounds: [...ortho.bounds] as [number, number, number, number],
+                    attribution: ortho.attribution,
+                  },
+                }),
             route: { type: 'geojson', data: routeOf(track) },
             cuts: { type: 'geojson', data: pointsOf(track, cuts) },
             cursor: { type: 'geojson', data: pointsOf(track, []) },
@@ -220,6 +276,35 @@ export function RaceMap({
                 'hillshade-exaggeration': 0.3,
               },
             },
+            // The photos over the tint: past their bounds, and in a tile IGN has no photo of (the
+            // Swiss corner of tar), the relief shows through
+            ...(ortho === null
+              ? []
+              : [
+                  {
+                    id: 'photos',
+                    type: 'raster' as const,
+                    source: 'photos',
+                    layout: { visibility: visibility(first) },
+                    paint: { 'raster-fade-duration': 150 },
+                  },
+                  {
+                    // A light shading on the photos, from the north-west only, its highlights none:
+                    // the slopes read without the photo going grey
+                    id: 'photo-shade',
+                    type: 'hillshade' as const,
+                    source: 'relief',
+                    layout: { visibility: visibility(first) },
+                    paint: {
+                      'hillshade-illumination-anchor': 'map' as const,
+                      'hillshade-illumination-direction': 315,
+                      'hillshade-shadow-color': PHOTO_SHADOW,
+                      'hillshade-highlight-color': 'rgba(255, 255, 255, 0)',
+                      'hillshade-accent-color': 'rgba(0, 0, 0, 0)',
+                      'hillshade-exaggeration': 0.35,
+                    },
+                  },
+                ]),
             {
               id: 'route-glow',
               type: 'line',
@@ -233,7 +318,11 @@ export function RaceMap({
               },
             },
             {
-              // The page's dark under every mark, so the glow and the ground never touch the grade colors
+              // The page's dark under every mark, so the glow and the ground never touch the grade
+              // colors. On the relief, src/styles.test.ts checks each mark at 3:1 on every ground
+              // color; the photos have no palette to check, any color under the sun, so there this
+              // casing is the whole contrast: 1.5 px of --page each side of the line, at least
+              // 3:1 against every grade color whatever the photo underneath
               id: 'route-casing',
               type: 'line',
               source: 'route',
@@ -334,7 +423,22 @@ export function RaceMap({
       created?.remove()
       map.current = null
     }
-  }, [track, cuts, marks, dem, bounds])
+  }, [track, cuts, marks, dem, ortho, bounds])
+
+  // The ground chosen, on the live map: the photos shown or hidden, nothing rebuilt
+  useEffect(() => {
+    const live = map.current
+    if (state !== 'ready' || live === null) return
+    for (const id of PHOTO_LAYERS) {
+      if (live.getLayer(id) !== undefined)
+        live.setLayoutProperty(id, 'visibility', visibility(ground))
+    }
+  }, [ground, state])
+
+  const choose = (next: Ground) => {
+    setGround(next)
+    storeGround(next)
+  }
 
   // The cursor where the profile (or the flight) points
   useEffect(() => {
@@ -406,7 +510,7 @@ export function RaceMap({
       live.off('movestart', interrupt)
     }
     // The setup's deps: a rebuilt map stops the motion (the rerun finds no map)
-  }, [motion, track, cuts, marks, dem, bounds])
+  }, [motion, track, cuts, marks, dem, ortho, bounds])
 
   // A mode's step under reduced motion: the flight's next segment cut, or the orbit's next 45°
   const step = (live: MapInstance, mode: Mode) => {
@@ -486,6 +590,27 @@ export function RaceMap({
           >
             {motion === 'orbit' ? '■ Arrêter l’orbite' : '◎ Orbite'}
           </button>
+          {ortho === null ? null : (
+            <div className="hud-toggle" role="group" aria-label="Fond de carte">
+              {(
+                [
+                  ['satellite', 'Satellite'],
+                  ['relief', 'Relief'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className="hud-button"
+                  aria-pressed={ground === value}
+                  onClick={() => choose(value)}
+                  disabled={state !== 'ready'}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <span className="hud-legend" aria-hidden="true">
             <i style={{ background: 'var(--series-1)' }} /> descente
             <i style={{ background: 'var(--series-3)' }} /> plat

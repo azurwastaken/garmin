@@ -192,16 +192,18 @@ export const web = {
 
   // A race: get_race's view, its course point by point (every 25 m: lon, lat, altitude, metres
   // from the start, predicted seconds or null) for the map and the profile, the elevation tiles
-  // to draw it on, and the course's box for the map's first view
+  // to draw it on and the aerial photos to drape on them (or none), and the course's box for the
+  // map's first view
   race: base.input(standard(Schema.Struct({ slug: SlugSchema }))).handler(({ input, context }) =>
     context.run(
       Effect.map(
         Races.use((races) => races.get(input.slug)),
         Option.match({
           onNone: () => null,
-          onSome: ({ view, course, dem, times }) => ({
+          onSome: ({ view, course, dem, ortho, times }) => ({
             view,
             dem,
+            ortho,
             bounds: boundsOf(course),
             track: course.map(
               (p, i) =>

@@ -3,7 +3,8 @@ import type { Bounds } from '../races/terrarium.ts'
 import type { TrackPoint } from './race-map.tsx'
 
 // The race map's ground and camera, without a map: the relief's colors and their stops over the
-// course's altitudes, the flight's and the orbit's cameras, and what a press of their buttons does.
+// course's altitudes, which ground is drawn, the flight's and the orbit's cameras, and what a press
+// of their buttons does.
 
 export type Center = readonly [lon: number, lat: number]
 
@@ -20,6 +21,15 @@ export const SHADING = {
   shade: ['--relief-shade', '#030a1c'],
   light: ['--relief-light', '#2a4852'],
 } as const
+
+// The ground under the course: the aerial photos draped on the relief, or the relief tinted by
+// altitude and shaded
+export type Ground = 'satellite' | 'relief'
+
+// The ground drawn: the visitor's last choice (as stored, anything), the photos by default; the
+// relief when the course has no photos
+export const groundOf = (stored: string | null, photos: boolean): Ground =>
+  photos && stored !== 'relief' ? 'satellite' : 'relief'
 
 // A flat course still counts 20 m of relief (a 30 m ramp)
 const MIN_SPAN = 20

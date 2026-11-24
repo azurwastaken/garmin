@@ -3,7 +3,8 @@ import { inflateSync } from 'node:zlib'
 import { ELEVATION_RANGE, type LatLon } from './gpx.ts'
 
 // Elevation tiles, without I/O: terrarium-encoded PNGs (elevation = R·256 + G + B/256 − 32768),
-// the tile under a point, the DEM for a race, and the files data/terrain serves.
+// the tile under a point, the DEM and the aerial photos for a race, and the files data/terrain and
+// data/ortho serve.
 
 const SIZE = 256
 
@@ -164,26 +165,51 @@ export const boundsOf = (points: ReadonlyArray<LatLon>): Bounds =>
     [180, 90, -180, -90]
   )
 
+// Whether an area's bounds hold the race's box
+const holds = (bounds: Bounds | null, bbox: Bounds) =>
+  bounds !== null &&
+  bounds[0] <= bbox[0] &&
+  bounds[1] <= bbox[1] &&
+  bounds[2] >= bbox[2] &&
+  bounds[3] >= bbox[3]
+
 // The first local area whose bounds hold the race's, else AWS
 export const demFor = (areas: ReadonlyArray<Dem>, bbox: Bounds) =>
-  areas.find(
-    ({ bounds }) =>
-      bounds !== null &&
-      bounds[0] <= bbox[0] &&
-      bounds[1] <= bbox[1] &&
-      bounds[2] >= bbox[2] &&
-      bounds[3] >= bbox[3]
-  ) ?? AWS
+  areas.find(({ bounds }) => holds(bounds, bbox)) ?? AWS
 
-// The only files served from data/terrain: <area>/tiles.json and <area>/<z>/<x>/<y>.png. Anything
-// else (.., an encoded dot or slash, a backslash, an absolute path) is null.
-const TERRAIN_FILE = /^([a-z0-9-]{1,32})\/(?:tiles\.json|(\d{1,2})\/(\d{1,7})\/(\d{1,7})\.png)$/u
+// A raster of aerial photos as MapLibre takes it: an area of data/ortho, JPEG tiles
+export interface Ortho {
+  readonly area: string
+  readonly tiles: string
+  readonly minzoom: number
+  readonly maxzoom: number
+  readonly attribution: string
+  readonly bounds: Bounds
+}
 
-export const terrainFile = (splat: string) => {
-  const match = TERRAIN_FILE.exec(splat)
-  if (match === null) return null
-  return {
-    path: splat,
-    type: match[2] === undefined ? ('application/json' as const) : ('image/png' as const),
+// The first area of photos whose bounds hold the race's, else none: no vendor's photos instead
+export const orthoFor = (areas: ReadonlyArray<Ortho>, bbox: Bounds) =>
+  areas.find(({ bounds }) => holds(bounds, bbox)) ?? null
+
+// The only files served from an area folder: <area>/tiles.json and <area>/<z>/<x>/<y>.<extension>.
+// Anything else (.., an encoded dot or slash, a backslash, an absolute path, another extension) is
+// null.
+const areaFile = <Type extends string>(extension: 'png' | 'jpg', type: Type) => {
+  const pattern = new RegExp(
+    String.raw`^([a-z0-9-]{1,32})\/(?:tiles\.json|(\d{1,2})\/(\d{1,7})\/(\d{1,7})\.${extension})$`,
+    'u'
+  )
+  return (splat: string) => {
+    const match = pattern.exec(splat)
+    if (match === null) return null
+    return {
+      path: splat,
+      type: match[2] === undefined ? ('application/json' as const) : type,
+    }
   }
 }
+
+// data/terrain's: elevation PNGs
+export const terrainFile = areaFile('png', 'image/png')
+// data/ortho's: aerial photo JPEGs
+export const orthoFile = areaFile('jpg', 'image/jpeg')
