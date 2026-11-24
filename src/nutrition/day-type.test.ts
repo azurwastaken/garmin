@@ -161,6 +161,9 @@ describe('dayType', () => {
       [strides, 'easy'],
       ['?× [interval 1:00]', 'quality'],
       ['6× [interval 400 m, recovery 1:30]', 'quality'],
+      ['2× [interval 200 m]', 'quality'],
+      ['2× [interval 199 m]', 'easy'],
+      ['2× [interval 0:59]', 'easy'],
       [
         `${strides}\n6× [interval 3:00 pace 5:35/km-5:45/km, recovery 1:30]`,
         // Every group read, not the first
@@ -182,6 +185,10 @@ describe('dayType', () => {
 
   it('makes a long day of 75 minutes or 15 km of running, planned or done', () => {
     expect(plannedDay({ minutes: 84 })).toBe('long')
+    expect(plannedDay({ minutes: 75 })).toBe('long')
+    expect(plannedDay({ minutes: 74 })).toBe('easy')
+    expect(plannedDay({ minutes: 40, km: 15 })).toBe('long')
+    expect(plannedDay({ minutes: 40, km: 14.9 })).toBe('easy')
     expect(plannedDay({ minutes: 70, km: 16 })).toBe('long')
     expect(plannedDay({ sport: 'cycling', minutes: 120 })).toBe('easy')
     expect(dayType([], [planned({ minutes: 40 }), planned({ minutes: 40 })], FLOOR).type).toBe(
@@ -198,6 +205,8 @@ describe('dayType', () => {
     const cases: ReadonlyArray<readonly [DoneSession, string]> = [
       [done({ sport: 'treadmill_running', minutes: 35, km: 5.5, z45_minutes: 22 }), 'quality'],
       [done({ minutes: 31, km: 5.4, z45_minutes: 14 }), 'easy'],
+      [done({ z45_minutes: 20 }), 'quality'],
+      [done({ z45_minutes: 19.9 }), 'easy'],
       [done({ sport: 'cycling', minutes: 60, km: 25, z45_minutes: 22 }), 'quality'],
       [done({ sport: 'cycling', minutes: 120, km: 50, z45_minutes: 5 }), 'easy'],
     ]

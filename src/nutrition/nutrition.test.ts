@@ -82,7 +82,12 @@ layer(TestLayer, { excludeTestServices: true })('Nutrition', (it) => {
         yield* Ingest.use((ingest) => ingest.run())
 
         const view = yield* Nutrition.use((nutrition) => nutrition.view(90))
-        expect(view.day).toMatchObject({ type: 'quality', from: 'planned' })
+        // The floor is $[3]: 140 or easy would be another index
+        expect(view.day).toEqual({
+          type: 'quality',
+          from: 'planned',
+          reason: 'cible FC 150-160 au-dessus de 155 (zone 4)',
+        })
         expect(view.target.kcal).toBe(2850)
         expect(view.days).toHaveLength(90)
         // 71.5 on the deficit's first day, 120 days (17 weeks and 1 day) of 0.3 to 0.5 kg a week
