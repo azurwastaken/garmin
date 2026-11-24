@@ -65,7 +65,7 @@ describe('peakWeight', () => {
         fastest: { weeks: 12.9, by: addDays(TODAY, 91) },
         // 8.89 kg at 0.3 kg a week: 29.6 weeks, 207.4 days
         slowest: { weeks: 29.6, by: addDays(TODAY, 208) },
-        before_deficit_end: false,
+        deficit: 'after',
       },
       target: {
         kind: 'dated',
@@ -73,7 +73,7 @@ describe('peakWeight', () => {
         gap_kg: { min: 5, max: 5 },
         fastest: { weeks: 10, by: addDays(TODAY, 70) },
         slowest: { weeks: 16.7, by: addDays(TODAY, 117) },
-        before_deficit_end: false,
+        deficit: 'after',
       },
     })
   })
@@ -149,8 +149,8 @@ describe('peakWeight', () => {
     ).toMatchObject({ kind: 'dated', fastest: { weeks: 10 }, slowest: null })
   })
 
-  it('places the fastest date in the deficit on its last day, after it a day later, and nowhere outside one', () => {
-    // 1 kg at 0.5 kg a week: 14 days
+  it('places both dates, only the fastest or neither in the deficit, and nowhere outside one', () => {
+    // 1 kg: at 0.5 kg a week 14 days, at 0.3 kg a week 23.3 days, 24 rounded up
     const by = (phase: Parameters<typeof peakWeight>[0]['phase']) =>
       targetOf(
         peak(steady(3), {
@@ -158,14 +158,15 @@ describe('peakWeight', () => {
           phase,
         })
       )
-    expect(by({ kind: 'deficit', to: '2026-12-08' })).toMatchObject({
+    expect(by({ kind: 'deficit', to: '2026-12-18' })).toMatchObject({
       fastest: { weeks: 2, by: '2026-12-08' },
-      before_deficit_end: true,
+      slowest: { weeks: 3.3, by: '2026-12-18' },
+      deficit: 'within',
     })
-    expect(by({ kind: 'deficit', to: '2026-12-07' })).toMatchObject({ before_deficit_end: false })
-    expect(by({ kind: 'maintenance', to: '2027-04-04' })).toMatchObject({
-      before_deficit_end: null,
-    })
-    expect(by(null)).toMatchObject({ before_deficit_end: null })
+    expect(by({ kind: 'deficit', to: '2026-12-17' })).toMatchObject({ deficit: 'fastest-only' })
+    expect(by({ kind: 'deficit', to: '2026-12-08' })).toMatchObject({ deficit: 'fastest-only' })
+    expect(by({ kind: 'deficit', to: '2026-12-07' })).toMatchObject({ deficit: 'after' })
+    expect(by({ kind: 'maintenance', to: '2027-04-04' })).toMatchObject({ deficit: null })
+    expect(by(null)).toMatchObject({ deficit: null })
   })
 })

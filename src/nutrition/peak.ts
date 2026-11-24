@@ -23,6 +23,10 @@ interface Range {
   readonly max: number
 }
 
+// within: both dates before the deficit ends; fastest-only: only the fastest (or no slowest
+// date at all); after: even the fastest comes after it
+export type DeficitFit = 'within' | 'fastest-only' | 'after'
+
 export type Goal = { readonly kg: Range; readonly gap_kg: Range } &
   // The weight is inside the range or under it
   (
@@ -35,8 +39,8 @@ export type Goal = { readonly kg: Range; readonly gap_kg: Range } &
         readonly fastest: { readonly weeks: number; readonly by: string }
         // At its slowest, to the far end; null when its slowest loss is 0
         readonly slowest: { readonly weeks: number; readonly by: string } | null
-        // The fastest date falls in the current deficit phase; null outside a deficit phase
-        readonly before_deficit_end: boolean | null
+        // Where the dates fall against the current deficit phase's end; null outside one
+        readonly deficit: DeficitFit | null
       }
   )
 
@@ -78,6 +82,12 @@ type Loss = NutritionPlan['loss_kg_per_week']
 // never adds a day)
 const daysFor = (weeks: number) => Math.ceil(Number((weeks * 7).toFixed(6)))
 
+// Where a goal's fastest and slowest dates fall against the deficit's last day
+const deficitFit = (fastest: string, slowest: string | null, end: string): DeficitFit => {
+  if (fastest > end) return 'after'
+  return slowest !== null && slowest <= end ? 'within' : 'fastest-only'
+}
+
 // How far `weight` is from a range and when the plan's pace gets there, from today
 const goalOf = (
   kg: Range,
@@ -97,13 +107,15 @@ const goalOf = (
     return { weeks: round(weeks, 1) ?? 0, by: addDays(today, daysFor(weeks)) }
   }
   const fastest = at(gap.min, loss.max)
+  const slowest = loss.min === 0 ? null : at(gap.max, loss.min)
   return {
     kind: 'dated',
     kg,
     gap_kg: gap,
     fastest,
-    slowest: loss.min === 0 ? null : at(gap.max, loss.min),
-    before_deficit_end: phase?.kind === 'deficit' ? fastest.by <= phase.to : null,
+    slowest,
+    deficit:
+      phase?.kind === 'deficit' ? deficitFit(fastest.by, slowest?.by ?? null, phase.to) : null,
   }
 }
 
