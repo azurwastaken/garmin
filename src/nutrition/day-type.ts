@@ -119,7 +119,8 @@ const QUALITY_WORDS = /tempo|seuil|threshold|fractionn|vma|intervalles|fartlek|c
 const isRun = (sport: string | null) => sport !== null && /running/u.test(sport)
 const isStrength = (sport: string | null) => sport === 'strength_training'
 
-// The day's runs together, when they make a long day: why, else null
+// The day's runs together, when they make a long day: why (an unknown duration or distance counts
+// as none, and is not named), else null
 const longRuns = (
   sessions: ReadonlyArray<{
     readonly sport: string | null
@@ -130,9 +131,12 @@ const longRuns = (
   const runs = sessions.filter((session) => isRun(session.sport))
   const minutes = runs.reduce((sum, run) => sum + (run.minutes ?? 0), 0)
   const km = runs.reduce((sum, run) => sum + (run.km ?? 0), 0)
-  return minutes >= LONG_MINUTES || km >= LONG_KM
-    ? `${Math.round(minutes)} min et ${km.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} km de course`
-    : null
+  if (minutes < LONG_MINUTES && km < LONG_KM) return null
+  const known = [
+    minutes > 0 ? `${Math.round(minutes)} min` : null,
+    km > 0 ? `${km.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} km` : null,
+  ]
+  return `${known.filter((part) => part !== null).join(' et ')} de course`
 }
 
 // A step that makes the session a quality one: why, else null. A repeated HR target is judged by

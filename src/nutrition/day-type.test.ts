@@ -199,6 +199,16 @@ describe('dayType', () => {
     expect(dayType([], [planned({ minutes: 40 }), planned({ minutes: 40 })], FLOOR).type).toBe(
       'long'
     )
+    // An unknown duration or distance is not named
+    expect(dayType([], [planned({ minutes: 90 })], FLOOR)).toEqual({
+      type: 'long',
+      from: 'planned',
+      reason: '90 min de course prévus',
+    })
+    expect(dayType([], [planned({ minutes: null, km: 16 })], FLOOR).reason).toBe(
+      '16 km de course prévus'
+    )
+    expect(dayType([done({ minutes: 80, km: null })], [], FLOOR).reason).toBe('80 min de course')
     expect(dayType([done({ minutes: 122, km: 21.4, z45_minutes: 114 })], [], FLOOR)).toEqual({
       type: 'long',
       from: 'done',
