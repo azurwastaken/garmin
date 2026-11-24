@@ -164,6 +164,8 @@ describe('dayType', () => {
       ['2× [interval 200 m]', 'quality'],
       ['2× [interval 199 m]', 'easy'],
       ['2× [interval 0:59]', 'easy'],
+      // Under a minute, but at a pace target
+      ['8× [interval 0:30 pace 3:30/km-3:40/km, recovery 1:00]', 'quality'],
       [
         `${strides}\n6× [interval 3:00 pace 5:35/km-5:45/km, recovery 1:30]`,
         // Every group read, not the first

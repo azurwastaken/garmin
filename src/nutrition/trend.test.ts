@@ -122,6 +122,11 @@ describe('trendOf', () => {
       [-30, -27, -6, 0].map((offset, index) => row(addDays(today, offset), 71 - index * 0.3))
     )
     expect(trendOf(three, today, '2026-09-01')).toMatchObject({ kind: 'too-few', weigh_ins: 3 })
+    // One more in the window: measured
+    const four = dailyWeighIns(
+      [-30, -27, -24, -6, 0].map((offset, index) => row(addDays(today, offset), 71 - index * 0.3))
+    )
+    expect(trendOf(four, today, '2026-09-01')).toMatchObject({ kind: 'measured', weigh_ins: 4 })
   })
 })
 
