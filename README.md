@@ -23,7 +23,7 @@ it and write workouts to your watch.
 | 🔄  | **Syncs Garmin Connect by itself.** Logs in like the mobile app (SSO + MFA), keeps only its tokens, and pulls activities, sleep, HRV, readiness, weigh-ins and the calendar every 3 hours. The whole history on demand.                                                                           |
 | 📊  | **A web app to look at it.** Today first: the night against your own 28-day normal (green, orange, red, and why), the planned workout, the day's planned burn, your notes. Then stats, runs, every activity with its route and its curves, sleep night by night. Plain SVG charts, on a dark HUD. |
 | ⚖️  | **Withings weigh-ins too.** Connect a Withings scale once (OAuth): its weight, fat, muscle, water, bone mass and visceral fat land in the same `body` table every 3 hours, on a loop of their own.                                                                                                |
-| 🤖  | **An MCP for Claude.** 24 tools: list and compare runs, a morning readiness check, training load, the planned workouts, your notes, the pains pinned on the body map, your races and their plans, the nutrition plan and the weight trend, and read-only SQL on everything.                       |
+| 🤖  | **An MCP for Claude.** 25 tools: list and compare runs, a morning readiness check, sleep advice, training load, the planned workouts, your notes, the pains pinned on the body map, your races and their plans, the nutrition plan and the weight trend, and read-only SQL on everything.         |
 | 🏃  | **Workouts on the watch.** Claude creates, schedules, moves and deletes structured workouts: paces like `"6'05/km"`, HR in bpm, repeat groups, strength circuits from Garmin's catalog. Every write has a dry run.                                                                                |
 | 🧩  | **One API, three faces.** One [oRPC](https://orpc.dev) router serves the MCP (`/mcp`), OpenAPI (`/api`) and a typed RPC client (`/rpc`).                                                                                                                                                          |
 | 🫀  | **A 3D body map.** Click a 3D anatomical model (lower body and trunk) exactly where it hurts: the pain goes to your journal with its structure, and Claude reads it back (`body_history`) to triage it.                                                                                           |
@@ -113,12 +113,18 @@ apps you allowed and revokes any of them. You can also pass the app's password a
 token: `--header "Authorization: Bearer <password>"`.
 
 <details>
-<summary><b>The 24 tools</b></summary>
+<summary><b>The 25 tools</b></summary>
 
 **Your data (read-only)**
 
 - `list_activities`, `get_activity` (laps, zones, km splits), `compare_runs`.
 - `daily_readiness`, with 28-day baselines.
+- `sleep_insights`: what your own nights say, over 30, 90 (default) or 365 nights or all of
+  them. Recovery (score, HRV, resting HR, body battery, readiness) by the time you fell asleep
+  and by how long you slept, with n and a 95 % interval, nothing under 5 nights. The window it
+  points to: up at your weekday wake time, asleep the sleep where the score levels off before it.
+  The regularity and the weekend's shift, the 7-night debt, tonight's target, and the nights your
+  notes tag (supplements, alcohol). Associations, never causes.
 - `weekly_load`: acute and chronic load.
 - `planned_workouts`.
 - `sync_status`: the Garmin session, the last syncs, how fresh the data is.
@@ -396,6 +402,9 @@ src/
 - `/sleep`: over 30, 90 or 365 nights, or all of them.
   - The last night.
   - The period against the one before.
+  - Analysis and advice, from 90 nights at least: the window to aim for, tonight's target and the
+    week's debt, the score by bedtime (a chart and its table) and by duration, the regularity, and
+    the nights your journal tags.
   - The stages and the schedule night by night.
   - HRV against its baseline, and body battery.
 - `/races`, `/races/$slug`: the races you prepare, a GPX upload, then one race:

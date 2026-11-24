@@ -9,13 +9,24 @@ import {
   StackedColumns,
   shortDay,
 } from '#src/components/charts.tsx'
-import { clock, dayLabel, fmt, hours, longDay } from '#src/components/format.ts'
+import { clock, dayLabel, fmt, hours, longDay, numericDay } from '#src/components/format.ts'
 import { STAGES, stageParts } from '#src/components/parts.ts'
+import type {
+  BedtimeBucket,
+  DurationBucket,
+  Measured,
+  Plan,
+  Regularity,
+  SleepInsights,
+  Spread,
+  Tags,
+} from '#src/sleep-insights.ts'
 import type { SleepAverages, SleepNight } from '#src/stats.ts'
 
 // Sleep: the last night in detail (its stages, its HRV against Garmin's baseline), the period's
-// averages against the period before, the stages and the schedule night by night, the score, HRV,
-// resting HR and body battery at wake time
+// averages against the period before, what the nights say (the window, tonight, recovery by
+// bedtime and by duration, regularity, the tagged nights), the stages and the schedule night by
+// night, the score, HRV, resting HR and body battery at wake time
 type Period = (typeof SLEEP_PERIODS)[number]
 
 export const Route = createFileRoute('/sleep')({
@@ -200,6 +211,370 @@ function Averages({
   )
 }
 
+// A mean ± its 95 % interval, or a dash under 5 nights
+function MeasuredCell({ value }: { readonly value: Measured }) {
+  if (value.kind === 'few') return <td className="num muted">–</td>
+  return (
+    <td className="num" style={{ whiteSpace: 'nowrap' }}>
+      {fmt(value.mean, 1)} <small className="muted">± {fmt(value.ci95, 1)}</small>
+    </td>
+  )
+}
+
+// Each bucket's nights and recovery, a dash where there are under 5 nights
+function BucketTable({
+  rows,
+  label,
+  mark,
+}: {
+  readonly rows: ReadonlyArray<BedtimeBucket | DurationBucket>
+  readonly label: string
+  // The row to flag (the plateau), by its label
+  readonly mark?: string
+}) {
+  return (
+    <div className="table-wrap">
+      <table aria-label={label}>
+        <thead>
+          <tr>
+            <th>Tranche</th>
+            <th className="num">Nuits</th>
+            <th className="num">Score</th>
+            <th className="num">HRV</th>
+            <th className="num">FC repos</th>
+            <th className="num">Body battery</th>
+            <th className="num">Readiness</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <td>
+                {row.label}
+                {row.label === mark ? <b> · plateau</b> : null}
+              </td>
+              <td className="num">
+                {row.nights}
+                {row.nights > 0 && row.recovery.score.kind === 'few' ? (
+                  <small className="muted"> trop peu</small>
+                ) : null}
+              </td>
+              <MeasuredCell value={row.recovery.score} />
+              <MeasuredCell value={row.recovery.hrv} />
+              <MeasuredCell value={row.recovery.resting_hr} />
+              <MeasuredCell value={row.recovery.body_battery} />
+              <MeasuredCell value={row.recovery.readiness} />
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// The window, big, and why
+function WindowCard({ plan }: { readonly plan: Plan }) {
+  if (plan.kind === 'too-few') return <p className="note muted">{plan.reason}</p>
+  const { window } = plan
+  return (
+    <>
+      <div className="label">Fenêtre conseillée</div>
+      <div className="hero">
+        <span>
+          {clock(window.bed_min)} <small>endormi</small>
+        </span>{' '}
+        <span>
+          {clock(window.wake_min)} <small>levé</small>
+        </span>
+      </div>
+      <p className="note">{window.sentence}</p>
+    </>
+  )
+}
+
+// Signed: a deficit, or a surplus after a minus sign
+const signedHours = (seconds: number) => (seconds < 0 ? `−${hours(-seconds)}` : hours(seconds))
+
+// Tonight's target, the week's debt and the night's target
+function TonightFacts({ plan }: { readonly plan: Plan }) {
+  if (plan.kind === 'too-few') return null
+  const { tonight, debt } = plan
+  return (
+    <>
+      <div className="facts">
+        <div>
+          <div className="label">Ce soir, endormi à</div>
+          <div className="value">
+            {clock(tonight.bed_min)}
+            {tonight.earlier_min > 0 ? <small>{tonight.earlier_min} min plus tôt</small> : null}
+          </div>
+        </div>
+        <div>
+          <div className="label">Dette, 7 dernières nuits</div>
+          <div className="value">
+            {signedHours(debt.debt_s)}
+            <small>sur {debt.nights} nuits</small>
+          </div>
+        </div>
+        <div>
+          <div className="label">Sommeil visé</div>
+          <div className="value">{hours(debt.target_s)}</div>
+        </div>
+      </div>
+      <p className="note">{tonight.sentence}</p>
+    </>
+  )
+}
+
+// "± 42 min", or how many nights there are under 5
+const spreadText = (spread: Spread) =>
+  spread.kind === 'few' ? `${spread.nights} nuits, trop peu` : `± ${spread.minutes} min`
+
+// The spreads, the weekend's shift and each evening of the week
+function RegularityTiles({
+  regularity,
+  nights,
+}: {
+  readonly regularity: Regularity
+  readonly nights: number
+}) {
+  const jetlag = regularity.social_jetlag
+  return (
+    <>
+      <div className="grid cols-3">
+        <div className="card tile">
+          <div className="label">Heure d'endormissement</div>
+          <div className="value">{spreadText(regularity.bed_sd)}</div>
+          <div className="delta">écart type sur les {nights} nuits de l'analyse</div>
+        </div>
+        <div className="card tile">
+          <div className="label">Heure de réveil</div>
+          <div className="value">{spreadText(regularity.wake_sd)}</div>
+          <div className="delta">écart type sur les {nights} nuits de l'analyse</div>
+        </div>
+        <div className="card tile">
+          <div className="label">Décalage du week-end</div>
+          <div className="value">
+            {jetlag.kind === 'few'
+              ? '–'
+              : `${jetlag.minutes < 0 ? '−' : '+'}${hours(Math.abs(jetlag.minutes) * 60)}`}
+          </div>
+          <div className="delta">
+            {jetlag.kind === 'few'
+              ? `trop peu de nuits (${jetlag.weekend} vendredis et samedis, ${jetlag.weekday} autres)`
+              : `milieu de nuit des vendredis et samedis (${jetlag.weekend}) contre les autres (${jetlag.weekday})`}
+          </div>
+        </div>
+      </div>
+      <div className="card" style={{ marginTop: 14 }}>
+        <div className="table-wrap">
+          <table aria-label="Nuits par soir de la semaine">
+            <thead>
+              <tr>
+                <th>Nuit du</th>
+                <th className="num">Nuits</th>
+                <th className="num">Endormi (médiane)</th>
+                <th className="num">Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {regularity.weekdays.map((row) => (
+                <tr key={row.evening}>
+                  <td>{row.label}</td>
+                  <td className="num">{row.nights}</td>
+                  <td className="num">{row.bed_min === null ? '–' : clock(row.bed_min)}</td>
+                  <MeasuredCell value={row.score} />
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  )
+}
+
+const TAG_LABEL = { supplements: 'compléments', alcohol: 'alcool' } as const
+
+// The tagged notes beside their night, and the supplements' before and after
+function TaggedNights({ tags }: { readonly tags: Tags }) {
+  const since = tags.supplements
+  return (
+    <>
+      {tags.nights.length === 0 ? (
+        <p className="note muted">
+          Aucune note de compléments ou d'alcool : le journal (log_note) les met ici, chacune à côté
+          de la nuit qui la suit.
+        </p>
+      ) : (
+        <div className="table-wrap">
+          <table aria-label="Nuits notées dans le journal">
+            <thead>
+              <tr>
+                <th>Nuit du</th>
+                <th>Note</th>
+                <th className="num">Score</th>
+                <th className="num">HRV</th>
+                <th className="num">FC repos</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tags.nights.map((tagged) => (
+                <tr key={`${tagged.note_day}${tagged.text}`}>
+                  <td>{numericDay(tagged.night)}</td>
+                  <td>
+                    <b>{tagged.tags.map((tag) => TAG_LABEL[tag]).join(', ')}</b> · {tagged.text}
+                  </td>
+                  <td className="num">{fmt(tagged.sleep_score)}</td>
+                  <td className="num">{fmt(tagged.hrv)}</td>
+                  <td className="num">{fmt(tagged.resting_hr)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {since === null ? null : since.kind === 'too-few' ? (
+        <p className="note">
+          Compléments depuis la nuit du {numericDay(since.first_night)} : pas encore assez de nuits
+          ({since.after} / {since.needed} après, {since.before} / {since.needed} avant).
+        </p>
+      ) : (
+        <div className="table-wrap">
+          <table
+            aria-label={`Compléments : les nuits depuis le ${numericDay(since.first_night)} contre les 28 jours d'avant`}
+          >
+            <thead>
+              <tr>
+                <th>Compléments</th>
+                <th className="num">Nuits</th>
+                <th className="num">Score</th>
+                <th className="num">HRV</th>
+                <th className="num">FC repos</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(
+                [
+                  ['28 jours avant', since.before],
+                  [`depuis le ${numericDay(since.first_night)}`, since.after],
+                ] as const
+              ).map(([label, side]) => (
+                <tr key={label}>
+                  <td>{label}</td>
+                  <td className="num">{side.nights}</td>
+                  <MeasuredCell value={side.score} />
+                  <MeasuredCell value={side.hrv} />
+                  <MeasuredCell value={side.resting_hr} />
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  )
+}
+
+// The score by bedtime: a column per bucket of 5 nights or more, the chart's summary as its label
+const bedtimeSummary = (buckets: ReadonlyArray<BedtimeBucket>) => {
+  const measured = buckets.flatMap((bucket) =>
+    bucket.recovery.score.kind === 'measured'
+      ? [`${bucket.label} ${fmt(bucket.recovery.score.mean, 1)} (${bucket.nights} nuits)`]
+      : []
+  )
+  const few = buckets.filter((b) => b.nights > 0 && b.recovery.score.kind === 'few')
+  return `Score de sommeil moyen selon l'heure d'endormissement : ${measured.join(', ') || 'aucune tranche de 5 nuits'}${few.length === 0 ? '' : ` ; trop peu de nuits ${few.map((b) => b.label).join(', ')}`}`
+}
+
+// What the nights say: the window, tonight, recovery by bedtime and duration, regularity, the
+// tagged nights
+function Insights({
+  insights,
+  floored,
+}: {
+  readonly insights: SleepInsights
+  readonly floored: boolean
+}) {
+  const columns = insights.bedtime.flatMap((bucket) =>
+    bucket.recovery.score.kind === 'measured'
+      ? [
+          {
+            key: bucket.label,
+            label: `${bucket.label} · ${bucket.nights} nuits`,
+            score: bucket.recovery.score.mean,
+          },
+        ]
+      : []
+  )
+  const plateau = insights.plan.kind === 'plan' ? insights.plan.window.plateau.label : undefined
+  return (
+    <>
+      <section className="card">
+        <h2>Analyse & conseils</h2>
+        <p className="sub">
+          Sur les {insights.nights} nuits mesurées depuis le {numericDay(insights.from)}
+          {floored ? ' (90 nuits au moins, même sur la vue 30 nuits)' : ''} · des associations, pas
+          des causes
+        </p>
+        <WindowCard plan={insights.plan} />
+        <TonightFacts plan={insights.plan} />
+      </section>
+
+      <section className="card">
+        <h2>Score selon l'heure d'endormissement</h2>
+        <p className="sub">Moyenne des tranches de 5 nuits ou plus · ± l'intervalle à 95 %</p>
+        {columns.length === 0 ? null : (
+          <StackedColumns
+            rows={columns}
+            series={[
+              {
+                key: 'score',
+                label: 'Score moyen',
+                color: 'var(--series-1)',
+                value: (column) => column.score,
+              },
+            ]}
+            x={(column) => column.key}
+            label={(column) => column.label}
+            tick={(column) => column.key}
+            unit="/ 100"
+            title={bedtimeSummary(insights.bedtime)}
+            height={180}
+          />
+        )}
+        <BucketTable rows={insights.bedtime} label="Récupération selon l'heure d'endormissement" />
+      </section>
+
+      <section className="card">
+        <h2>Score selon la durée de sommeil</h2>
+        <p className="sub">
+          Le plateau : au-delà, dormir plus n'est plus associé à un meilleur score
+        </p>
+        <BucketTable
+          rows={insights.duration}
+          label="Récupération selon la durée de sommeil"
+          mark={plateau}
+        />
+      </section>
+
+      <section>
+        <h2>Régularité</h2>
+        <p className="sub">Les vendredis et samedis comptés à part</p>
+        <RegularityTiles regularity={insights.regularity} nights={insights.nights} />
+      </section>
+
+      <section className="card">
+        <h2>Nuits notées</h2>
+        <p className="sub">
+          Une note du jour J compte pour la nuit qui suit, finie le matin de J+1
+        </p>
+        <TaggedNights tags={insights.tags} />
+      </section>
+    </>
+  )
+}
+
 function Sleep() {
   const view = Route.useLoaderData()
   const days = Route.useSearch().days ?? 30
@@ -338,6 +713,8 @@ function Sleep() {
         )}
         <Averages now={view.averages} before={view.previous} />
       </section>
+
+      <Insights insights={view.insights} floored={view.days < 90} />
 
       <section className="card">
         <h2>Phases {weekly ? 'par semaine (moyenne par nuit)' : 'par nuit'} (h)</h2>

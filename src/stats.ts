@@ -6,9 +6,17 @@ import { addDays, daysBetween, earlierDay, parisToday } from './days.ts'
 import { Database, type DatabaseError } from './db.ts'
 import { namesOf } from './journal/history.ts'
 import { mean, present, round } from './numbers.ts'
-import { Nutrition } from './nutrition/nutrition.ts'
+import { dayType } from './nutrition/day-type.ts'
+import { Nutrition, sessionsOn } from './nutrition/nutrition.ts'
 import { decode, type Point } from './polyline.ts'
 import { journal } from './schema.ts'
+import {
+  firstDayRead,
+  insightsOf,
+  type Note,
+  type SleepInsights,
+  sleptOnly,
+} from './sleep-insights.ts'
 import { type Burn, plannedBurn, type Reading, verdict, type Verdict } from './today.ts'
 import { decoupling, kmSplits, type SamplePoint, type Split } from './tools.ts'
 
@@ -279,6 +287,8 @@ export interface SleepNight {
   readonly spo2_avg: number | null
   readonly body_battery_charged: number | null
   readonly body_battery_wake: number | null
+  // The morning's training readiness, after this night
+  readonly readiness: number | null
 }
 
 export interface SleepAverages {
@@ -308,7 +318,12 @@ export interface SleepView {
   readonly nights: ReadonlyArray<SleepNight>
   readonly averages: SleepAverages
   readonly previous: SleepAverages
+  // Over INSIGHT_MIN_DAYS nights at least (sleep-insights.ts)
+  readonly insights: SleepInsights
 }
+
+// The page's analysis reads 90 nights at least: 30 make buckets of 5 nights rare
+const INSIGHT_MIN_DAYS = 90
 
 const RUN = `(sport LIKE '%running%')`
 const BIKE = `(sport LIKE '%cycling%' OR sport LIKE '%biking%')`
@@ -429,12 +444,14 @@ export class Stats extends Context.Service<
     readonly activities: (sport: string | null) => Effect.Effect<ActivitiesView, DatabaseError>
     readonly activity: (id: number) => Effect.Effect<ActivityView | null, DatabaseError>
     readonly sleep: (span: SleepSpan) => Effect.Effect<SleepView, DatabaseError>
+    readonly sleepInsights: (span: SleepSpan) => Effect.Effect<SleepInsights, DatabaseError>
   }
 >()('garmin/Stats') {
   static readonly layer = Layer.effect(
     Stats,
     Effect.gen(function* () {
-      const { use } = yield* Database
+      const database = yield* Database
+      const { use } = database
       const anatomy = yield* Anatomy
       const nutrition = yield* Nutrition
       const all = <A extends object>(query: SQL) => use((db) => db.all<A>(query))
@@ -712,7 +729,7 @@ export class Stats extends Context.Service<
 
       const NIGHT = sql`day, sleep_start, sleep_end, sleep_s, deep_s, light_s, rem_s, awake_s,
         nap_s, sleep_score, hrv, hrv_weekly, hrv_status, hrv_baseline_low, hrv_baseline_high,
-        resting_hr, respiration_avg, spo2_avg, body_battery_charged, body_battery_wake`
+        resting_hr, respiration_avg, spo2_avg, body_battery_charged, body_battery_wake, readiness`
       type NightRow = Omit<SleepNight, 'bed_min' | 'wake_min'>
       const nightsBetween = (from: string, to: string) =>
         Effect.map(
@@ -744,17 +761,56 @@ export class Stats extends Context.Service<
         spo2_avg: null,
         body_battery_charged: null,
         body_battery_wake: null,
+        readiness: null,
+      })
+
+      // The nights a span covers: the whole history from the first night measured (30 at least,
+      // ten years at most)
+      const spanDays = Effect.fnUntraced(function* (asked: SleepSpan, today: string) {
+        if (asked !== 'all') return asked
+        const [first] = yield* all<{ day: string | null }>(sql`
+          SELECT min(day) AS day FROM daily WHERE sleep_s IS NOT NULL`)
+        return Math.max(30, Math.min(daysBetween(first?.day ?? today, today) + 1, 3660))
+      })
+
+      // The zone-4 floor of the latest run with zone bounds (zone 3's top bound)
+      // shortcut: a copy of Nutrition.view's query, export it from nutrition.ts once that file is
+      // free
+      const z4Floor = Effect.map(
+        all<{ floor: number | null }>(sql`
+          SELECT json_extract(hr_zone_bounds, '$[3]') AS floor FROM activities
+          WHERE sport LIKE '%running%' AND hr_zone_bounds IS NOT NULL
+          ORDER BY start_time DESC LIMIT 1`),
+        ([zones]) => zones?.floor ?? null
+      )
+
+      // The analysis of the `days` nights ending `today`, tomorrow's planned day and the notes
+      const insightsOn = Effect.fnUntraced(function* (today: string, days: number) {
+        const from = addDays(today, -(days - 1))
+        const notes = yield* all<Note>(sql`
+          SELECT day, text FROM journal WHERE body IS NULL ORDER BY day, time`)
+        const nights = sleptOnly(yield* nightsBetween(firstDayRead(from, notes), today))
+        const { planned } = yield* sessionsOn(addDays(today, 1)).pipe(
+          Effect.provideService(Database, database)
+        )
+        return insightsOf({
+          from,
+          today,
+          span: nights.filter((night) => night.day >= from),
+          history: nights.filter((night) => night.day < from),
+          tomorrow: dayType([], planned, yield* z4Floor),
+          notes,
+        })
+      })
+
+      const sleepInsights = Effect.fn('Stats.sleepInsights')(function* (asked: SleepSpan) {
+        const today = yield* parisToday
+        return yield* insightsOn(today, yield* spanDays(asked, today))
       })
 
       const sleep = Effect.fn('Stats.sleep')(function* (asked: SleepSpan) {
         const today = yield* parisToday
-        const [first] = yield* all<{ day: string | null }>(sql`
-          SELECT min(day) AS day FROM daily WHERE sleep_s IS NOT NULL`)
-        // The whole history: from the first night measured (ten years at most)
-        const span =
-          asked === 'all'
-            ? Math.max(30, Math.min(daysBetween(first?.day ?? today, today) + 1, 3660))
-            : asked
+        const span = yield* spanDays(asked, today)
         const from = addDays(today, -(span - 1))
         const rows = yield* nightsBetween(from, today)
         // Nothing before the whole history
@@ -775,6 +831,7 @@ export class Stats extends Context.Service<
           nights,
           averages: sleepAverages(rows),
           previous: sleepAverages(previous),
+          insights: yield* insightsOn(today, Math.max(span, INSIGHT_MIN_DAYS)),
         } satisfies SleepView
       })
 
@@ -792,7 +849,7 @@ export class Stats extends Context.Service<
         } satisfies ActivitiesView
       })
 
-      return Stats.of({ dashboard, runs, activities, activity, sleep })
+      return Stats.of({ dashboard, runs, activities, activity, sleep, sleepInsights })
     })
   )
 }
