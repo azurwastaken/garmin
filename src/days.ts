@@ -71,3 +71,30 @@ export const months = (from: string, to: string) => {
   for (let month = monthOf(from); month <= to; month = nextMonth(month)) all.push(month)
   return all
 }
+
+// shortcut: stats.ts keeps its own mondayOf and minutesFromNoon (it imports the nutrition module,
+// so importing from it would close a cycle, and the sleep branch edits it): fold them into these
+// once jarvis-sleep lands
+
+// The Monday of the ISO week of `day`
+export const mondayOf = (day: string) =>
+  addDays(day, -((new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7))
+
+const parisClock = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Paris',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+// Minutes from noon in Paris time, so that a bedtime before and after midnight sorts on one axis
+// (00:30 is 750); null for no instant or an unreadable one
+export const parisMinutesFromNoon = (iso: string | null): number | null => {
+  if (iso === null) return null
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return null
+  const parts = parisClock.formatToParts(date)
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value)
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value)
+  return (hour * 60 + minute - 720 + 1440) % 1440
+}

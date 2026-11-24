@@ -5,9 +5,11 @@ import { Schema } from 'effect'
 // Without the file, the plan agreed on 2026-11-16.
 
 // Its own helpers, as races/race.ts and journal/note.ts: this module must not load the API's
-const Day = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u))
-const Text = (max: number) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(max))
-const Between = (min: number, max: number) =>
+// (supplements.ts shares them)
+export const Day = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u))
+export const Text = (max: number) =>
+  Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(max))
+export const Between = (min: number, max: number) =>
   Schema.Finite.check(Schema.isGreaterThanOrEqualTo(min), Schema.isLessThanOrEqualTo(max))
 const Kcal = Schema.Int.check(Schema.isBetween({ minimum: 500, maximum: 6000 }))
 const Range = (min: number, max: number) =>

@@ -9,6 +9,10 @@ export const fmt = (value: number | null | undefined, digits = 0) =>
         .toLocaleString('fr-FR', { maximumFractionDigits: digits })
         .replaceAll(/[\u00A0\u202F]/gu, '\u202F')
 
+// A count and its word, with an s past one
+export const plural = (count: number, word: string) =>
+  `${fmt(count)} ${word}${count > 1 ? 's' : ''}`
+
 // 2 h 05, from seconds
 export const hours = (seconds: number | null | undefined) => {
   if (seconds === null || seconds === undefined) return '–'
