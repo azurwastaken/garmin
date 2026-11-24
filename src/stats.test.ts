@@ -17,6 +17,7 @@ import {
   withClock,
   type SleepNight,
 } from './stats.ts'
+import { DEFAULT_PROGRAM, phaseOn } from './strength/program.ts'
 import { Strength } from './strength/strength.ts'
 
 const TestLayer = testLayer(
@@ -198,7 +199,10 @@ layer(TestLayer, { excludeTestServices: true })('Stats, the morning', (it) => {
         yield* Ingest.use((ingest) => ingest.run())
         const { morning } = yield* Stats.use((stats) => stats.dashboard)
         expect(morning.strength).toMatchObject({ from: 'calendar', title: name, flags: 0 })
-        expect(morning.strength?.exercises).toContain('Copenhagen plank (progression)')
+        // The programme's exercises, on a day a phase covers (none in the recovery week)
+        if (phaseOn(DEFAULT_PROGRAM.phases, today) !== null) {
+          expect(morning.strength?.exercises).toContain('Copenhagen plank (progression)')
+        }
       })
   )
 

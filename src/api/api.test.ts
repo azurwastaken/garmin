@@ -11,7 +11,7 @@ import { Services } from '../app.ts'
 import { addDays, parisToday } from '../days.ts'
 import { Ingest } from '../ingest.ts'
 import { DEFAULT_PLAN, PLAN_PATH } from '../nutrition/plan.ts'
-import { DEFAULT_PROGRAM, PROGRAM_PATH } from '../strength/program.ts'
+import { DEFAULT_PROGRAM, phaseOn, PROGRAM_PATH } from '../strength/program.ts'
 import { mondayOf } from '../strength/schedule.ts'
 
 import { makeHandlers, makeRun } from './handlers.ts'
@@ -483,13 +483,16 @@ describe('the strength tools', () => {
       workouts: Array<{ schedule: Array<string>; steps: Array<string>; payload: unknown }>
     }
     expect(answer).toMatchObject({ dry_run: true, week })
-    // No run in the test database: an empty week, two sessions as far apart as can be
-    expect(answer.sessions.map((session) => session.session)).toEqual(['A', 'B'])
     expect(answer.workouts).toHaveLength(answer.sessions.length)
-    expect(answer.workouts[0]?.schedule).toEqual([answer.sessions[0]?.day])
-    expect(answer.workouts[0]?.payload).toMatchObject({
-      sportType: { sportTypeKey: 'strength_training' },
-    })
+    // No run in the test database: an empty week, two sessions as far apart as can be (none in a
+    // week no phase covers, the recovery week after the marathon, or past the programme's end)
+    if (phaseOn(DEFAULT_PROGRAM.phases, week) !== null) {
+      expect(answer.sessions.map((session) => session.session)).toEqual(['A', 'B'])
+      expect(answer.workouts[0]?.schedule).toEqual([answer.sessions[0]?.day])
+      expect(answer.workouts[0]?.payload).toMatchObject({
+        sportType: { sportTypeKey: 'strength_training' },
+      })
+    }
   })
 })
 
