@@ -130,8 +130,11 @@ describe('the buckets', () => {
   it.each([
     { bed_min: 689, label: 'avant 23:30' },
     { bed_min: 690, label: '23:30–00:30' },
+    { bed_min: 749, label: '23:30–00:30' },
+    { bed_min: 750, label: '00:30–01:30' },
     { bed_min: 809, label: '00:30–01:30' },
     { bed_min: 810, label: '01:30–02:30' },
+    { bed_min: 869, label: '01:30–02:30' },
     { bed_min: 870, label: 'après 02:30' },
   ])('puts asleep at $bed_min min from noon in $label', ({ bed_min, label }) => {
     const buckets = bedtimeBuckets([night({ bed_min })])
@@ -154,7 +157,13 @@ describe('the buckets', () => {
   it.each([
     { sleep_s: 21_599, label: 'moins de 6 h 00' },
     { sleep_s: 21_600, label: '6 h 00 – 6 h 30' },
+    { sleep_s: 23_399, label: '6 h 00 – 6 h 30' },
+    { sleep_s: 23_400, label: '6 h 30 – 7 h 00' },
+    { sleep_s: 25_199, label: '6 h 30 – 7 h 00' },
+    { sleep_s: 25_200, label: '7 h 00 – 7 h 30' },
+    { sleep_s: 26_999, label: '7 h 00 – 7 h 30' },
     { sleep_s: 27_000, label: '7 h 30 – 8 h 00' },
+    { sleep_s: 28_799, label: '7 h 30 – 8 h 00' },
     { sleep_s: 28_800, label: '8 h 00 et plus' },
   ])('puts $sleep_s s of sleep in $label', ({ sleep_s, label }) => {
     const bucket = durationBuckets([night({ sleep_s })]).find((b) => b.nights === 1)
