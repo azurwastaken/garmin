@@ -3,11 +3,14 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { api } from '#src/api/client.ts'
 import { NUTRITION_SPANS } from '#src/api/periods.ts'
 import { LineChart, shortDay } from '#src/components/charts.tsx'
-import { dayLabel, fmt, numericDay } from '#src/components/format.ts'
+import { dayLabel, fmt, hours, numericDay } from '#src/components/format.ts'
 import { daysBetween } from '#src/days.ts'
 import type { Classified } from '#src/nutrition/day-type.ts'
+import type { Lever, LeverKey } from '#src/nutrition/levers.ts'
 import type { NutritionView } from '#src/nutrition/nutrition.ts'
+import type { Goal, PeakWeight } from '#src/nutrition/peak.ts'
 import type { DayType, NutritionPlan, Phase } from '#src/nutrition/plan.ts'
+import type { Moment, NutrientTotal, SupplementDay } from '#src/nutrition/supplements.ts'
 import {
   MIN_SLOPE_SPAN_DAYS,
   MIN_SLOPE_WEIGH_INS,
@@ -16,9 +19,10 @@ import {
 } from '#src/nutrition/trend.ts'
 
 // Weight and nutrition: today's target from the day's type, the weight trend against the plan
-// agreed with the coach and the phase; the weigh-ins with their 7-day mean and the deficit's
-// corridor, then fat and muscle. The plan is data/nutrition/plan.json (the MCP's
-// set_nutrition_plan)
+// agreed with the coach and the phase; today's supplements and their nutrients against their
+// upper limits; the weigh-ins with their 7-day mean and the deficit's corridor; the peak weight
+// and its levers; then fat and muscle. The plan is data/nutrition/plan.json (the MCP's
+// set_nutrition_plan), the supplements data/nutrition/supplements.json (set_supplements)
 type Span = (typeof NUTRITION_SPANS)[number]
 
 export const Route = createFileRoute('/nutrition')({
@@ -192,6 +196,330 @@ function PhaseCard({ view }: { view: NutritionView }) {
   )
 }
 
+// --- The supplements
+
+const MOMENT_LABEL: Record<Moment, string> = {
+  breakfast: 'Petit-déjeuner',
+  lunch: 'Déjeuner',
+  dinner: 'Dîner',
+  bedtime: 'Coucher',
+  run: 'Avec la course',
+}
+
+const NUTRIENT_LABEL: Record<string, string> = {
+  magnesium: 'Magnésium',
+  vitamin_d: 'Vitamine D',
+  vitamin_k2: 'Vitamine K2',
+  vitamin_b6: 'Vitamine B6',
+  zinc: 'Zinc',
+  taurine: 'Taurine',
+  ashwagandha: 'Ashwagandha',
+  withanolides: 'Withanolides',
+}
+
+// A nutrient's French name, or its slug in words
+const nutrientName = (slug: string) => NUTRIENT_LABEL[slug] ?? slug.replaceAll('_', ' ')
+
+const units = (count: number, name: string) => `${count} ${name}${count > 1 ? 's' : ''}`
+
+// A supplement's rhythm when it is not a daily dose already listed by moment; null for those
+const rhythmLine = (item: SupplementDay['items'][number]): string | null => {
+  const { schedule, every_days: every } = item
+  const each = every > 1 ? `tous les ${every} jours` : 'tous les jours'
+  const next = (day: string | null) =>
+    day === null ? 'plus de prise avant l’arrêt' : `prochaine le ${numericDay(day)}`
+  switch (schedule.kind) {
+    case 'upcoming':
+      return `commence le ${numericDay(schedule.next)}, puis ${each}`
+    case 'off':
+      return `pas aujourd’hui (${each}) · ${next(schedule.next)}`
+    case 'dose':
+      return every > 1 ? `à prendre aujourd’hui (${each}) · ${next(schedule.next)}` : null
+    case 'stopped':
+      return null
+  }
+}
+
+const SCOPE_LABEL = { supplements: 'compléments seuls', total: 'aliments compris' } as const
+
+// The limit cell: the status as words, never as a colour alone
+function LimitCell({ total }: { total: NutrientTotal }) {
+  if (total.status === 'no-limit') return <span className="muted">pas de limite</span>
+  return (
+    <>
+      <span className={`status ${total.status === 'over' ? 'bad' : 'good'}`}>
+        {total.status === 'over' ? 'Au-dessus' : 'Sous la limite'}
+      </span>{' '}
+      <span className="muted">
+        {fmt(total.limit.amount)} {total.limit.unit} · {SCOPE_LABEL[total.limit.scope]}
+      </span>
+    </>
+  )
+}
+
+function SupplementsSection({ day }: { day: SupplementDay }) {
+  const rhythms = day.items.flatMap((item) => {
+    const line = rhythmLine(item)
+    return line === null ? [] : [{ name: item.name, line }]
+  })
+  const { from, nutrients } = day.totals
+  const over = nutrients.flatMap((total) => (total.status === 'over' ? [total] : []))
+  const cautions = nutrients.filter((total) => total.caution !== null)
+  return (
+    <section>
+      <h2>Compléments</h2>
+      <p className="sub">
+        Ce qu’il y a à prendre aujourd’hui, et chaque nutriment en moyenne par jour contre sa limite
+        haute
+      </p>
+      {day.items.length === 0 ? (
+        <div className="card">
+          <p className="note">
+            Aucun complément enregistré : le coach les ajoute avec set_supplements.
+          </p>
+        </div>
+      ) : (
+        <div className="grid cols-2">
+          <div className="card">
+            <h2>Aujourd’hui</h2>
+            {day.moments.length === 0 ? (
+              <p className="note">Rien à prendre aujourd’hui.</p>
+            ) : (
+              <dl className="moments">
+                {day.moments.map(({ moment, take }) => (
+                  <div key={moment}>
+                    <dt>{MOMENT_LABEL[moment]}</dt>
+                    {take.map((intake) => (
+                      <dd key={intake.name}>
+                        {intake.name} <span className="muted">({intake.brand})</span> ·{' '}
+                        {units(intake.units, intake.unit_name)}
+                      </dd>
+                    ))}
+                  </div>
+                ))}
+              </dl>
+            )}
+            {rhythms.map(({ name, line }) => (
+              <p key={name} className="note">
+                <b>{name}</b> : {line}
+              </p>
+            ))}
+          </div>
+          <div className="card">
+            <h2>Par jour, en moyenne</h2>
+            <p className="sub">
+              {from > day.today
+                ? `À partir du ${numericDay(from)}, quand tous auront commencé`
+                : 'Les compléments en cours'}
+            </p>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nutriment</th>
+                    <th className="num">Par jour</th>
+                    <th>Limite haute</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nutrients.map((total) => (
+                    <tr key={total.nutrient}>
+                      <td>{nutrientName(total.nutrient)}</td>
+                      <td className="num">
+                        {fmt(total.per_day, 2)} {total.unit}
+                      </td>
+                      <td>
+                        <LimitCell total={total} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {over.map((total) => (
+              <p key={total.nutrient} className="note">
+                <b>{nutrientName(total.nutrient)}</b> : {fmt(total.per_day, 2)} {total.unit} par
+                jour, au-dessus des {fmt(total.limit.amount)} {total.limit.unit} (
+                {total.limit.source}) : le risque est {total.limit.risk}.
+              </p>
+            ))}
+            {cautions.map((total) => (
+              <p key={total.nutrient} className="note">
+                <b>{nutrientName(total.nutrient)}</b> : {total.caution}
+              </p>
+            ))}
+            <p className="note muted">
+              Limites hautes de l’EFSA pour un adulte ; « aliments compris » : la limite vaut pour
+              tout ce que tu manges, les compléments n’en sont qu’une part.
+            </p>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+// --- The peak weight and its levers
+
+const range = (low: number, high: number) =>
+  low === high ? kg(low) : `${fmt(low, 1)} à ${kg(high)}`
+
+// When a goal comes at the plan's pace, and whether before the deficit ends; after it, the phase
+// that follows names when
+const goalLines = (goal: Goal, view: NutritionView): Array<string> => {
+  switch (goal.kind) {
+    case 'reached':
+      return ['Atteint.']
+    case 'no-pace':
+      return [
+        `Encore ${range(goal.gap_kg.min, goal.gap_kg.max)} ; le plan ne prévoit pas de perte.`,
+      ]
+    case 'dated': {
+      const { fastest, slowest } = goal
+      const { min, max } = view.plan.loss_kg_per_week
+      const when =
+        slowest === null
+          ? `au plus tôt le ${numericDay(fastest.by)}`
+          : `entre le ${numericDay(fastest.by)} et le ${numericDay(slowest.by)}`
+      const weeks =
+        slowest === null
+          ? `${fmt(fastest.weeks, 1)} semaines au moins`
+          : `${fmt(fastest.weeks, 1)} à ${fmt(slowest.weeks, 1)} semaines`
+      const lines = [
+        `Encore ${range(goal.gap_kg.min, goal.gap_kg.max)} : ${weeks} à ${fmt(min, 2)}–${fmt(max, 2)} kg par semaine, ${when}.`,
+      ]
+      if (goal.before_deficit_end === true && view.phase !== null) {
+        lines.push(`Possible dans le déficit en cours (jusqu’au ${numericDay(view.phase.to)}).`)
+      }
+      if (goal.before_deficit_end === false && view.phase !== null) {
+        const after = view.plan.phases.find((phase) => phase.from > (view.phase?.to ?? ''))
+        lines.push(
+          `Au-delà du déficit en cours (jusqu’au ${numericDay(view.phase.to)})${after?.label === undefined ? '' : ` : plutôt après ${after.label}`}.`
+        )
+      }
+      return lines
+    }
+  }
+}
+
+function PeakCard({ peak, view }: { peak: PeakWeight; view: NutritionView }) {
+  if (peak.kind === 'no-weigh-in') {
+    return (
+      <div className="card tile">
+        <div className="label">Poids de forme</div>
+        <div className="value">–</div>
+        <p className="note">
+          Aucune pesée du {numericDay(peak.from)} au {numericDay(peak.to)}.
+        </p>
+      </div>
+    )
+  }
+  const target = (
+    <p className="note">
+      <b>Cible proche du plan : {kg(view.plan.target_kg, 0)}</b> (moyenne actuelle{' '}
+      {kg(peak.weight_kg)}). {goalLines(peak.target, view).join(' ')}
+    </p>
+  )
+  if (peak.kind === 'too-few') {
+    return (
+      <div className="card tile">
+        <div className="label">Poids de forme</div>
+        <div className="value">–</div>
+        <p className="note">
+          Il faut au moins 3 pesées avec la masse grasse sur 14 jours : {peak.weigh_ins.with_fat} du{' '}
+          {numericDay(peak.from)} au {numericDay(peak.to)}.
+        </p>
+        {target}
+      </div>
+    )
+  }
+  const { peak: goal } = peak
+  return (
+    <div className="card tile">
+      <div className="label">Poids de forme · long terme</div>
+      <div className="value">
+        {fmt(goal.kg.min, 1)}–{fmt(goal.kg.max, 1)}
+        <small>kg</small>
+      </div>
+      <p className="note">
+        Ta masse maigre, {kg(peak.lean_kg)} ({kg(peak.weight_kg)} à {fmt(peak.body_fat_pct, 1)} % de
+        graisse, {peak.weigh_ins.with_fat} pesées du {numericDay(peak.from)} au{' '}
+        {numericDay(peak.to)}), gardée, à 10–13 % de graisse : la fourchette d’un coureur
+        d’endurance.
+      </p>
+      <p className="note">
+        La balance mesure la graisse par impédance, à ±5 points près : avec cette erreur, la
+        fourchette va de {kg(peak.bia_kg.min)} à {kg(peak.bia_kg.max)}. Une fourchette, pas un
+        chiffre.
+      </p>
+      <p className="note">{goalLines(goal, view).join(' ')}</p>
+      {target}
+      <p className="note muted">
+        Plancher : {kg(goal.kg.min)} (10 % de graisse), ne vise pas en dessous. Manger trop peu pour
+        ton entraînement (faible disponibilité énergétique, RED-S) coûte de la fatigue, des
+        blessures et de la performance.
+      </p>
+    </div>
+  )
+}
+
+const LEVER_TITLE: Record<LeverKey, string> = {
+  'rest-days': 'Jours de repos',
+  breakfast: 'Petit-déjeuner et alcool',
+  protein: 'Protéines',
+  strength: 'Renforcement',
+  running: 'Volume de course',
+  steps: 'Pas au quotidien',
+  sleep: 'Sommeil',
+}
+
+// The status as words, with a colour only where the data judges
+const LEVER_STATUS: Record<Lever['status'], { readonly word: string; readonly tone: string }> = {
+  room: { word: 'À travailler', tone: 'status wait' },
+  fine: { word: 'Tenu', tone: 'status good' },
+  untracked: { word: 'Non suivi', tone: 'muted' },
+  'no-data': { word: 'Pas de données', tone: 'muted' },
+}
+
+// A lever's number with its unit and window, and its effect
+const leverFacts = (lever: Lever) => {
+  const { measured, kcal_per_day: kcal } = lever
+  const value =
+    measured === null
+      ? null
+      : `${measured.unit === 'h' ? hours(measured.value * 3600) : `${fmt(measured.value, 2)} ${measured.unit}`} · du ${numericDay(measured.from)} au ${numericDay(measured.to)}`
+  const effect =
+    kcal === null
+      ? null
+      : `effet ≈ ${kcal.min === kcal.max ? fmt(kcal.max) : `${fmt(kcal.min)} à ${fmt(kcal.max)}`} kcal / jour`
+  return [value, effect].filter((part) => part !== null).join(' · ')
+}
+
+function LeversCard({ levers }: { levers: ReadonlyArray<Lever> }) {
+  return (
+    <div className="card">
+      <h2>Leviers</h2>
+      <p className="sub">
+        Classés : d’abord ce que tes données montrent à travailler, l’effet le plus grand en tête
+      </p>
+      <ol className="levers">
+        {levers.map((lever) => (
+          <li key={lever.key}>
+            <div className="lever-head">
+              <h3>{LEVER_TITLE[lever.key]}</h3>
+              <span className={LEVER_STATUS[lever.status].tone}>
+                {LEVER_STATUS[lever.status].word}
+              </span>
+            </div>
+            {leverFacts(lever) === '' ? null : <p className="note muted">{leverFacts(lever)}</p>}
+            <p className="note">{lever.text}</p>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
 function Nutrition() {
   const view = Route.useLoaderData()
   const { days, span, trend, latest } = view
@@ -246,6 +574,8 @@ function Nutrition() {
         <PhaseCard view={view} />
       </div>
 
+      <SupplementsSection day={view.supplements} />
+
       <section className="card" aria-label={summary}>
         <h2>Poids (kg)</h2>
         <p className="sub">
@@ -270,6 +600,18 @@ function Nutrition() {
           bandLabel="Couloir du plan"
           height={220}
         />
+      </section>
+
+      <section>
+        <h2>Poids de forme</h2>
+        <p className="sub">
+          Estimé depuis la masse maigre des pesées Withings des 14 derniers jours, en la gardant ;
+          la cible du plan reste l’étape proche
+        </p>
+        <div className="grid cols-2">
+          <PeakCard peak={view.peak} view={view} />
+          <LeversCard levers={view.levers} />
+        </div>
       </section>
 
       <section>

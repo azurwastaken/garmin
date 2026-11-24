@@ -90,7 +90,9 @@ describe('the MCP', () => {
       'schedule_workout',
       'schema',
       'set_nutrition_plan',
+      'set_supplements',
       'sql',
+      'supplements',
       'sync_status',
       'unschedule_workout',
       'weekly_load',
@@ -157,6 +159,13 @@ describe('the MCP', () => {
       openWorldHint: false,
     })
     expect(byName['set_nutrition_plan']?.inputSchema.required).toContain('phases')
+    expect(byName['supplements']?.annotations).toMatchObject({ readOnlyHint: true })
+    expect(byName['set_supplements']?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+    })
+    expect(byName['set_supplements']?.inputSchema.required).toEqual(['supplements'])
     // Plain JSON Schema numbers for the model
     expect(byName['list_activities']?.inputSchema.properties?.['limit']).toMatchObject({
       type: 'integer',
@@ -393,6 +402,47 @@ describe('the nutrition tools', () => {
     await runtime.runPromise(put(PLAN_PATH, DEFAULT_PLAN))
   })
 
+  it('writes the supplements whole, refuses a stop before its start, and reads them back', async () => {
+    expect(await call('supplements', {})).toEqual({
+      isError: false,
+      data: { supplements: [], saved: false },
+    })
+    const list = {
+      supplements: [
+        {
+          name: 'Magnésium test',
+          brand: 'Marque A',
+          unit_name: 'gélule',
+          intakes: [
+            { moment: 'lunch', units: 1 },
+            { moment: 'dinner', units: 1 },
+          ],
+          serving_units: 2,
+          contents: [{ nutrient: 'magnesium', amount: 300, unit: 'mg' }],
+          every_days: 1,
+          start: '2026-01-01',
+        },
+      ],
+    }
+    expect(await call('set_supplements', list)).toEqual({ isError: false, data: list })
+    expect(await call('supplements', {})).toEqual({
+      isError: false,
+      data: { ...list, saved: true },
+    })
+    const [first] = list.supplements
+    expect(
+      await call('set_supplements', { supplements: [{ ...first, stop: '2025-12-31' }] })
+    ).toMatchObject({ isError: true, data: { code: 'BAD_REQUEST' } })
+    // Over the 250 mg of magnesium from supplements, and said so in today's answer
+    const { data } = (await call('nutrition_today', {})) as {
+      data: { supplements: { totals: { nutrients: Array<Record<string, unknown>> } } }
+    }
+    expect(data.supplements.totals.nutrients).toMatchObject([
+      { nutrient: 'magnesium', per_day: 300, unit: 'mg', status: 'over' },
+    ])
+    await call('set_supplements', { supplements: [] })
+  })
+
   it("answers today's target, the trend and its status", async () => {
     const today = await runtime.runPromise(parisToday)
     const { isError, data } = await call('nutrition_today', {})
@@ -408,12 +458,20 @@ describe('the nutrition tools', () => {
     expect(Object.keys(data as object).toSorted()).toEqual([
       'day',
       'latest',
+      'levers',
+      'peak',
       'phase',
       'status',
+      'supplements',
       'target',
       'today',
       'trend',
     ])
+    // No weigh-in, no supplement file: said, not guessed
+    expect(data).toMatchObject({
+      peak: { kind: 'no-weigh-in' },
+      supplements: { moments: [], items: [], totals: { nutrients: [] } },
+    })
   })
 })
 

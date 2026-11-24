@@ -10,6 +10,7 @@ import { Journal } from '../journal/log.ts'
 import { JournalNoteJson, NoteBodyJson } from '../journal/note.ts'
 import { Nutrition, todayOf } from '../nutrition/nutrition.ts'
 import { NutritionPlanJson } from '../nutrition/plan.ts'
+import { CAUTIONS, SupplementsJson, UPPER_LIMITS } from '../nutrition/supplements.ts'
 import { FactsInputSchema, MAX_GPX_BYTES, PlanInputSchema, SlugSchema } from '../races/race.ts'
 import { Races } from '../races/races.ts'
 import { MAX_ROWS, Reader } from '../reader.ts'
@@ -21,7 +22,7 @@ import { Day, standard, tool } from './base.ts'
 // The Garmin data and the watch's workouts: each procedure an MCP tool (its name), an OpenAPI
 // operation (under /api) and an RPC call (under /rpc). The tools' names and inputs are the MCP's.
 
-const DATA_MODEL = `Data: the user's Garmin history (watch, scale): every activity from its FIT file (laps, per-second samples) and Garmin Connect's summary, plus daily wellness (sleep, HRV, resting HR, body battery, readiness), weigh-ins and the Garmin calendar's planned workouts. Synced from Garmin Connect every 3 hours (sync_status tells when). The SQL is read-only; the workout tools (create_workout, schedule_workout, unschedule_workout, delete_workout) write to the Garmin calendar and refresh planned_workouts right after; log_note adds a note to the user's journal, body_history reads the pains pinned on the web app's 3D body map; add_race and plan_race write the user's target races and their plans; set_nutrition_plan writes the nutrition plan agreed with the user.
+const DATA_MODEL = `Data: the user's Garmin history (watch, scale): every activity from its FIT file (laps, per-second samples) and Garmin Connect's summary, plus daily wellness (sleep, HRV, resting HR, body battery, readiness), weigh-ins and the Garmin calendar's planned workouts. Synced from Garmin Connect every 3 hours (sync_status tells when). The SQL is read-only; the workout tools (create_workout, schedule_workout, unschedule_workout, delete_workout) write to the Garmin calendar and refresh planned_workouts right after; log_note adds a note to the user's journal, body_history reads the pains pinned on the web app's 3D body map; add_race and plan_race write the user's target races and their plans; set_nutrition_plan writes the nutrition plan agreed with the user; set_supplements writes the supplements the user takes.
 Conventions: timestamps ISO 8601 UTC text, start_local local wall time, day YYYY-MM-DD (local). Metres, seconds, m/s, bpm, kg. Cadence is steps/min on foot, rpm on a bike.
 Tables and views:
 - activities: one row per Garmin Connect activity (id = its activity id). sport (Connect's type: running, trail_running, cycling, lap_swimming, hiking, strength_training…), name, start_time, start_local, day, elapsed_s, moving_s, distance_m, ascent_m, descent_m, avg_hr, max_hr, avg_speed, max_speed, avg_cadence, max_cadence, avg_power, max_power, norm_power, calories, training_load (Garmin's EPOC load), aerobic_te / anaerobic_te (training effect 0-5), te_label (TEMPO, BASE…), vo2max, rpe (0-10) and feel (0-100) entered after it, hr_z1_s…hr_z5_s (seconds in the watch's HR zones), hr_zone_bounds (JSON: the zones' top bounds [z0, z1…z5]), workout_name (the structured workout run, as in planned_workouts.name), gear, device, start_lat/start_lon, polyline (Google encoded, precision 5).
@@ -35,6 +36,7 @@ Tables and views:
 - journal: the user's notes (log_note): time (the instant written, its key), day (the day it is about), text, body (JSON, NULL unless the note is a pain pinned on the body map: structure (the anatomy model's id, e.g. vastus_lateralis_r), side, point [x, y, z] (metres on the model, Y up, origin between the feet, right side at -x), pain 0-10, kind, when (array), since; read it with json_extract(body, '$.pain'), body_history names the structures); one file each in data/journal/.
 - races are not in SQL: list_races, get_race (files in data/races/: <slug>.gpx, <slug>.json, <slug>.plan.json).
 - the nutrition plan is not in SQL: nutrition_plan, and nutrition_today for today's target and the weight trend against it (file data/nutrition/plan.json).
+- the supplements are not in SQL: supplements (file data/nutrition/supplements.json); nutrition_today says what to take today and each nutrient's daily average against its upper limit.
 - raw_files: the source files ingested (path, error).
 - sync_runs: each sync with Garmin Connect: started_at, finished_at, ok, logged_out, account, since, files_written, warnings (JSON), error.`
 
@@ -449,9 +451,12 @@ const planRace = tool({
     context.run(Races.use((races) => races.plan(slug, plan)))
   )
 
-// --- The nutrition plan agreed with the user, and the weight trend against it
+// --- The nutrition plan agreed with the user, the weight trend against it, the supplements and
+// the peak weight
 
 const NUTRITION_MODEL = `The nutrition plan (data/nutrition/plan.json; without the file, the plan agreed on 2026-11-16): kcal per day type (rest, easy, quality, long), carbs per hour during a long day's run, protein a day, the loss aimed for in a deficit phase (kg a week) and the stall threshold, the target weight, the phases (deficit, maintenance). A day's type comes from its activities once there are any, else from its planned workouts: long = 75 min or 15 km of running; quality = 20 min in HR zones 4-5 once done, or planned with a quality word in its name or description (tempo, seuil, threshold, fractionné, VMA, intervalles, fartlek, côtes), an HR target above zone 4's floor (the latest run's hr_zone_bounds), an HR zone 4-5 target, or repetitions (a repeated interval with a pace target, or of 1:00 or 200 m at least: not strides); easy = any other session; rest = nothing. The weight trend: one weigh-in a day (the morning's), the 7-day mean, its least-squares slope over the last 28 days of the current phase (only means whose 7 days are all in the phase); it takes 4 weigh-ins and 14 days of means, else too-few.`
+
+const SUPPLEMENTS_MODEL = `The supplements (data/nutrition/supplements.json; without the file, none): each one's name, brand, what one unit is (gélule…), its intakes (moment: breakfast, lunch, dinner, bedtime or run, and the units each time), its contents per serving (serving_units units): nutrient slugs with an amount in g, mg or µg (vitamin D in µg: 1 µg = 40 IU) and the salt or extract (form), its rhythm (every_days: 1 = daily, N = every N days counted from start, its first intake), start and stop (its last day) and a note. A product taken at lunch and at dinner is one supplement with two intakes. The nutrient slugs ${Object.keys(UPPER_LIMITS).join(', ')} are checked against their adult upper limit (EFSA) and ${Object.keys(CAUTIONS).join(', ')} carries a caution: write them exactly so.`
 
 const nutritionPlan = tool({
   name: 'nutrition_plan',
@@ -481,10 +486,41 @@ const setNutritionPlan = tool({
     context.run(Nutrition.use((nutrition) => nutrition.setPlan(input)))
   )
 
+const supplementsTool = tool({
+  name: 'supplements',
+  title: 'Read the supplements',
+  description: `The supplements the user takes, as set_supplements writes them, and saved: false when there is no file yet. ${SUPPLEMENTS_MODEL}`,
+  method: 'GET',
+  path: '/nutrition/supplements',
+  tags: ['nutrition'],
+  readOnly: true,
+  openWorld: false,
+}).handler(({ context }) => context.run(Nutrition.use((nutrition) => nutrition.supplements)))
+
+const setSupplements = tool({
+  name: 'set_supplements',
+  title: 'Write the supplements',
+  description: `Replace the supplements, the whole list at once (as supplements returns it, without saved). Write it when the user starts, stops or changes one. Returns the list saved. ${SUPPLEMENTS_MODEL}`,
+  method: 'POST',
+  path: '/nutrition/supplements',
+  tags: ['nutrition'],
+  readOnly: false,
+  destructive: true,
+  idempotent: true,
+  openWorld: false,
+})
+  .input(standard(SupplementsJson))
+  .handler(({ input, context }) =>
+    context.run(Nutrition.use((nutrition) => nutrition.setSupplements(input)))
+  )
+
 const nutritionToday = tool({
   name: 'nutrition_today',
-  title: "Today's nutrition target and weight trend",
-  description: `What the nutrition plan says today (Paris): the day's type and why (from what was done, else planned, else nothing), its target (kcal, protein, carbs per hour during a long run), the current phase, the weight trend (kg_per_week over its window, negative = losing, with the weigh-ins in it; too-few when there are not enough) and its status: on-track (losing within the plan's range), too-fast (losing more than its max: muscle and injury risk), slow (less than its min), stalled (less than stall_kg_per_week once the phase is stall_after_days old), too-few (not enough weigh-ins to say), maintenance, no-phase; and the latest weigh-in. ${NUTRITION_MODEL}`,
+  title: "Today's nutrition target, weight trend, supplements and peak weight",
+  description: `What the nutrition plan says today (Paris): the day's type and why (from what was done, else planned, else nothing), its target (kcal, protein, carbs per hour during a long run), the current phase, the weight trend (kg_per_week over its window, negative = losing, with the weigh-ins in it; too-few when there are not enough) and its status: on-track (losing within the plan's range), too-fast (losing more than its max: muscle and injury risk), slow (less than its min), stalled (less than stall_kg_per_week once the phase is stall_after_days old), too-few (not enough weigh-ins to say), maintenance, no-phase; and the latest weigh-in.
+Supplements: today's intakes by moment, every supplement not stopped with its schedule (dose or off today with its next dose day, upcoming with its start), and totals: each nutrient's daily average from totals.from (once every supplement not stopped has started) with its upper limit (scope supplements = from supplements alone, total = food included), status over / under / no-limit, and a caution where one applies.
+Peak: the lean mass of the last 14 days' weigh-ins with a fat % (weight × (1 - fat %), the Withings impedance scale: its fat % is ±5 points, bia_kg is the peak range under that error), the peak weight range at 10-13 % body fat assuming the lean mass is kept (10 % is the floor: never aim below it; low energy availability, RED-S, is the risk under it), and the plan's target_kg as the near target; each with its gap and, at the plan's loss per week, the weeks and dates (fastest, slowest) and whether the fastest falls before the current deficit phase ends. too-few: fewer than 3 weigh-ins with a fat %; no-weigh-in: none in 14 days.
+Levers, ranked (room, then untracked, then fine, then no-data; the biggest kcal effect first): rest days (days without a session in the 28 before today; meals are not recorded), breakfast (the pastry swap), protein (the plan's g per kg of weight), strength (sessions in the 8 full weeks before this one, 2 a week wanted), running (km a week over those weeks against a first marathon plan's 24 km first week), steps (a day over the 28 days), sleep (hours a night over 28 nights, and bedtimes after 00:30 Paris time); each with its measured value and window, its kcal_per_day effect when it is energy, and a French sentence. ${NUTRITION_MODEL}`,
   method: 'GET',
   path: '/nutrition/today',
   tags: ['nutrition'],
@@ -668,7 +704,13 @@ export const garmin = {
   journal: { log: logNote },
   body: { history: bodyHistoryTool },
   races: { list: listRaces, get: getRace, add: addRace, plan: planRace },
-  nutrition: { plan: nutritionPlan, setPlan: setNutritionPlan, today: nutritionToday },
+  nutrition: {
+    plan: nutritionPlan,
+    setPlan: setNutritionPlan,
+    today: nutritionToday,
+    supplements: supplementsTool,
+    setSupplements,
+  },
   workouts: {
     create: createWorkout,
     schedule: scheduleWorkout,

@@ -1115,3 +1115,60 @@ td a:hover {
   }
 }
 /* --- end /body --- */
+
+/* --- /nutrition: the supplements by moment and the peak weight's levers --- */
+.moments {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.moments div {
+  display: grid;
+  grid-template-columns: 9.5em 1fr;
+  gap: 2px 10px;
+}
+.moments dt {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.moments dd {
+  grid-column: 2;
+  margin: 0;
+  font-size: 14px;
+}
+.levers {
+  margin: 0;
+  padding-left: 1.4em;
+  display: grid;
+  gap: 12px;
+}
+.levers li::marker {
+  font-family: var(--mono);
+  color: var(--ink-2);
+}
+.lever-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px 10px;
+  flex-wrap: wrap;
+}
+.lever-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.levers .note {
+  margin: 4px 0 0;
+}
+@media (max-width: 480px) {
+  .moments div {
+    grid-template-columns: 1fr;
+  }
+  .moments dd {
+    grid-column: 1;
+  }
+}
+/* --- end /nutrition --- */
