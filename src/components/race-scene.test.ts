@@ -98,6 +98,9 @@ describe('orbitCamera', () => {
   })
 
   it('glides to the course’s centre, then stays there while it turns', () => {
+    const [halfLon, halfLat] = orbitCamera(from, to, -20, GLIDE_MS / 2).center
+    expect(halfLon).toBeCloseTo(6.85, 9)
+    expect(halfLat).toBeCloseTo(45.95, 9)
     for (const elapsed of [GLIDE_MS, 90_000]) {
       const [lon, lat] = orbitCamera(from, to, -20, elapsed).center
       expect(lon).toBeCloseTo(6.9, 9)
