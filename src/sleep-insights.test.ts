@@ -51,6 +51,9 @@ const night = (overrides: Partial<SleptNight> = {}): SleptNight => ({
   ...overrides,
 })
 
+// `count` times the value
+const repeat = (count: number, value: number) => Array.from({ length: count }, () => value)
+
 // `count` nights ending on the days before `last` (included), newest first
 const nightsBack = (count: number, last: string, overrides: Partial<SleptNight> = {}) =>
   Array.from({ length: count }, (_, index) => night({ day: addDays(last, -index), ...overrides }))
@@ -119,10 +122,16 @@ describe('measure', () => {
     expect(measure(values)).toEqual(expected)
   })
 
-  it('takes 1.96 past 31 values', () => {
-    const values = Array.from({ length: 32 }, (_, index) => (index % 2 === 0 ? 70 : 80))
-    // s = 5.08, 1.96 · 5.08 / √32 = 1.76
-    expect(measure(values)).toEqual({ kind: 'measured', n: 32, mean: 75, ci95: 1.8 })
+  // s = 15 · √(n / (n − 1)) or 15: s/√n = 2.69 both times; t(30) = 2.04 at 31 values, 1.96 past
+  it.each([
+    {
+      name: '31 values: t(30)',
+      values: [...repeat(15, 60), ...repeat(15, 90), 75],
+      ci95: 5.5,
+    },
+    { name: '32 values: 1.96', values: [...repeat(16, 60), ...repeat(16, 90)], ci95: 5.3 },
+  ])('takes $name', ({ values, ci95 }) => {
+    expect(measure(values)).toMatchObject({ kind: 'measured', n: values.length, mean: 75, ci95 })
   })
 })
 
@@ -398,6 +407,8 @@ describe('regularityOf', () => {
     })
     const gap = [...late.slice(1), night({ day: weekendDays[0], bed_min: null }), ...usual]
     expect(regularityOf(gap).social_jetlag).toEqual({ kind: 'few', weekend: 4, weekday: 5 })
+    const weekdayGap = [...late, ...usual.slice(1), night({ day: weekdays[0], wake_min: null })]
+    expect(regularityOf(weekdayGap).social_jetlag).toEqual({ kind: 'few', weekend: 5, weekday: 4 })
   })
 
   it('splits the nights by their evening', () => {
@@ -495,7 +506,11 @@ describe('the tags', () => {
     })
     // A note the day before the span: its night is the span's first, listed
     const edge = tagsOf({
-      notes: [{ time: '2026-11-09T20:00:00.000Z', day: '2026-11-09', text: 'une bière' }],
+      notes: [
+        { time: '2026-11-09T20:00:00.000Z', day: '2026-11-09', text: 'une bière' },
+        // Its night, the 9th, is the day before the span: out
+        { time: '2026-11-08T20:00:00.000Z', day: '2026-11-08', text: 'une bière' },
+      ],
       from: '2026-11-10',
       span: [],
       history: [],

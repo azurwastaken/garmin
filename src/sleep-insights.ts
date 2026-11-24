@@ -44,6 +44,13 @@ const DEBT_LIMIT_S = 2 * 3600
 const SHORT_NIGHT_S = 3600
 // Half an hour at most: much earlier than usual rarely falls asleep any sooner
 const EARLIER_MIN = 30
+// What makes tomorrow a day to sleep earlier for, by its type; null: nothing
+const HARD_DAY: Record<Classified['type'], string | null> = {
+  rest: null,
+  easy: null,
+  quality: 'séance de qualité',
+  long: 'sortie longue',
+}
 
 export type Measured =
   | { readonly kind: 'few'; readonly n: number }
@@ -514,8 +521,9 @@ export const tonightOf = ({
     last_s !== null && last_s <= window.sleep_s - SHORT_NIGHT_S
       ? `nuit dernière courte (${hours(last_s)})`
       : null,
-    tomorrow.type === 'long' ? `demain, sortie longue (${tomorrow.reason})` : null,
-    tomorrow.type === 'quality' ? `demain, séance de qualité (${tomorrow.reason})` : null,
+    HARD_DAY[tomorrow.type] === null
+      ? null
+      : `demain, ${HARD_DAY[tomorrow.type]} (${tomorrow.reason})`,
   ])
   const earlier_min = reasons.length > 0 ? EARLIER_MIN : 0
   const bed = window.bed_min - earlier_min
