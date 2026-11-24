@@ -323,6 +323,7 @@ GarminWorkouts.use((workouts) => workouts.library({ limit: 10 })).pipe(
 | `withings/YYYY-MM.json`                    | a month of Withings measure groups, as getmeas returned them                   | sync         |
 | `connect/calendar/YYYY-MM.json`            | a month of the Garmin calendar (scheduled workouts)                            | sync         |
 | `journal/YYYY/<instant>.json`              | one note of your journal                                                       | `log_note`   |
+| `caffeine/YYYY/<instant>.json`             | one drink with caffeine (time, kind, mg, note), from the MCP or the Café card  | the MCP      |
 | `connect/workouts/<workoutId>.json`        | a workout's steps                                                              | sync         |
 | `races/<slug>.gpx`, `.json`, `.plan.json`  | a race's course, its facts, its plan (read on each request, not in SQL)        | `add_race`   |
 | `nutrition/plan.json`                      | the nutrition plan (read on each request, not in SQL)                          | the MCP      |
@@ -365,6 +366,8 @@ Tables and views:
 - `planned_workouts`: the Garmin calendar, with each entry's id, its workout's id and its steps.
 - `journal`: your notes (`log_note`), one file each in `data/journal/`; `body` (JSON) for a pain
   pinned on the body map.
+- `caffeine`: what you drank (`log_caffeine`), one file each in `data/caffeine/`: time (its key),
+  day (Paris), kind, mg, note.
 - `raw_files`, `sync_runs`: what was ingested, and each sync with Garmin Connect.
 - Views: `activity_summary` (paces, minutes, zones in minutes), `weekly` (per ISO week and sport).
 
@@ -400,6 +403,9 @@ src/
   auth.ts               the password, the session cookie, the gate in front of everything
   journal/              the journal: a note and its pinned pain (note.ts), the writer (log.ts),
                         the body history (history.ts)
+  caffeine/             an intake and the drink catalog (intake.ts), the decay, cut-off and views
+                        (kinetics.ts), caffeine against the nights (sleep.ts), all without I/O;
+                        caffeine.ts (the writer, the views)
   nutrition/            the nutrition plan (plan.ts), the day's type (day-type.ts), the weight
                         trend (trend.ts), all without I/O; nutrition.ts (the plan's file, the view)
   strength/             the strength programme (program.ts), the week's placement (schedule.ts),
@@ -421,6 +427,8 @@ src/
   or red, and why), the planned workout, the day's planned burn and the plan's protein, your
   journal; a strength session planned today, with its exercises. The last 7 days against the 7 before, the last night, hours per week by sport, and HRV,
   resting HR and sleep over 28 days.
+  Under today, the Café card: one tap per usual drink, the day's mg, what is left now and at
+  bedtime, the cut-off for the last coffee.
 - `/runs`: running over 26 or 52 weeks, or all of it.
   - Volume: km per week and the time per HR zone.
   - Each run's pace, and the longest run.
@@ -463,6 +471,8 @@ src/
   - The weight trend against the plan (on track, too fast, slow, stalled, not enough weigh-ins),
     and the phase with its end.
   - Each weigh-in, its 7-day mean and the deficit's corridor; fat and muscle mass.
+- `/cafe`: caffeine: today's card and its curve to bedtime, 30 days of mg and of last coffees
+  against the cut-off, and the nights compared once there are 10 a side.
 - `/garmin`: the connection, the login, sync now, the whole history, and the last syncs.
 - `/access`: the apps allowed on the MCP, each revocable.
 - `/setup`, `/login`, `/password`: the app's password.
