@@ -1,9 +1,9 @@
 import { parseDuration } from '../garmin/workout-builder.ts'
 
-import type { DayType } from './plan.ts'
+import { DAY_TYPES, type DayType } from './plan.ts'
 
-// A day's type for the plan's kcal, without I/O: from what was done that day, else from what its
-// calendar plans. Long is a running day (75 min or 15 km of running); quality any sport's (20 min
+// A day's type for the plan's kcal, without I/O: from what was done that day and what its calendar
+// still plans (a planned session no done session of its sport has replaced), the harder of both. Long is a running day (75 min or 15 km of running); quality any sport's (20 min
 // in zones 4–5 once done; before, the plan's words, its HR targets, its repetitions); any other
 // session makes an easy day; nothing, a rest day.
 
@@ -197,14 +197,37 @@ const plannedType = (
   return { type: 'easy', from: 'planned', reason: 'séance prévue sans intensité' }
 }
 
-// The day's type from what was done, else from what is planned: done sessions replace the plan.
+// The planned sessions still to come: those no done session of their sport family (every run one
+// family) has replaced; a session of unknown sport is replaced by any done session
+const stillPlanned = (
+  done: ReadonlyArray<DoneSession>,
+  planned: ReadonlyArray<PlannedSession>
+): Array<PlannedSession> => {
+  const family = (sport: string) => (isRun(sport) ? 'running' : sport)
+  const doneFamilies = new Set(done.map((session) => family(session.sport)))
+  return planned.filter((session) =>
+    session.sport === null ? done.length === 0 : !doneFamilies.has(family(session.sport))
+  )
+}
+
+// The day's type: the harder of what was done and what is still planned, the done one on a tie (a
+// morning walk never hides the afternoon's long run; a run done replaces the run planned).
 // long > quality > easy > rest
 export const dayType = (
   done: ReadonlyArray<DoneSession>,
   planned: ReadonlyArray<PlannedSession>,
   z4FloorBpm: number | null
 ): Classified => {
-  if (done.length > 0) return doneType(done)
-  if (planned.length > 0) return plannedType(planned, z4FloorBpm)
-  return { type: 'rest', from: 'nothing', reason: 'rien de prévu ni de fait' }
+  const pending = stillPlanned(done, planned)
+  const candidates = [
+    ...(done.length > 0 ? [doneType(done)] : []),
+    ...(pending.length > 0 ? [plannedType(pending, z4FloorBpm)] : []),
+  ]
+  const rank = (classified: Classified) => DAY_TYPES.indexOf(classified.type)
+  return (
+    candidates.reduce<Classified | undefined>(
+      (best, next) => (best === undefined || rank(next) > rank(best) ? next : best),
+      undefined
+    ) ?? { type: 'rest', from: 'nothing', reason: 'rien de prévu ni de fait' }
+  )
 }

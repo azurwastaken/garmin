@@ -232,4 +232,34 @@ describe('dayType', () => {
       from: 'done',
     })
   })
+
+  it('keeps what is still planned when another sport was done first, the harder of both', () => {
+    const plannedLong = planned({ minutes: 90 })
+    // A morning walk or strength session never hides the afternoon's long run
+    expect(dayType([done({ sport: 'walking', minutes: 40, km: 3 })], [plannedLong], FLOOR)).toEqual(
+      {
+        type: 'long',
+        from: 'planned',
+        reason: '90 min de course prévus',
+      }
+    )
+    expect(
+      dayType([done({ sport: 'strength_training', km: null })], [plannedLong], FLOOR)
+    ).toMatchObject({ type: 'long', from: 'planned' })
+    // A treadmill run replaces the planned run (one family); a hard ride outranks an easy run planned
+    expect(
+      dayType([done({ sport: 'treadmill_running', minutes: 30 })], [plannedLong], FLOOR)
+    ).toMatchObject({ type: 'easy', from: 'done' })
+    expect(
+      dayType([done({ sport: 'cycling', z45_minutes: 25 })], [planned({})], FLOOR)
+    ).toMatchObject({ type: 'quality', from: 'done' })
+    // A tie goes to what was done; a planned session of unknown sport is replaced by any done one
+    expect(dayType([done({ sport: 'walking' })], [planned({})], FLOOR)).toMatchObject({
+      type: 'easy',
+      from: 'done',
+    })
+    expect(
+      dayType([done({ sport: 'walking' })], [planned({ sport: null, minutes: 90 })], FLOOR)
+    ).toMatchObject({ type: 'easy', from: 'done' })
+  })
 })
