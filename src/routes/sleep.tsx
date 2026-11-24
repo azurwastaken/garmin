@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 
 import { api } from '#src/api/client.ts'
-import { INSIGHT_MIN_DAYS, SLEEP_PERIODS } from '#src/api/periods.ts'
+import { INSIGHT_MIN_DAYS, MIN_NIGHTS, SLEEP_PERIODS, TAG_BEFORE_DAYS } from '#src/api/periods.ts'
 import {
   LineChart,
   RangeColumns,
@@ -11,17 +11,15 @@ import {
 } from '#src/components/charts.tsx'
 import { clock, dayLabel, fmt, hours, longDay, numericDay } from '#src/components/format.ts'
 import { STAGES, stageParts } from '#src/components/parts.ts'
-import {
-  type BedtimeBucket,
-  type DurationBucket,
-  type Measured,
-  MIN_NIGHTS,
-  type Plan,
-  type Regularity,
-  type SleepInsights,
-  type Spread,
-  TAG_BEFORE_DAYS,
-  type Tags,
+import type {
+  BedtimeBucket,
+  DurationBucket,
+  Measured,
+  Plan,
+  Regularity,
+  SleepInsights,
+  Spread,
+  Tags,
 } from '#src/sleep-insights.ts'
 import type { SleepAverages, SleepNight } from '#src/stats.ts'
 

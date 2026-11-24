@@ -1,3 +1,4 @@
+import { MIN_NIGHTS, TAG_BEFORE_DAYS } from './api/periods.ts'
 import { clock, fmt, hours } from './components/format.ts'
 import { addDays, earlierDay } from './days.ts'
 import { mean, median, present, round, spread } from './numbers.ts'
@@ -8,6 +9,9 @@ import type { SleepNight } from './stats.ts'
 // by duration, the window they point to, how regular the nights are, the week's debt, tonight's
 // advice and the nights the journal tags. Descriptive only: under 5 nights a bucket says nothing,
 // every number carries its n, and a difference is "associé à", never a cause.
+
+// The thresholds the page shares (api/periods.ts, for the browser's bundle)
+export { MIN_NIGHTS, TAG_BEFORE_DAYS }
 
 // A night with its sleep measured; its day is the morning it ends, bed_min and wake_min are on the
 // noon axis (minutes from noon the day before, Paris time: see stats.ts withClock)
@@ -31,14 +35,10 @@ export interface Note {
   readonly text: string
 }
 
-// Under this many values, no mean and no spread: too few nights to say anything
-export const MIN_NIGHTS = 5
 // Score points under which a longer sleep no longer counts as better
 export const PLATEAU_POINTS = 3
 // Nights on each side of a "since" comparison
 export const TAG_MIN_NIGHTS = 14
-// The before side of a "since" comparison: the 28 days before the first night after
-export const TAG_BEFORE_DAYS = 28
 // Tonight earlier from a 7-night debt of 2 h, or after a night 1 h short of the target
 const DEBT_LIMIT_S = 2 * 3600
 const SHORT_NIGHT_S = 3600
