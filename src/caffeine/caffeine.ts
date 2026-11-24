@@ -85,6 +85,10 @@ export interface CaffeineSleep {
 
 const decodeFile = Schema.decodeUnknownOption(Schema.fromJsonString(CaffeineIntakeJson))
 
+// The days today's estimates read back: a 1000 mg dose (the most one intake takes) is under 0.5 mg
+// after 55 h, 11 half-lives
+const RECENT_DAYS = 3
+
 export class Caffeine extends Context.Service<
   Caffeine,
   {
@@ -175,7 +179,7 @@ export class Caffeine extends Context.Service<
           today: day,
           now: yield* Clock.currentTimeMillis,
           bedtime: bedtimeOn(day),
-          recent: yield* rowsSince(addDays(day, -1)),
+          recent: yield* rowsSince(addDays(day, -RECENT_DAYS)),
         })
       })
 

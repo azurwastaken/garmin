@@ -92,7 +92,7 @@ export interface CaffeineToday {
   readonly rule_cutoff: Moment
 }
 
-// Today from the recent rows (from yesterday on: last night's coffee still counts now), by time
+// Today from the recent rows, by time (the days before still count in the body)
 export const todayView = (input: {
   readonly today: string
   readonly now: number

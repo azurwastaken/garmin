@@ -37,6 +37,12 @@ layer(TestLayer)('Caffeine', (it) => {
       }
       expect(yield* files).toEqual([])
 
+      // 23:00 in Paris two days back, 26 h ago: 160·2^(−26/5) = 4.35 mg still in the body
+      const old = yield* caffeine.log({ kind: 'monster', day: '1969-12-30', time: '23:00' })
+      const before = yield* caffeine.today
+      expect(before.now_mg).toBe(4)
+      expect(before.intakes).toEqual([])
+
       const first = yield* caffeine.log({ kind: 'espresso' })
       expect(first).toEqual({ time: '1970-01-01T00:00:00.000Z', kind: 'espresso', mg: 63 })
       // The same millisecond: the next one, never over the first
@@ -52,6 +58,7 @@ layer(TestLayer)('Caffeine', (it) => {
       expect(
         yield* rows(sql`SELECT time, day, kind, mg, note FROM caffeine ORDER BY time`)
       ).toEqual([
+        { time: old.time, day: '1969-12-30', kind: 'monster', mg: 160, note: null },
         { time: earlier.time, day: '1970-01-01', kind: 'black_tea', mg: 47, note: null },
         { time: first.time, day: '1970-01-01', kind: 'espresso', mg: 63, note: null },
         { time: second.time, day: '1970-01-01', kind: 'custom', mg: 150, note: 'gel' },
