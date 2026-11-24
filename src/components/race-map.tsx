@@ -405,7 +405,8 @@ export function RaceMap({
       for (const input of INPUTS) live.off(input, halt)
       live.off('movestart', interrupt)
     }
-  }, [motion, state, track, cuts, marks, dem, bounds])
+    // The setup's deps: a rebuilt map stops the motion (the rerun finds no map)
+  }, [motion, track, cuts, marks, dem, bounds])
 
   // A mode's step under reduced motion: the flight's next segment cut, or the orbit's next 45°
   const step = (live: MapInstance, mode: Mode) => {
@@ -442,7 +443,7 @@ export function RaceMap({
           ref={container}
           className="race-map-canvas"
           role="region"
-          aria-label="Carte 3D du parcours : glisser pour déplacer, clic droit ou Ctrl pour incliner et tourner"
+          aria-label="Carte 3D du parcours : glisser pour déplacer, clic droit ou Ctrl pour incliner et tourner, Maj + flèches pour pivoter"
         />
         {state === 'failed' ? (
           <p className="note">

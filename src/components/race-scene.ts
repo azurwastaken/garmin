@@ -21,11 +21,11 @@ export const SHADING = {
   light: ['--relief-light', '#2a4852'],
 } as const
 
-// A flat course still spreads the ramp over 20 m
+// A flat course still counts 20 m of relief (a 30 m ramp)
 const MIN_SPAN = 20
 // The orbit: its centre reaches the course's in 1 s, then a full turn in 90 s
 export const GLIDE_MS = 1000
-export const ORBIT_DEG_PER_MS = 360 / 90_000
+const ORBIT_DEG_PER_MS = 360 / 90_000
 
 // [altitude, color, altitude, color…] for a color-relief: the colors evenly over the course's middle
 // altitude ± 3/4 of its span (at least MIN_SPAN), a quarter of the span past each end; one color,

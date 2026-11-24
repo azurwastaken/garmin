@@ -33,7 +33,7 @@ describe('reliefStops', () => {
     ])
   })
 
-  it('gives a flat course a ramp of at least 20 m', () => {
+  it('counts 20 m of relief on a flat course (a 30 m ramp)', () => {
     const altitudes = altitudesOf(reliefStops([35, 35, 35], COLORS))
     expect(altitudes[0]).toBe(20)
     expect(altitudes.at(-1)).toBe(50)
