@@ -67,9 +67,9 @@ describe('a day of ideas', () => {
       scale: 1,
       meals: [
         { name: 'Skyr, flocons d’avoine, banane et noix' },
-        { name: 'Chili de bœuf aux lentilles, maïs et tomates' },
-        { name: 'Tartines de pain complet au miel et banane' },
-        { name: 'Cabillaud, écrasé de butternut et pommes de terre, carottes' },
+        { name: 'Pâtes complètes au thon, tomates et petits pois' },
+        { name: 'Skyr, banane et 2 carrés de chocolat noir' },
+        { name: 'Omelette aux champignons et épinards fondus, pain complet' },
       ],
     })
   })

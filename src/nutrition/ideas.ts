@@ -187,11 +187,11 @@ export const RECIPES: ReadonlyArray<Recipe> = [
   },
   {
     slot: 'snack',
-    name: 'Tartines de pain complet au miel et banane',
+    name: 'Skyr, banane et 2 carrés de chocolat noir',
     ingredients: [
-      ['wholemeal_bread', 80],
-      ['honey', 20],
+      ['skyr', 150],
       ['banana', 120],
+      ['dark_chocolate', 10],
     ],
   },
   {
