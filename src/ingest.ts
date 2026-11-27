@@ -14,7 +14,7 @@ import {
   or,
   sql,
 } from 'drizzle-orm'
-import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
+import type { SQLiteInsertValue, SQLiteTable } from 'drizzle-orm/sqlite-core'
 import { Config, Console, Context, Effect, FileSystem, Layer, Option, Schedule } from 'effect'
 import { Command, Flag } from 'effect/cli'
 
@@ -35,6 +35,7 @@ import { Database, type DatabaseError } from './db.ts'
 import { parseFit, type FitActivity } from './fit.ts'
 import { decodeNote } from './journal/note.ts'
 import { runMain } from './main.ts'
+import { mealRows } from './meals/meal.ts'
 import {
   activities,
   body,
@@ -42,6 +43,7 @@ import {
   daily,
   journal,
   laps,
+  meals,
   plannedWorkouts,
   rawFiles,
   samples,
@@ -74,6 +76,7 @@ type Kind =
   | { readonly kind: 'withings' }
   | { readonly kind: 'journal' }
   | { readonly kind: 'caffeine' }
+  | { readonly kind: 'meals' }
   | { readonly kind: 'calendar' }
   | { readonly kind: 'workout'; readonly id: number }
   | { readonly kind: 'export' }
@@ -91,6 +94,7 @@ const classify = (path: string): Kind | null => {
   if (/^withings\/\d{4}-\d{2}\.json$/u.test(path)) return { kind: 'withings' }
   if (/^journal\/\d{4}\/[^/]+\.json$/u.test(path)) return { kind: 'journal' }
   if (/^caffeine\/\d{4}\/[^/]+\.json$/u.test(path)) return { kind: 'caffeine' }
+  if (/^meals\/\d{4}\/[^/]+\.json$/u.test(path)) return { kind: 'meals' }
   if (/^connect\/calendar\/\d{4}-\d{2}\.json$/u.test(path)) return { kind: 'calendar' }
   match = /^connect\/workouts\/(\d+)\.json$/u.exec(path)
   if (match) return { kind: 'workout', id: Number(match[1]) }
@@ -244,6 +248,7 @@ export class Ingest extends Context.Service<
                 plannedWorkouts,
                 journal,
                 caffeine,
+                meals,
                 rawFiles,
               ]) {
                 tx.delete(table).run()
@@ -415,31 +420,43 @@ export class Ingest extends Context.Service<
           yield* done(file, Option.isNone(note) ? 'not a journal note' : null)
         }
 
-        // Caffeine: rebuilt from every intake's file once one of them changed or went (a deleted
-        // intake's row goes with its file, and its path leaves raw_files)
-        const caffeineFiles = files.filter((f) => f.kind?.kind === 'caffeine')
-        const onDisk = new Set(caffeineFiles.map((file) => file.path))
-        const gone = [...known.keys()].filter(
-          (path) => classify(path)?.kind === 'caffeine' && !onDisk.has(path)
-        )
-        const caffeineChanged = changed.filter((f) => f.kind?.kind === 'caffeine')
-        if (caffeineChanged.length > 0 || gone.length > 0) {
-          const read = yield* Effect.forEach(caffeineFiles, (file) =>
+        // A table of one file per row (caffeine, meals): rebuilt from every file of its kind once one
+        // of them changed or went (a deleted file's row goes with it, and its path leaves raw_files)
+        const rebuildFiled = Effect.fnUntraced(function* <T extends typeof caffeine | typeof meals>(
+          table: T,
+          rowsOf: (
+            read: ReadonlyArray<{ readonly path: string; readonly json: Option.Option<unknown> }>
+          ) => {
+            readonly rows: ReadonlyArray<SQLiteInsertValue<T>>
+            readonly errors: ReadonlyMap<string, string>
+          }
+        ) {
+          const kind = getTableName(table)
+          const ofKind = files.filter((f) => f.kind?.kind === kind)
+          const onDisk = new Set(ofKind.map((file) => file.path))
+          const gone = [...known.keys()].filter(
+            (path) => classify(path)?.kind === kind && !onDisk.has(path)
+          )
+          const touched = changed.filter((f) => f.kind?.kind === kind)
+          if (touched.length === 0 && gone.length === 0) return
+          const read = yield* Effect.forEach(ofKind, (file) =>
             Effect.map(readJson(file.path).pipe(Effect.option), (json) => ({
               path: file.path,
               json,
             }))
           )
-          const { rows, errors: refused } = caffeineRows(read)
+          const { rows, errors: refused } = rowsOf(read)
           yield* use((db) =>
             db.transaction((tx) => {
-              tx.delete(caffeine).run()
-              for (const chunk of chunks(rows)) tx.insert(caffeine).values(chunk).run()
+              tx.delete(table).run()
+              for (const chunk of chunks(rows)) tx.insert(table).values(chunk).run()
               if (gone.length > 0) tx.delete(rawFiles).where(inArray(rawFiles.path, gone)).run()
             })
           )
-          for (const file of caffeineChanged) yield* done(file, refused.get(file.path) ?? null)
-        }
+          for (const file of touched) yield* done(file, refused.get(file.path) ?? null)
+        })
+        yield* rebuildFiled(caffeine, caffeineRows)
+        yield* rebuildFiled(meals, mealRows)
 
         // Activities: each one touched by a changed FIT file, summary or exercise sets, rebuilt
         // from all of them

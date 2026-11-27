@@ -10,9 +10,11 @@ import {
   shortDay,
 } from '#src/components/charts.tsx'
 import { clock, dayLabel, fmt, hours, longDay, numericDay } from '#src/components/format.ts'
+import { MealCard } from '#src/components/meals.tsx'
 import { STAGES, stageParts } from '#src/components/parts.ts'
 import type {
   BedtimeBucket,
+  Dinner,
   DurationBucket,
   Measured,
   Plan,
@@ -22,12 +24,13 @@ import type {
   TaggedNight,
   Tags,
 } from '#src/sleep-insights.ts'
-import type { SleepAverages, SleepNight } from '#src/stats.ts'
+import type { SleepAverages, SleepNight, SleepView } from '#src/stats.ts'
 
 // Sleep: the last night in detail (its stages, its HRV against Garmin's baseline), the period's
 // averages against the period before, what the nights say (the window, tonight, recovery by
 // bedtime and by duration, regularity, the tagged nights), the stages and the schedule night by
-// night, the score, HRV, resting HR and body battery at wake time
+// night, the score, HRV, resting HR and body battery at wake time; tonight's meals and tomorrow's
+// light, the meal log, and the nights by the gap from dinner to sleep
 type Period = (typeof SLEEP_PERIODS)[number]
 
 export const Route = createFileRoute('/sleep')({
@@ -483,6 +486,24 @@ function TaggedNights({ tags }: { readonly tags: Tags }) {
   )
 }
 
+// The nights by the gap from their dinner to sleep, once a dinner is logged
+function DinnerGap({ dinner }: { readonly dinner: Dinner }) {
+  if (dinner.nights.length === 0) {
+    return (
+      <p className="note muted">
+        Aucun dîner noté sur la période : « J'ai dîné » (ou log_meal) les met ici, chacun à côté de
+        la nuit qui le suit.
+      </p>
+    )
+  }
+  return (
+    <BucketTable
+      rows={dinner.gap}
+      label="Récupération selon le temps entre le dîner et le sommeil"
+    />
+  )
+}
+
 // The chart's summary for its label: each measured bucket's score and n, and the buckets with too
 // few nights
 const bedtimeSummary = (buckets: ReadonlyArray<BedtimeBucket>) => {
@@ -500,9 +521,13 @@ const bedtimeSummary = (buckets: ReadonlyArray<BedtimeBucket>) => {
 function Insights({
   insights,
   floored,
+  today,
+  meals,
 }: {
   readonly insights: SleepInsights
   readonly floored: boolean
+  readonly today: string
+  readonly meals: SleepView['meals']
 }) {
   const columns = insights.bedtime.flatMap((bucket) =>
     bucket.recovery.score.kind === 'measured'
@@ -528,6 +553,8 @@ function Insights({
         <WindowCard plan={insights.plan} />
         <TonightFacts plan={insights.plan} />
       </section>
+
+      <MealCard plan={insights.plan} today={today} meals={meals} />
 
       <section className="card">
         <h2>Score selon l'heure d'endormissement</h2>
@@ -572,6 +599,14 @@ function Insights({
         <h2>Régularité</h2>
         <p className="sub">Les vendredis et samedis comptés à part</p>
         <RegularityTiles regularity={insights.regularity} />
+      </section>
+
+      <section className="card">
+        <h2>Dîner et sommeil</h2>
+        <p className="sub">
+          Du dernier dîner noté à l'endormissement (selon Garmin) · associé à, pas causé par
+        </p>
+        <DinnerGap dinner={insights.dinner} />
       </section>
 
       <section className="card">
@@ -724,7 +759,12 @@ function Sleep() {
         <Averages now={view.averages} before={view.previous} />
       </section>
 
-      <Insights insights={view.insights} floored={view.days < INSIGHT_MIN_DAYS} />
+      <Insights
+        insights={view.insights}
+        floored={view.days < INSIGHT_MIN_DAYS}
+        today={view.today}
+        meals={view.meals}
+      />
 
       <section className="card">
         <h2>Phases {weekly ? 'par semaine (moyenne par nuit)' : 'par nuit'} (h)</h2>

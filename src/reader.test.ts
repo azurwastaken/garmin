@@ -103,6 +103,7 @@ layer(withTimeout(Reader.layer), { excludeTestServices: true })('Reader', (it) =
         'daily',
         'journal',
         'laps',
+        'meals',
         'planned_workouts',
         'raw_files',
         'samples',

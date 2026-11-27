@@ -9,11 +9,15 @@ import {
   type Best,
   bestOf,
   debtOf,
+  dinnerGapBuckets,
+  dinnerNights,
   type DurationBucket,
   durationBuckets,
   eveningOf,
   firstDayRead,
   insightsOf,
+  type MealTime,
+  mealAdviceOf,
   measure,
   type Plateau,
   plateauOf,
@@ -40,6 +44,8 @@ const H7 = 7 * 3600
 
 const night = (overrides: Partial<SleptNight> = {}): SleptNight => ({
   day: TODAY,
+  sleep_start: null,
+  sleep_end: null,
   bed_min: ELEVEN,
   wake_min: SEVEN,
   sleep_s: H7,
@@ -394,6 +400,180 @@ describe('tonightOf', () => {
   })
 })
 
+describe('mealAdviceOf', () => {
+  it.each([
+    // 00:30 and 07:30: dinner by 22:30 the evening before, breakfast from 10:30
+    ['a bedtime after midnight', 750, 1170, 630, 1350, ['22:30', '10:30'], ['07:30', '08:30']],
+    ['a bedtime before it', 660, 1110, 540, 1260, ['21:00', '09:00'], ['06:30', '07:30']],
+    // 02:30: dinner by 00:30, breakfast from 12:30 (past the axis's end)
+    ['a very late bedtime', 870, 1260, 750, 1470, ['00:30', '12:30'], ['09:00', '10:00']],
+  ] as const)(
+    'puts dinner 2 h before %s, breakfast 12 h after, light in the hour after waking',
+    (_, bed_min, wake_min, dinner_by, breakfast_from, dinnerClocks, lightClocks) => {
+      const advice = mealAdviceOf({ bed_min, wake_min })
+      expect(advice).toMatchObject({
+        dinner_by,
+        breakfast_from,
+        light_from: wake_min,
+        light_to: wake_min + 60,
+      })
+      for (const clock of dinnerClocks) expect(advice.dinner_sentence).toContain(clock)
+      expect(advice.dinner_sentence).toContain('preuves modestes')
+      expect(advice.light_sentence).toContain(`entre ${lightClocks[0]} et ${lightClocks[1]}`)
+      expect(advice.light_sentence).toContain('10 à 20 min')
+    }
+  )
+})
+
+// A night ending on `day` (the morning), asleep and awake at those instants
+const slept = (day: string, sleep_start: string | null, sleep_end: string | null) =>
+  night({ day, sleep_start, sleep_end })
+const meal = (time: string, kind: MealTime['kind'] = 'dinner') => ({ time, kind }) as MealTime
+
+describe('dinnerNights', () => {
+  // Asleep 00:30, awake 07:30 in Paris (UTC+1)
+  const NIGHT = slept(TODAY, '2026-11-23T23:30:00.000Z', '2026-11-24T06:30:00.000Z')
+
+  it('measures the gap to sleep and the fast across midnight, on instants', () => {
+    // Dinner 20:00, breakfast 07:45: 4 h 30 to sleep, 11 h 45 without eating
+    expect(
+      dinnerNights(
+        [NIGHT],
+        [
+          meal('2026-11-23T11:30:00.000Z', 'lunch'),
+          meal('2026-11-23T19:00:00.000Z'),
+          meal('2026-11-24T06:45:00.000Z', 'breakfast'),
+        ]
+      )
+    ).toEqual([
+      {
+        night: TODAY,
+        dinner: '2026-11-23T19:00:00.000Z',
+        gap_s: 16_200,
+        fast_s: 42_300,
+        sleep_score: 80,
+        hrv: 40,
+        resting_hr: 52,
+      },
+    ])
+  })
+
+  it('takes the later of two dinners, and starts the fast at a snack after it', () => {
+    const [found] = dinnerNights(
+      [NIGHT],
+      [
+        meal('2026-11-23T18:00:00.000Z'),
+        meal('2026-11-23T20:00:00.000Z'),
+        meal('2026-11-23T22:00:00.000Z', 'snack'),
+        meal('2026-11-24T07:00:00.000Z', 'breakfast'),
+      ]
+    )
+    expect(found).toMatchObject({ dinner: '2026-11-23T20:00:00.000Z', gap_s: 12_600 })
+    // From the 23:00 snack to the 08:00 breakfast
+    expect(found?.fast_s).toBe(9 * 3600)
+  })
+
+  it('ignores a meal between falling asleep and waking, for the dinner and for the fast', () => {
+    // Asleep 22:30, a snack logged at 23:30 the same evening, a dinner 15 min after falling asleep
+    const early = slept(TODAY, '2026-11-23T21:30:00.000Z', '2026-11-24T06:30:00.000Z')
+    const [found] = dinnerNights(
+      [early],
+      [
+        meal('2026-11-23T18:30:00.000Z'),
+        meal('2026-11-23T21:45:00.000Z'),
+        meal('2026-11-23T22:30:00.000Z', 'snack'),
+        meal('2026-11-24T07:30:00.000Z', 'breakfast'),
+      ]
+    )
+    expect(found).toMatchObject({ dinner: '2026-11-23T18:30:00.000Z', gap_s: 3 * 3600 })
+    expect(found?.fast_s).toBe(13 * 3600)
+  })
+
+  it('counts on instants across the night the clocks go back', () => {
+    // Dinner 22:00 CEST on the 24th, asleep 02:30 CET (the second one), breakfast 08:00 CET: on the
+    // wall clock 4 h 30 and 10 h, in fact 5 h 30 and 11 h
+    const [found] = dinnerNights(
+      [slept('2026-10-25', '2026-10-25T01:30:00.000Z', '2026-10-25T06:30:00.000Z')],
+      [meal('2026-10-24T20:00:00.000Z'), meal('2026-10-25T07:00:00.000Z', 'breakfast')]
+    )
+    expect(found).toMatchObject({ gap_s: 19_800, fast_s: 39_600 })
+  })
+
+  it.each([
+    ['without a dinner', [meal('2026-11-23T19:00:00.000Z', 'snack')], NIGHT],
+    ['after a dinner over 12 h before', [meal('2026-11-23T11:00:00.000Z')], NIGHT],
+    ['after a dinner past sleep onset', [meal('2026-11-23T23:45:00.000Z')], NIGHT],
+    [
+      'without its sleep onset',
+      [meal('2026-11-23T19:00:00.000Z')],
+      slept(TODAY, null, '2026-11-24T06:30:00.000Z'),
+    ],
+  ] as const)('leaves out a night %s', (_, meals, one) => {
+    expect(dinnerNights([one], meals)).toEqual([])
+  })
+
+  it.each([
+    ['its wake time', slept(TODAY, '2026-11-23T23:30:00.000Z', null), '2026-11-24T07:00:00.000Z'],
+    // The next meal 12 h after waking
+    ['a meal in the 12 h after waking', NIGHT, '2026-11-24T18:30:00.000Z'],
+  ] as const)('has no fast without %s', (_, one, next) => {
+    const [found] = dinnerNights([one], [meal('2026-11-23T19:00:00.000Z'), meal(next, 'lunch')])
+    expect(found).toMatchObject({ gap_s: 16_200, fast_s: null })
+  })
+})
+
+describe('dinnerGapBuckets', () => {
+  // A night ending `days` before today, asleep at 00:00 Paris, after a dinner `gap_s` before
+  const dinnerAt = (days: number, gap_s: number, score: number) => {
+    const day = addDays(TODAY, -days)
+    const onset = Date.parse(`${addDays(day, -1)}T23:00:00.000Z`)
+    return {
+      night: { ...slept(day, new Date(onset).toISOString(), null), sleep_score: score },
+      dinner: meal(new Date(onset - gap_s * 1000).toISOString()),
+    }
+  }
+
+  it('splits the nights at 2 h and 3 h, an edge in the bucket it opens', () => {
+    const set = [
+      dinnerAt(0, 7199, 70),
+      dinnerAt(1, 7200, 80),
+      dinnerAt(2, 10_799, 80),
+      dinnerAt(3, 10_800, 90),
+    ]
+    const nights = set.map((one) => one.night)
+    const buckets = dinnerGapBuckets(
+      // A night without a dinner is in none
+      [...nights, night({ day: addDays(TODAY, -4) })],
+      dinnerNights(
+        nights,
+        set.map((one) => one.dinner)
+      )
+    )
+    expect(
+      buckets.map((bucket) => [bucket.label, bucket.nights, bucket.from_s, bucket.to_s])
+    ).toEqual([
+      ['moins de 2 h 00', 1, null, 7200],
+      ['2 h 00 – 3 h 00', 2, 7200, 10_800],
+      ['3 h 00 et plus', 1, 10_800, null],
+    ])
+    expect(buckets[1]?.recovery.score).toEqual({ kind: 'few', n: 2 })
+  })
+
+  it('measures a bucket from 5 nights', () => {
+    const set = [80, 82, 84, 86, 88].map((score, days) => dinnerAt(days, 3 * 3600, score))
+    const nights = set.map((one) => one.night)
+    const [, , late] = dinnerGapBuckets(
+      nights,
+      dinnerNights(
+        nights,
+        set.map((one) => one.dinner)
+      )
+    )
+    // Mean 84, SD 3.16: t(4) 2.78 · 3.16 / √5 = 3.9
+    expect(late?.recovery.score).toEqual({ kind: 'measured', n: 5, mean: 84, ci95: 3.9 })
+  })
+})
+
 describe('regularityOf', () => {
   it.each([
     { beds: [600, 610, null, 620, 630], expected: { kind: 'few', nights: 4 } },
@@ -742,6 +922,7 @@ describe('insightsOf', () => {
       tomorrow: REST,
       notes: [],
       started: [],
+      meals: [],
     })
     expect(insights).toMatchObject({ from: addDays(TODAY, -69), to: TODAY, nights: 70 })
     expect(insights.plan).toMatchObject({
@@ -754,6 +935,13 @@ describe('insightsOf', () => {
     })
     expect(insights.regularity.social_jetlag).toMatchObject({ kind: 'measured', minutes: 113 })
     expect(insights.tags).toEqual({ nights: [], supplements: null })
+    // Tonight's meals from tonight's bedtime: 23:10 − 30 min
+    if (insights.plan.kind !== 'plan') return expect.fail('no plan')
+    expect(insights.plan.meal_timing).toEqual(mealAdviceOf(insights.plan.tonight))
+    expect(insights.plan.meal_timing).toMatchObject({ dinner_by: 520, light_from: 1125 })
+    // No meal logged: three empty buckets
+    expect(insights.dinner.nights).toEqual([])
+    expect(insights.dinner.gap.map((bucket) => bucket.nights)).toEqual([0, 0, 0])
   })
 
   it('says what is missing for the window', () => {
@@ -765,6 +953,7 @@ describe('insightsOf', () => {
       tomorrow: REST,
       notes: [],
       started: [],
+      meals: [],
     })
     expect(insights.plan).toEqual({
       kind: 'too-few',
