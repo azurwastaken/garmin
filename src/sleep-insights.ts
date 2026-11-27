@@ -720,15 +720,16 @@ export const regularityOf = (nights: ReadonlyArray<SleptNight>): Regularity => (
   weekdays: EVENINGS.map((label, evening) => weekdayRow(nights, evening, label)),
 })
 
-const atOf = (meal: MealTime) => Date.parse(meal.time)
+// A meal with its instant (epoch ms), parsed once for every night that reads it
+type TimedMeal = MealTime & { readonly at: number }
 
 // A night's dinner and the fast after it, from the meals by time: its last dinner in the 12 h before
 // sleep_start, the last meal before falling asleep and the first in the 12 h after sleep_end. Null
 // without sleep_start or such a dinner; a meal between falling asleep and waking counts for neither.
-const dinnerNight = (night: SleptNight, meals: ReadonlyArray<MealTime>): DinnerNight | null => {
+const dinnerNight = (night: SleptNight, meals: ReadonlyArray<TimedMeal>): DinnerNight | null => {
   if (night.sleep_start === null) return null
   const onset = Date.parse(night.sleep_start)
-  const before = meals.filter((meal) => atOf(meal) <= onset && atOf(meal) > onset - MEAL_WINDOW_MS)
+  const before = meals.filter((meal) => meal.at <= onset && meal.at > onset - MEAL_WINDOW_MS)
   const dinner = before.findLast((meal) => meal.kind === 'dinner')
   const last = before.at(-1)
   if (dinner === undefined || last === undefined) return null
@@ -736,12 +737,12 @@ const dinnerNight = (night: SleptNight, meals: ReadonlyArray<MealTime>): DinnerN
   const first =
     wake === null
       ? undefined
-      : meals.find((meal) => atOf(meal) >= wake && atOf(meal) < wake + MEAL_WINDOW_MS)
+      : meals.find((meal) => meal.at >= wake && meal.at < wake + MEAL_WINDOW_MS)
   return {
     night: night.day,
     dinner: dinner.time,
-    gap_s: Math.round((onset - atOf(dinner)) / 1000),
-    fast_s: first === undefined ? null : Math.round((atOf(first) - atOf(last)) / 1000),
+    gap_s: Math.round((onset - dinner.at) / 1000),
+    fast_s: first === undefined ? null : Math.round((first.at - last.at) / 1000),
     sleep_score: night.sleep_score,
     hrv: night.hrv,
     resting_hr: night.resting_hr,
@@ -752,7 +753,10 @@ const dinnerNight = (night: SleptNight, meals: ReadonlyArray<MealTime>): DinnerN
 export const dinnerNights = (
   nights: ReadonlyArray<SleptNight>,
   meals: ReadonlyArray<MealTime>
-): Array<DinnerNight> => present(nights.map((night) => dinnerNight(night, meals)))
+): Array<DinnerNight> => {
+  const timed = meals.map((meal) => ({ ...meal, at: Date.parse(meal.time) }))
+  return present(nights.map((night) => dinnerNight(night, timed)))
+}
 
 // The nights by the gap from their dinner to sleep: under 2 h, 2 h to 3 h, 3 h and more
 export const dinnerGapBuckets = (
