@@ -502,6 +502,7 @@ describe('dinnerNights', () => {
   it.each([
     ['without a dinner', [meal('2026-11-23T19:00:00.000Z', 'snack')], NIGHT],
     ['after a dinner over 12 h before', [meal('2026-11-23T11:00:00.000Z')], NIGHT],
+    ['after a dinner exactly 12 h before', [meal('2026-11-23T11:30:00.000Z')], NIGHT],
     ['after a dinner past sleep onset', [meal('2026-11-23T23:45:00.000Z')], NIGHT],
     [
       'without its sleep onset',
@@ -510,6 +511,12 @@ describe('dinnerNights', () => {
     ],
   ] as const)('leaves out a night %s', (_, meals, one) => {
     expect(dinnerNights([one], meals)).toEqual([])
+  })
+
+  it('keeps a dinner logged at the very instant of falling asleep', () => {
+    expect(dinnerNights([NIGHT], [meal('2026-11-23T23:30:00.000Z')])).toMatchObject([
+      { dinner: '2026-11-23T23:30:00.000Z', gap_s: 0 },
+    ])
   })
 
   it.each([
