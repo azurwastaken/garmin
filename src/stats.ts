@@ -10,9 +10,11 @@ import {
   mondayOf,
   parisMinutesFromNoon,
   parisToday,
+  parisWall,
 } from './days.ts'
 import { Database, type DatabaseError } from './db.ts'
 import { namesOf } from './journal/history.ts'
+import type { MealRow } from './meals/meal.ts'
 import { mean, present, round } from './numbers.ts'
 import { dayType } from './nutrition/day-type.ts'
 import { Nutrition, sessionsOn, z4Floor } from './nutrition/nutrition.ts'
@@ -21,6 +23,7 @@ import { journal } from './schema.ts'
 import {
   firstDayRead,
   insightsOf,
+  type MealTime,
   type Note,
   type SleepInsights,
   sleptOnly,
@@ -334,6 +337,8 @@ export interface SleepView {
   readonly previous: SleepAverages
   // Over INSIGHT_MIN_DAYS days at least (sleep-insights.ts)
   readonly insights: SleepInsights
+  // Today's meals (Paris), by time, each with its Paris clock (HH:MM)
+  readonly meals: ReadonlyArray<MealRow & { readonly clock: string }>
 }
 
 const RUN = `(sport LIKE '%running%')`
@@ -777,8 +782,8 @@ export class Stats extends Context.Service<
         )
       )
 
-      // The analysis of the `days` nights ending `today`, tomorrow's planned day, the notes and the
-      // supplements begun
+      // The analysis of the `days` nights ending `today`, tomorrow's planned day, the notes, the
+      // supplements begun and the meals (from the evening before the first night)
       const insightsOn = Effect.fnUntraced(function* (today: string, days: number) {
         const from = addDays(today, -(days - 1))
         const notes = yield* all<Note>(sql`
@@ -802,6 +807,8 @@ export class Stats extends Context.Service<
           ),
           notes,
           started,
+          meals: yield* all<MealTime>(sql`
+            SELECT time, kind FROM meals WHERE day >= ${addDays(from, -1)} ORDER BY time`),
         })
       })
 
@@ -834,6 +841,10 @@ export class Stats extends Context.Service<
           averages: sleepAverages(rows),
           previous: sleepAverages(previous),
           insights: yield* insightsOn(today, Math.max(span, INSIGHT_MIN_DAYS)),
+          meals: (yield* all<MealRow>(sql`
+            SELECT time, day, kind, note FROM meals WHERE day = ${today} ORDER BY time`)).map(
+            (meal) => ({ ...meal, clock: parisWall(Date.parse(meal.time)).clock })
+          ),
         } satisfies SleepView
       })
 

@@ -18,16 +18,16 @@ it and write workouts to your watch.
 
 ## ✨ What it does
 
-|     |                                                                                                                                                                                                                                                                                                                                                                                      |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 🔄  | **Syncs Garmin Connect by itself.** Logs in like the mobile app (SSO + MFA), keeps only its tokens, and pulls activities, sleep, HRV, readiness, weigh-ins and the calendar every 3 hours. The whole history on demand.                                                                                                                                                              |
-| 📊  | **A web app to look at it.** Today first: the night against your own 28-day normal (green, orange, red, and why), the planned workout, the day's planned burn, your notes. Then stats, runs, every activity with its route and its curves, sleep night by night. Plain SVG charts, on a dark HUD.                                                                                    |
-| ⚖️  | **Withings weigh-ins too.** Connect a Withings scale once (OAuth): its weight, fat, muscle, water, bone mass and visceral fat land in the same `body` table every 3 hours, on a loop of their own.                                                                                                                                                                                   |
-| 🤖  | **An MCP for Claude.** 35 tools: list and compare runs, a morning readiness check, sleep advice, training load, the planned workouts, your notes, the pains pinned on the body map, your races and their plans, the nutrition plan, the weight trend and the peak weight, your supplements, the strength programme and its sessions, your caffeine, and read-only SQL on everything. |
-| 🏃  | **Workouts on the watch.** Claude creates, schedules, moves and deletes structured workouts: paces like `"6'05/km"`, HR in bpm, repeat groups, strength circuits from Garmin's catalog. Every write has a dry run.                                                                                                                                                                   |
-| 🧩  | **One API, three faces.** One [oRPC](https://orpc.dev) router serves the MCP (`/mcp`), OpenAPI (`/api`) and a typed RPC client (`/rpc`).                                                                                                                                                                                                                                             |
-| 🫀  | **A 3D body map.** Click a 3D anatomical model (lower body and trunk) exactly where it hurts: the pain goes to your journal with its structure, and Claude reads it back (`body_history`) to triage it.                                                                                                                                                                              |
-| 🔐  | **Private by design.** One password, or OAuth 2.1 for MCP clients. Raw files and SQLite on your disk, never in git; every secret in its own 0600 file.                                                                                                                                                                                                                               |
+|     |                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 🔄  | **Syncs Garmin Connect by itself.** Logs in like the mobile app (SSO + MFA), keeps only its tokens, and pulls activities, sleep, HRV, readiness, weigh-ins and the calendar every 3 hours. The whole history on demand.                                                                                                                                                                          |
+| 📊  | **A web app to look at it.** Today first: the night against your own 28-day normal (green, orange, red, and why), the planned workout, the day's planned burn, your notes. Then stats, runs, every activity with its route and its curves, sleep night by night. Plain SVG charts, on a dark HUD.                                                                                                |
+| ⚖️  | **Withings weigh-ins too.** Connect a Withings scale once (OAuth): its weight, fat, muscle, water, bone mass and visceral fat land in the same `body` table every 3 hours, on a loop of their own.                                                                                                                                                                                               |
+| 🤖  | **An MCP for Claude.** 37 tools: list and compare runs, a morning readiness check, sleep advice, training load, the planned workouts, your notes, the pains pinned on the body map, your races and their plans, the nutrition plan, the weight trend and the peak weight, your supplements, the strength programme and its sessions, your caffeine, your meals, and read-only SQL on everything. |
+| 🏃  | **Workouts on the watch.** Claude creates, schedules, moves and deletes structured workouts: paces like `"6'05/km"`, HR in bpm, repeat groups, strength circuits from Garmin's catalog. Every write has a dry run.                                                                                                                                                                               |
+| 🧩  | **One API, three faces.** One [oRPC](https://orpc.dev) router serves the MCP (`/mcp`), OpenAPI (`/api`) and a typed RPC client (`/rpc`).                                                                                                                                                                                                                                                         |
+| 🫀  | **A 3D body map.** Click a 3D anatomical model (lower body and trunk) exactly where it hurts: the pain goes to your journal with its structure, and Claude reads it back (`body_history`) to triage it.                                                                                                                                                                                          |
+| 🔐  | **Private by design.** One password, or OAuth 2.1 for MCP clients. Raw files and SQLite on your disk, never in git; every secret in its own 0600 file.                                                                                                                                                                                                                                           |
 
 TypeScript and [Effect](https://effect.website) end to end, with no Python. The web app runs on
 TanStack Start + React, the data on drizzle + `node:sqlite`, and FIT files go through Garmin's
@@ -113,7 +113,7 @@ apps you allowed and revokes any of them. You can also pass the app's password a
 token: `--header "Authorization: Bearer <password>"`.
 
 <details>
-<summary><b>The 35 tools</b></summary>
+<summary><b>The 37 tools</b></summary>
 
 **Your data (read-only)**
 
@@ -124,7 +124,10 @@ token: `--header "Authorization: Bearer <password>"`.
   and by how long you slept, with n and a 95 % interval, nothing under 5 nights. The window it
   points to: up at your weekday wake time, asleep the sleep where the score levels off before it.
   The regularity and the weekend's shift, the 7-night debt, tonight's target, and the nights your
-  notes tag (supplements, alcohol) or your supplements begin, one row a night. Associations, never
+  notes tag (supplements, alcohol) or your supplements begin, one row a night. Tonight's dinner
+  (done 2 h before tonight's target, then breakfast 12 h later) and tomorrow's daylight (10-20 min
+  in the hour after waking), and, from the meals you log, the nights by the gap from dinner to
+  sleep (under 2 h, 2-3 h, 3 h and more) and each night's overnight fast. Associations, never
   causes.
 - `weekly_load`: acute and chronic load.
 - `planned_workouts`.
@@ -158,6 +161,13 @@ token: `--header "Authorization: Bearer <password>"`.
 - `caffeine_vs_sleep`: per night, the caffeine left at sleep onset and the last intake, against the
   sleep score, HRV, resting HR and deep sleep; nights over 50 mg against the others once there are
   10 of each. An association, never a cause. `/cafe` shows it with 30 days of history.
+
+**Your meals** (one file per meal in `data/meals/`, the `meals` table for the SQL)
+
+- `log_meal`: when you ate and which meal (breakfast, lunch, snack, dinner), now or at a time
+  ("j'ai dîné à 20h30"); only when, not what. The /sleep page's « J'ai dîné » logs a dinner in one
+  tap. `sleep_insights` reads them.
+- `delete_meal`: one meal logged by mistake, by its time: its file, then its row.
 
 **Your races** (files in `data/races/`, read on each call)
 
@@ -343,6 +353,7 @@ GarminWorkouts.use((workouts) => workouts.library({ limit: 10 })).pipe(
 | `connect/calendar/YYYY-MM.json`            | a month of the Garmin calendar (scheduled workouts)                            | sync         |
 | `journal/YYYY/<instant>.json`              | one note of your journal                                                       | `log_note`   |
 | `caffeine/YYYY/<instant>.json`             | one drink with caffeine (time, kind, mg, note), from the MCP or the Café card  | the MCP      |
+| `meals/YYYY/<instant>.json`                | one meal (time, kind, note), from the MCP or the /sleep page                   | the MCP      |
 | `connect/workouts/<workoutId>.json`        | a workout's steps                                                              | sync         |
 | `races/<slug>.gpx`, `.json`, `.plan.json`  | a race's course, its facts, its plan (read on each request, not in SQL)        | `add_race`   |
 | `nutrition/plan.json`                      | the nutrition plan (read on each request, not in SQL)                          | the MCP      |
@@ -388,6 +399,8 @@ Tables and views:
   pinned on the body map.
 - `caffeine`: what you drank (`log_caffeine`), one file each in `data/caffeine/`: time (its key),
   day (Paris), kind, mg, note.
+- `meals`: when you ate (`log_meal`), one file each in `data/meals/`: time (its key), day (Paris),
+  kind, note.
 - `raw_files`, `sync_runs`: what was ingested, and each sync with Garmin Connect.
 - Views: `activity_summary` (paces, minutes, zones in minutes), `weekly` (per ISO week and sport).
 
@@ -426,6 +439,7 @@ src/
   caffeine/             an intake and the drink catalog (intake.ts), the decay, cut-off and views
                         (kinetics.ts), caffeine against the nights (sleep.ts), all without I/O;
                         caffeine.ts (the writer, the views)
+  meals/                a meal and its kinds (meal.ts, without I/O); meals.ts (the writer)
   nutrition/            the nutrition plan (plan.ts), the day's type (day-type.ts), the weight
                         trend (trend.ts), the supplements (supplements.ts), the peak weight
                         (peak.ts) and its levers (levers.ts), the meal ideas (ideas.ts), all
@@ -465,6 +479,9 @@ src/
   - Analysis and advice, from 90 nights at least: the window to aim for, tonight's target and the
     week's debt, the score by bedtime (a chart and its table) and by duration, the regularity, and
     the nights your journal tags.
+  - Tonight's dinner and tomorrow's daylight: dinner before, breakfast from, the light's window;
+    « J'ai dîné » and a meal at another time, today's meals (each deletable), and the nights by the
+    gap from dinner to sleep once there are some.
   - The stages and the schedule night by night.
   - HRV against its baseline, and body battery.
 - `/races`, `/races/$slug`: the races you prepare, a GPX upload, then one race:

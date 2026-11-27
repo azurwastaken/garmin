@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { windowOf } from '../sleep-insights.ts'
+import { mealAdviceOf, windowOf } from '../sleep-insights.ts'
 
 import type { CaffeineRow, Instant } from './intake.ts'
 import {
@@ -94,6 +94,7 @@ describe('the bedtime', () => {
           reasons: ['3 h 00 de dette sur les 7 dernières nuits'],
           sentence: '',
         },
+        meal_timing: mealAdviceOf({ bed_min: window.bed_min - 30, wake_min: window.wake_min }),
       })
     ).toEqual({ bed_min: 640, source: { kind: 'tonight' } })
   })

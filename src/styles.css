@@ -1247,6 +1247,58 @@ p.renfo-warn {
   margin: 0;
 }
 /* --- end Café --- */
+/* --- /sleep's meal card (components/meals.tsx): on the shared tokens --- */
+.meals p {
+  margin: 6px 0;
+}
+.meal-actions {
+  margin: 14px 0 6px;
+}
+.meal-actions button.primary {
+  min-height: 48px;
+  min-width: 160px;
+}
+.meal-other summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--accent);
+}
+.meals select {
+  font: inherit;
+  padding: 9px 11px;
+  border-radius: 2px;
+  border: 1px solid var(--axis);
+  background: var(--page);
+  color: var(--ink);
+}
+.meal-last {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.meal-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.meal-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.meal-last button.secondary,
+.meal-list button.secondary {
+  min-height: 36px;
+  padding: 6px 10px;
+}
+/* --- end meals --- */
 /* --- /nutrition: the supplements by moment and the peak weight's levers --- */
 .moments {
   display: grid;

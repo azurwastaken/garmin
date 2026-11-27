@@ -32,6 +32,8 @@ import { GarminWorkouts } from '../garmin/workouts.ts'
 import { bodyHistory } from '../journal/history.ts'
 import { Journal } from '../journal/log.ts'
 import { JournalNoteJson, NoteBodyJson } from '../journal/note.ts'
+import { MealJson } from '../meals/meal.ts'
+import { Meals } from '../meals/meals.ts'
 import { KCAL_TOLERANCE, SCALE } from '../nutrition/ideas.ts'
 import { Nutrition, todayOf } from '../nutrition/nutrition.ts'
 import { NutritionPlanJson } from '../nutrition/plan.ts'
@@ -51,7 +53,7 @@ import { SLEEP_PERIODS } from './periods.ts'
 // The Garmin data and the watch's workouts: each procedure an MCP tool (its name), an OpenAPI
 // operation (under /api) and an RPC call (under /rpc). The tools' names and inputs are the MCP's.
 
-const DATA_MODEL = `Data: the user's Garmin history (watch, scale): every activity from its FIT file (laps, per-second samples) and Garmin Connect's summary, plus daily wellness (sleep, HRV, resting HR, body battery, readiness), weigh-ins and the Garmin calendar's planned workouts. Synced from Garmin Connect every 3 hours (sync_status tells when). The SQL is read-only; the workout tools (create_workout, schedule_workout, unschedule_workout, delete_workout) write to the Garmin calendar and refresh planned_workouts right after; log_note adds a note to the user's journal; log_caffeine logs a drink with caffeine and delete_caffeine removes one logged by mistake; body_history reads the pains pinned on the web app's 3D body map; add_race and plan_race write the user's target races and their plans; set_nutrition_plan writes the nutrition plan agreed with the user; set_supplements writes the supplements the user takes; set_strength_program writes the strength programme, schedule_strength places a week's strength sessions and pushes them to the Garmin calendar; sleep_insights analyses the nights (bedtime and duration against recovery, the window they point to, tonight's advice).
+const DATA_MODEL = `Data: the user's Garmin history (watch, scale): every activity from its FIT file (laps, per-second samples) and Garmin Connect's summary, plus daily wellness (sleep, HRV, resting HR, body battery, readiness), weigh-ins and the Garmin calendar's planned workouts. Synced from Garmin Connect every 3 hours (sync_status tells when). The SQL is read-only; the workout tools (create_workout, schedule_workout, unschedule_workout, delete_workout) write to the Garmin calendar and refresh planned_workouts right after; log_note adds a note to the user's journal; log_caffeine logs a drink with caffeine and delete_caffeine removes one logged by mistake; log_meal logs when the user ate and delete_meal removes a meal logged by mistake; body_history reads the pains pinned on the web app's 3D body map; add_race and plan_race write the user's target races and their plans; set_nutrition_plan writes the nutrition plan agreed with the user; set_supplements writes the supplements the user takes; set_strength_program writes the strength programme, schedule_strength places a week's strength sessions and pushes them to the Garmin calendar; sleep_insights analyses the nights (bedtime and duration against recovery, the window they point to, tonight's advice).
 Conventions: timestamps ISO 8601 UTC text, start_local local wall time, day YYYY-MM-DD (local). Metres, seconds, m/s, bpm, kg. Cadence is steps/min on foot, rpm on a bike.
 Tables and views:
 - activities: one row per Garmin Connect activity (id = its activity id). sport (Connect's type: running, trail_running, cycling, lap_swimming, hiking, strength_training…), name, start_time, start_local, day, elapsed_s, moving_s, distance_m, ascent_m, descent_m, avg_hr, max_hr, avg_speed, max_speed, avg_cadence, max_cadence, avg_power, max_power, norm_power, calories, training_load (Garmin's EPOC load), aerobic_te / anaerobic_te (training effect 0-5), te_label (TEMPO, BASE…), vo2max, rpe (0-10) and feel (0-100) entered after it, hr_z1_s…hr_z5_s (seconds in the watch's HR zones), hr_zone_bounds (JSON: the zones' top bounds [z0, z1…z5]), workout_name (the structured workout run, as in planned_workouts.name), gear, device, start_lat/start_lon, polyline (Google encoded, precision 5).
@@ -64,6 +66,7 @@ Tables and views:
 - planned_workouts: the Garmin calendar's scheduled workouts: id (the calendar entry: unschedule_workout's schedule_id), day, workout_id (the library's workout: schedule_workout, delete_workout), name, sport, description, estimated_duration_s, estimated_distance_m, steps (one readable line per step: "interval 3:00 HR 165-172", "5× [...]").
 - journal: the user's notes (log_note): time (the instant written, its key), day (the day it is about), text, body (JSON, NULL unless the note is a pain pinned on the body map: structure (the anatomy model's id, e.g. vastus_lateralis_r), side, point [x, y, z] (metres on the model, Y up, origin between the feet, right side at -x), pain 0-10, kind, when (array), since; read it with json_extract(body, '$.pain'), body_history names the structures); one file each in data/journal/.
 - caffeine: what the user drank (log_caffeine; delete_caffeine removes a mistake): time (the instant drunk, its key), day (Paris), kind (espresso, double_espresso, filter, capsule, cappuccino, black_tea, green_tea, cola, red_bull, monster, custom), mg, note; one file each in data/caffeine/. caffeine_today and caffeine_vs_sleep estimate what is left in the body.
+- meals: when the user ate (log_meal; delete_meal removes a mistake): time (the instant eaten, its key), day (Paris), kind (breakfast, lunch, snack, dinner), note; one file each in data/meals/. sleep_insights' dinner reads it.
 - races are not in SQL: list_races, get_race (files in data/races/: <slug>.gpx, <slug>.json, <slug>.plan.json).
 - the nutrition plan is not in SQL: nutrition_plan, and nutrition_today for today's target and the weight trend against it (file data/nutrition/plan.json).
 - strength_sets: a strength session's active sets, in order: activity_id (activities.sport = 'strength_training'), idx, start_time, category and exercise_name (Garmin's catalog keys, find_exercises: LUNGE / DUMBBELL_BULGARIAN_SPLIT_SQUAT; NULL when the watch did not know it), reps, weight_kg, duration_s, source ('connect': Garmin Connect's exercise sets, as corrected there; else 'fit': the watch's). strength_history aggregates them.
@@ -199,7 +202,7 @@ const sleepInsights = tool({
   name: 'sleep_insights',
   title: 'Sleep insights',
   description:
-    "What the user's own nights say about sleep, descriptive (associated with, not caused by): over the last nights (days: 30, 90, 365 or all, default 90) the nights by sleep onset (before 23:30, hour by hour to 02:30, after) and by duration (under 6 h, half-hours to 8 h, 8 h and more), each with its count and, from 5 nights, the mean and t-based 95 % interval of sleep score, HRV, resting HR, body battery at wake and the morning's readiness ('few' under 5: draw nothing from it). The plan: the plateau (the shortest duration bucket from which no bucket up to the best scores more than 3 points higher), the wake time anchored on the median of the weekday mornings, the bedtime (asleep by: wake − plateau sleep − median time awake, never past the end of the best bedtime bucket; Garmin measures no sleep latency) with a French sentence giving its numbers, the 7-night debt against the plateau sleep, and tonight's target (30 min earlier on a debt of 2 h, a night 1 h short, or a quality or long day planned tomorrow). Regularity: the SD of bedtimes and wake times, social jetlag (Friday and Saturday nights' mid-sleep minus the others'), each evening of the week. Tags (nights): journal notes about supplements or alcohol (source 'journal', with time and text) with the night after them (a day D is the night ending D+1), and the first days of the supplements file's sleep supplements (ashwagandha, magnesium, melatonin, begun by today): started names those begun that day, on the day's first supplements note, else on a row of its own (source 'supplements'). supplements: the nights since the earliest of the first such note and the first start, against the 28 days before, from 14 nights each side. Times are minutes from noon the day before, Paris time (22:30 is 630, 06:15 is 1095).",
+    "What the user's own nights say about sleep, descriptive (associated with, not caused by): over the last nights (days: 30, 90, 365 or all, default 90) the nights by sleep onset (before 23:30, hour by hour to 02:30, after) and by duration (under 6 h, half-hours to 8 h, 8 h and more), each with its count and, from 5 nights, the mean and t-based 95 % interval of sleep score, HRV, resting HR, body battery at wake and the morning's readiness ('few' under 5: draw nothing from it). The plan: the plateau (the shortest duration bucket from which no bucket up to the best scores more than 3 points higher), the wake time anchored on the median of the weekday mornings, the bedtime (asleep by: wake − plateau sleep − median time awake, never past the end of the best bedtime bucket; Garmin measures no sleep latency) with a French sentence giving its numbers, the 7-night debt against the plateau sleep, and tonight's target (30 min earlier on a debt of 2 h, a night 1 h short, or a quality or long day planned tomorrow). The plan's meal_timing, from tonight's target: dinner_by (bedtime − 2 h, a common advice for digestion and reflux on modest evidence), breakfast_from (dinner_by + 12 h without eating, a convention rather than a proven threshold), light_from/light_to (10-20 min outside in daylight in the hour after the planned wake time: morning light advances the body clock, most useful to a late sleeper), each with a French sentence. Dinner (from the meals log_meal writes): nights, each night with a logged dinner (its last dinner in the 12 h before sleep_start; a meal between sleep onset and waking counts for nothing) with gap_s (that dinner → sleep_start) and fast_s (the last meal before sleep onset, that dinner or a later snack → the first meal in the 12 h after sleep_end; null when either is not logged), its sleep score, HRV and resting HR; gap, those nights by gap_s (under 2 h, 2 h to 3 h, 3 h and more) with the same count, means and 'few' rule as the other buckets. Regularity: the SD of bedtimes and wake times, social jetlag (Friday and Saturday nights' mid-sleep minus the others'), each evening of the week. Tags (nights): journal notes about supplements or alcohol (source 'journal', with time and text) with the night after them (a day D is the night ending D+1), and the first days of the supplements file's sleep supplements (ashwagandha, magnesium, melatonin, begun by today): started names those begun that day, on the day's first supplements note, else on a row of its own (source 'supplements'). supplements: the nights since the earliest of the first such note and the first start, against the 28 days before, from 14 nights each side. Times are minutes from noon the day before, Paris time (22:30 is 630, 06:15 is 1095).",
   method: 'GET',
   path: '/sleep/insights',
   tags: ['wellness'],
@@ -482,6 +485,55 @@ const caffeineVsSleep = tool({
   readOnly: true,
   openWorld: false,
 }).handler(({ context }) => context.run(Caffeine.use((caffeine) => caffeine.sleep)))
+
+// --- When the user eats: the sleep analysis's dinner reads it
+
+const logMeal = tool({
+  name: 'log_meal',
+  title: 'Log a meal',
+  description:
+    "Log when the user ate (\"j'ai dîné à 20h30\"): the meal's kind, and its time when it was not just now. Only when, not what: it is written to its own file in data/meals/ and read by sleep_insights' dinner (the gap from dinner to sleep, the overnight fast); the web app's /sleep page logs one too. Refused: a day without a time, a time in the future. Returns the meal as saved (its time is the key delete_meal takes).",
+  method: 'POST',
+  path: '/meals',
+  tags: ['meals'],
+  readOnly: false,
+  openWorld: false,
+})
+  .input(
+    standard(
+      Schema.Struct({
+        kind: MealJson.fields.kind,
+        day: opt(Day.annotate({ description: 'YYYY-MM-DD in Paris, default today; needs time' })),
+        time: opt(ClockSchema.annotate({ description: 'HH:MM in Paris, default now' })),
+        note: opt(MealJson.fields.note.annotate({ description: 'At most 200 characters' })),
+      })
+    )
+  )
+  .handler(({ input, context }) => context.run(Meals.use((meals) => meals.log(input))))
+
+const deleteMeal = tool({
+  name: 'delete_meal',
+  title: 'Delete a meal',
+  description:
+    "Delete one meal logged by mistake, named by its time (log_meal's answer, sleep_insights' dinner nights, or the meals table): its file goes, then its row. Returns the meal deleted.",
+  method: 'DELETE',
+  path: '/meals/{time}',
+  tags: ['meals'],
+  readOnly: false,
+  destructive: true,
+  idempotent: true,
+  openWorld: false,
+})
+  .input(
+    standard(
+      Schema.Struct({
+        time: InstantSchema.annotate({
+          description: 'The meal’s time, e.g. 2026-11-24T19:30:00.000Z',
+        }),
+      })
+    )
+  )
+  .handler(({ input, context }) => context.run(Meals.use((meals) => meals.remove(input.time))))
 
 // --- The races the user prepares: a course (GPX), its facts, and the plan per segment
 
@@ -975,6 +1027,7 @@ export const garmin = {
     delete: deleteCaffeine,
     vsSleep: caffeineVsSleep,
   },
+  meals: { log: logMeal, delete: deleteMeal },
   races: { list: listRaces, get: getRace, add: addRace, plan: planRace },
   nutrition: {
     plan: nutritionPlan,

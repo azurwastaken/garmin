@@ -11,6 +11,7 @@ import {
 
 import type { DrinkKind, Instant } from './caffeine/intake.ts'
 import type { NoteBody } from './journal/note.ts'
+import type { MealKind } from './meals/meal.ts'
 
 // The schema; `pnpm db:generate <name>` writes its next migration into drizzle/. Every row is
 // rebuilt from the raw files of data/ (see ingest.ts), so a column can always be added and filled
@@ -287,6 +288,21 @@ export const caffeine = sqliteTable(
     note: text(),
   },
   (table) => [index('caffeine_day').on(table.day)]
+)
+
+// When the user ate (the MCP's log_meal, the /sleep page's card), one file each in data/meals/ (see
+// meals/meal.ts); rebuilt whenever one of them changes or goes
+export const meals = sqliteTable(
+  'meals',
+  {
+    // The instant eaten
+    time: text().$type<Instant>().primaryKey(),
+    // Its day in Paris
+    day: text().notNull(),
+    kind: text().$type<MealKind>().notNull(),
+    note: text(),
+  },
+  (table) => [index('meals_day').on(table.day)]
 )
 
 // Every file of data/ ingested: one whose size and mtime have not changed is not read again

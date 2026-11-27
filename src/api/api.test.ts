@@ -80,6 +80,7 @@ describe('the MCP', () => {
       'create_workout',
       'daily_readiness',
       'delete_caffeine',
+      'delete_meal',
       'delete_workout',
       'find_exercises',
       'get_activity',
@@ -88,6 +89,7 @@ describe('the MCP', () => {
       'list_races',
       'list_workouts',
       'log_caffeine',
+      'log_meal',
       'log_note',
       'nutrition_plan',
       'nutrition_today',
@@ -673,6 +675,49 @@ describe('the caffeine tools', () => {
     expect(await call('caffeine_vs_sleep', {})).toEqual({
       isError: false,
       data: { comparison: { kind: 'too-few', high: 0, low: 0, needed: 10 }, nights: [] },
+    })
+  })
+})
+
+describe('the meal tools', () => {
+  it('logs a meal, refuses what it cannot place, deletes it by its time over REST', async () => {
+    const today = await runtime.runPromise(parisToday)
+    const logged = await call('log_meal', { kind: 'breakfast', time: '00:01', note: 'café' })
+    expect(logged).toMatchObject({
+      isError: false,
+      data: { kind: 'breakfast', note: 'café', time: expect.any(String) },
+    })
+    const { time } = logged.data as { time: string }
+    const { data } = await call('sql', { query: 'SELECT day, kind, note FROM meals' })
+    expect(data).toEqual({ rows: [{ day: today, kind: 'breakfast', note: 'café' }] })
+    expect(await call('log_meal', { kind: 'dinner', day: today })).toMatchObject({
+      isError: true,
+      data: {
+        code: 'BAD_REQUEST',
+        message: `Le ${today} sans heure : donne aussi l’heure (HH:MM).`,
+      },
+    })
+    expect(
+      await call('log_meal', { kind: 'dinner', day: addDays(today, 1), time: '20:00' })
+    ).toMatchObject({
+      isError: true,
+      data: { code: 'BAD_REQUEST', message: `Le ${addDays(today, 1)} à 20:00 est dans le futur.` },
+    })
+    expect(await call('log_meal', { kind: 'brunch' })).toMatchObject({ isError: true })
+
+    const deleted = await handleApi(
+      new Request(`${ORIGIN}/api/meals/${encodeURIComponent(time)}`, { method: 'DELETE' })
+    )
+    expect(deleted.status).toBe(200)
+    expect(await deleted.json()).toEqual({ time, kind: 'breakfast', note: 'café' })
+    expect(await call('delete_meal', { time })).toMatchObject({
+      isError: true,
+      data: { code: 'BAD_REQUEST', message: `No meal at ${time}.` },
+    })
+    expect(await call('delete_meal', { time: '../journal' })).toMatchObject({ isError: true })
+    // The sleep analysis reads the meals: none left, no dinner night
+    expect(await call('sleep_insights', {})).toMatchObject({
+      data: { dinner: { nights: [], gap: [{ nights: 0 }, { nights: 0 }, { nights: 0 }] } },
     })
   })
 })

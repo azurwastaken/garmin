@@ -1,6 +1,8 @@
 import { MIN_NIGHTS, TAG_BEFORE_DAYS } from './api/periods.ts'
+import type { Instant } from './caffeine/intake.ts'
 import { clock, fmt, hours } from './components/format.ts'
 import { addDays, earlierDay } from './days.ts'
+import type { MealRow } from './meals/meal.ts'
 import { mean, median, present, round, spread } from './numbers.ts'
 import type { Classified } from './nutrition/day-type.ts'
 import type { Supplement } from './nutrition/supplements.ts'
@@ -8,15 +10,17 @@ import type { SleepNight } from './stats.ts'
 
 // The sleep page's analysis and the coach's (sleep_insights), without I/O: recovery by bedtime and
 // by duration, the window they point to, how regular the nights are, the week's debt, tonight's
-// advice and the nights the journal and the supplements' first days tag. Descriptive only: under 5
-// nights a bucket says nothing, every number carries its n, and a difference is "associé à", never
-// a cause.
+// advice (bedtime, dinner, morning light), the nights by the gap from dinner to sleep, and the nights
+// the journal and the supplements' first days tag. Descriptive only: under 5 nights a bucket says
+// nothing, every number carries its n, and a difference is "associé à", never a cause.
 
 // A night with its sleep measured; its day is the morning it ends, bed_min and wake_min are on the
 // noon axis (minutes from noon the day before, Paris time: see stats.ts withClock)
 export type SleptNight = Pick<
   SleepNight,
   | 'day'
+  | 'sleep_start'
+  | 'sleep_end'
   | 'bed_min'
   | 'wake_min'
   | 'awake_s'
@@ -43,6 +47,14 @@ const DEBT_LIMIT_S = 2 * 3600
 const SHORT_NIGHT_S = 3600
 // Half an hour at most: much earlier than usual rarely falls asleep any sooner
 const EARLIER_MIN = 30
+// Dinner done 2 h before sleep (a common advice for digestion and reflux, on modest evidence),
+// then 12 h without eating to breakfast
+const DINNER_BEFORE_MIN = 120
+const FAST_MIN = 720
+// Daylight within the hour after waking
+const LIGHT_WITHIN_MIN = 60
+// A night's dinner is in the 12 h before it falls asleep, its breakfast in the 12 h after it wakes
+const MEAL_WINDOW_MS = 12 * 3_600_000
 // What makes tomorrow a day to sleep earlier for, by its type; null: nothing
 const HARD_DAY: Record<Classified['type'], string | null> = {
   rest: null,
@@ -137,6 +149,19 @@ export interface Tonight {
   readonly sentence: string
 }
 
+// Tonight's meals and tomorrow's light, on the noon axis
+export interface MealAdvice {
+  // Dinner done by: tonight's bedtime − 2 h
+  readonly dinner_by: number
+  // Breakfast from: 12 h after it, past 1440 (the next day's afternoon) after a very late dinner
+  readonly breakfast_from: number
+  // Outside in daylight from the planned wake time, for the hour after it
+  readonly light_from: number
+  readonly light_to: number
+  readonly dinner_sentence: string
+  readonly light_sentence: string
+}
+
 export type Plan =
   | {
       readonly kind: 'too-few'
@@ -149,6 +174,7 @@ export type Plan =
       readonly window: Window
       readonly debt: Debt
       readonly tonight: Tonight
+      readonly meal_timing: MealAdvice
     }
 
 export type Spread =
@@ -232,6 +258,31 @@ export interface Tags {
   readonly supplements: Since | null
 }
 
+// A meal the analysis reads: when, and which of the day
+export type MealTime = Pick<MealRow, 'time' | 'kind'>
+
+// A night after a logged dinner
+export interface DinnerNight {
+  // The morning it ends
+  readonly night: string
+  // Its last dinner in the 12 h before it fell asleep
+  readonly dinner: Instant
+  // From that dinner to falling asleep (Garmin's sleep_start)
+  readonly gap_s: number
+  // From the last meal before falling asleep (that dinner, or a later snack) to the first one in the
+  // 12 h after waking; null when either end is not known
+  readonly fast_s: number | null
+  readonly sleep_score: number | null
+  readonly hrv: number | null
+  readonly resting_hr: number | null
+}
+
+export interface Dinner {
+  // The nights by gap_s: under 2 h, 2 h to 3 h, 3 h and more
+  readonly gap: ReadonlyArray<DurationBucket>
+  readonly nights: ReadonlyArray<DinnerNight>
+}
+
 export interface SleepInsights {
   readonly from: string
   readonly to: string
@@ -240,6 +291,7 @@ export interface SleepInsights {
   readonly duration: ReadonlyArray<DurationBucket>
   readonly plan: Plan
   readonly regularity: Regularity
+  readonly dinner: Dinner
   readonly tags: Tags
 }
 
@@ -247,6 +299,8 @@ export interface SleepInsights {
 const BEDTIME_EDGES = [690, 750, 810, 870]
 // 6 h to 8 h by half-hours
 const DURATION_EDGES = [6, 6.5, 7, 7.5, 8].map((h) => h * 3600)
+// From dinner to sleep: 2 h and 3 h
+const DINNER_GAP_EDGES = [2, 3].map((h) => h * 3600)
 const EVENINGS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche']
 // Student's t for a two-sided 95 % interval, 1 to 30 degrees of freedom; 1.96 past them
 const T95 = [
@@ -545,6 +599,25 @@ export const tonightOf = ({
   }
 }
 
+// Tonight's dinner and tomorrow's light from tonight's bedtime and wake time: dinner 2 h before
+// sleep, breakfast 12 h after it, daylight in the hour after waking. Rules of thumb, said as such.
+export const mealAdviceOf = ({
+  bed_min,
+  wake_min,
+}: Pick<Tonight, 'bed_min' | 'wake_min'>): MealAdvice => {
+  const dinner_by = bed_min - DINNER_BEFORE_MIN
+  const breakfast_from = dinner_by + FAST_MIN
+  const light_to = wake_min + LIGHT_WITHIN_MIN
+  return {
+    dinner_by,
+    breakfast_from,
+    light_from: wake_min,
+    light_to,
+    dinner_sentence: `Dîner fini avant ${clock(dinner_by)}, 2 h avant l'endormissement visé (${clock(bed_min)}) : un repère courant pour la digestion et le reflux, aux preuves modestes. Petit-déj à partir de ${clock(breakfast_from)} pour 12 h sans manger, une habitude répandue plutôt qu'un seuil démontré.`,
+    light_sentence: `Demain, 10 à 20 min dehors à la lumière du jour entre ${clock(wake_min)} et ${clock(light_to)}, dans l'heure après le lever : la lumière du matin avance l'horloge interne, ce qui aide surtout quand on s'endort tard.`,
+  }
+}
+
 // Why the window can't be computed, in French
 const tooFewReason = (plateau: Plateau | null, anchor: Anchor, awake_s: number | null) =>
   `Pas assez de nuits : ${present([
@@ -588,7 +661,8 @@ const planOf = ({
   const window = windowOf({ anchor, plateau, awake_s, best })
   const debt = debtOf(nights, today, window.sleep_s)
   const last_s = nights.find((night) => night.day === today)?.sleep_s ?? null
-  return { kind: 'plan', window, debt, tonight: tonightOf({ window, debt, last_s, tomorrow }) }
+  const tonight = tonightOf({ window, debt, last_s, tomorrow })
+  return { kind: 'plan', window, debt, tonight, meal_timing: mealAdviceOf(tonight) }
 }
 
 // The population SD of the times there, in whole minutes, from MIN_NIGHTS
@@ -645,6 +719,59 @@ export const regularityOf = (nights: ReadonlyArray<SleptNight>): Regularity => (
   social_jetlag: jetlagOf(nights),
   weekdays: EVENINGS.map((label, evening) => weekdayRow(nights, evening, label)),
 })
+
+// A meal with its instant (epoch ms), parsed once and shared by every night
+type TimedMeal = MealTime & { readonly at: number }
+
+// A night's dinner and the fast after it, from the meals by time: its last dinner in the 12 h before
+// sleep_start, the last meal before falling asleep and the first in the 12 h after sleep_end. Null
+// without sleep_start or such a dinner; a meal between falling asleep and waking counts for neither.
+const dinnerNight = (night: SleptNight, meals: ReadonlyArray<TimedMeal>): DinnerNight | null => {
+  if (night.sleep_start === null) return null
+  const onset = Date.parse(night.sleep_start)
+  const before = meals.filter((meal) => meal.at <= onset && meal.at > onset - MEAL_WINDOW_MS)
+  const dinner = before.findLast((meal) => meal.kind === 'dinner')
+  const last = before.at(-1)
+  if (dinner === undefined || last === undefined) return null
+  const wake = night.sleep_end === null ? null : Date.parse(night.sleep_end)
+  const first =
+    wake === null
+      ? undefined
+      : meals.find((meal) => meal.at >= wake && meal.at < wake + MEAL_WINDOW_MS)
+  return {
+    night: night.day,
+    dinner: dinner.time,
+    gap_s: Math.round((onset - dinner.at) / 1000),
+    fast_s: first === undefined ? null : Math.round((first.at - last.at) / 1000),
+    sleep_score: night.sleep_score,
+    hrv: night.hrv,
+    resting_hr: night.resting_hr,
+  }
+}
+
+// The nights after a logged dinner, from the meals by time
+export const dinnerNights = (
+  nights: ReadonlyArray<SleptNight>,
+  meals: ReadonlyArray<MealTime>
+): Array<DinnerNight> => {
+  const timed = meals.map((meal) => ({ ...meal, at: Date.parse(meal.time) }))
+  return present(nights.map((night) => dinnerNight(night, timed)))
+}
+
+// The nights by the gap from their dinner to sleep: under 2 h, 2 h to 3 h, 3 h and more
+export const dinnerGapBuckets = (
+  nights: ReadonlyArray<SleptNight>,
+  dinners: ReadonlyArray<DinnerNight>
+): Array<DurationBucket> => {
+  const gaps = new Map(dinners.map((dinner) => [dinner.night, dinner.gap_s]))
+  return bucketsOf(nights, DINNER_GAP_EDGES, (night) => gaps.get(night.day) ?? null).map(
+    ({ from, to, nights: part }) => ({
+      ...bucketOf(hoursSpan(from, to), part),
+      from_s: from,
+      to_s: to,
+    })
+  )
+}
 
 // The tags a note's words carry
 const tagsIn = (text: string): Array<Tag> =>
@@ -794,7 +921,8 @@ export const tagsOf = ({
 }
 
 // The whole analysis: `span` the nights from `from` to `today`, `history` the nights before it
-// that the supplements' before side reads, `started` the supplements begun (startedBy)
+// that the supplements' before side reads, `started` the supplements begun (startedBy), `meals`
+// those of the span (and its first evening), by time
 export const insightsOf = ({
   from,
   today,
@@ -803,6 +931,7 @@ export const insightsOf = ({
   tomorrow,
   notes,
   started,
+  meals,
 }: {
   readonly from: string
   readonly today: string
@@ -811,9 +940,11 @@ export const insightsOf = ({
   readonly tomorrow: Classified
   readonly notes: ReadonlyArray<Note>
   readonly started: ReadonlyArray<Started>
+  readonly meals: ReadonlyArray<MealTime>
 }): SleepInsights => {
   const bedtime = bedtimeBuckets(span)
   const duration = durationBuckets(span)
+  const dinners = dinnerNights(span, meals)
   return {
     from,
     to: today,
@@ -830,6 +961,7 @@ export const insightsOf = ({
       tomorrow,
     }),
     regularity: regularityOf(span),
+    dinner: { gap: dinnerGapBuckets(span, dinners), nights: dinners },
     tags: tagsOf({ notes, started, from, span, history }),
   }
 }

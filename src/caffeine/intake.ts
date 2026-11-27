@@ -80,30 +80,30 @@ export const intakePath = (time: Instant) =>
 
 export const decodeIntake = Schema.decodeUnknownOption(CaffeineIntakeJson)
 
-export interface IntakeInput {
-  readonly kind: DrinkKind
-  readonly mg?: number | undefined
-  // YYYY-MM-DD and HH:MM in Paris
+// When something was had, as said: YYYY-MM-DD and HH:MM in Paris
+export interface WhenInput {
   readonly day?: string | undefined
   readonly time?: string | undefined
+}
+
+export interface IntakeInput extends WhenInput {
+  readonly kind: DrinkKind
+  readonly mg?: number | undefined
   readonly note?: string | undefined
 }
 
 // A tap a few minutes ahead of the server's clock is still now
 const AHEAD_MS = 5 * 60_000
 
-// When and how much, from what was said: now by default, else the day (default today) at HH:MM in
-// Paris; the catalog's mg unless given. Refused, with the reason: a day without a time, an HH:MM
-// that is not one, a time in the future, a drink of the "custom" kind without its mg.
-export const resolveIntake = (
-  input: IntakeInput,
+// The instant said (epoch ms): now by default, else the day (default today) at HH:MM in Paris.
+// Refused, with the reason: a day without a time, an HH:MM that is not one, a time in the future.
+export const resolveAt = (
+  input: WhenInput,
   context: { readonly now: number; readonly today: string }
-): Result.Result<{ readonly at: number; readonly mg: number }, string> => {
-  const mg = input.mg ?? DRINKS[input.kind].mg
-  if (mg === null) return Result.fail('Un « autre » a besoin de ses mg de caféine.')
+): Result.Result<number, string> => {
   if (input.time === undefined) {
     return input.day === undefined
-      ? Result.succeed({ at: context.now, mg })
+      ? Result.succeed(context.now)
       : Result.fail(`Le ${input.day} sans heure : donne aussi l’heure (HH:MM).`)
   }
   const day = input.day ?? context.today
@@ -117,8 +117,19 @@ export const resolveIntake = (
     onSome: (at) =>
       at > context.now + AHEAD_MS
         ? Result.fail(`Le ${day} à ${input.time} est dans le futur.`)
-        : Result.succeed({ at, mg }),
+        : Result.succeed(at),
   })
+}
+
+// When and how much, from what was said: resolveAt's instant, the catalog's mg unless given; a drink
+// of the "custom" kind without its mg is refused too
+export const resolveIntake = (
+  input: IntakeInput,
+  context: { readonly now: number; readonly today: string }
+): Result.Result<{ readonly at: number; readonly mg: number }, string> => {
+  const mg = input.mg ?? DRINKS[input.kind].mg
+  if (mg === null) return Result.fail('Un « autre » a besoin de ses mg de caféine.')
+  return Result.map(resolveAt(input, context), (at) => ({ at, mg }))
 }
 
 export type CaffeineRow = typeof caffeine.$inferSelect
