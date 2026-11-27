@@ -61,11 +61,23 @@ describe('a day of ideas', () => {
     }
   })
 
-  it('is the same day for the same target, and none for a target nothing fits', () => {
-    const rest = targetFor(DEFAULT_PLAN, 'rest')
-    expect(dayIdeas(rest)).toEqual(dayIdeas(rest))
+  it('picks the day closest to the recipes’ own portions', () => {
+    // The rest day's 1 900 kcal: a combination at its portions, never one scaled
+    expect(dayIdeas(targetFor(DEFAULT_PLAN, 'rest'))).toMatchObject({
+      scale: 1,
+      meals: [
+        { name: 'Skyr, flocons d’avoine, banane et noix' },
+        { name: 'Chili de bœuf aux lentilles, maïs et tomates' },
+        { name: 'Tartines de pain complet au miel et banane' },
+        { name: 'Cabillaud, écrasé de butternut et pommes de terre, carottes' },
+      ],
+    })
+  })
+
+  it('is none for a target nothing fits: its protein, or past the portions’ bounds', () => {
     expect(dayIdeas({ kcal: 1900, protein_g: 400 })).toEqual({ kind: 'none' })
-    // Beyond 1.5× the biggest day's portions
+    // The lightest day is 1 556 kcal: 1 000 is under its 0.75×, 6 000 over the heaviest's 1.5×
+    expect(dayIdeas({ kcal: 1000, protein_g: 0 })).toEqual({ kind: 'none' })
     expect(dayIdeas({ kcal: 6000, protein_g: 130 })).toEqual({ kind: 'none' })
   })
 })

@@ -44,7 +44,7 @@ export const FOODS = {
   green_beans: { name: 'Haricots verts', kcal: 25, protein_g: 2 },
   peas: { name: 'Petits pois', kcal: 72, protein_g: 5 },
   corn: { name: 'Maïs doux', kcal: 100, protein_g: 3 },
-  mushrooms: { name: 'Champignons de Paris', kcal: 25, protein_g: 2 },
+  mushrooms: { name: 'Champignons', kcal: 25, protein_g: 2 },
   spinach: { name: 'Épinards', kcal: 22, protein_g: 3 },
   tomato: { name: 'Tomates concassées', kcal: 25, protein_g: 1.2 },
   butternut: { name: 'Butternut', kcal: 40, protein_g: 1 },

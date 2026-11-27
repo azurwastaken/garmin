@@ -12,7 +12,6 @@ import {
   HALF_LIFE_H,
   MORNING_LIGHT_MIN,
   RULE_HOURS,
-  SHORT_NIGHT_H,
   SHORT_SLEEP_EXTRA_KCAL,
   STANDARD_COFFEE_MG,
 } from '#src/caffeine/kinetics.ts'
@@ -39,22 +38,15 @@ const message = (cause: unknown) => (cause instanceof Error ? cause.message : St
 const bedtimeOrigin = (source: BedtimeSource) =>
   source.kind === 'tonight' ? 'conseil sommeil de ce soir' : 'par défaut, trop peu de nuits'
 
-// Last night against SHORT_NIGHT_H: nothing when fine, a word before the watch syncs it, and on a
-// short night with SHORT_NIGHT_INTAKES intakes today, the loop it starts and how to break it
+// Last night against SHORT_NIGHT_H: a word before the watch syncs it, and on a short night with
+// SHORT_NIGHT_INTAKES intakes today, the loop it starts and how to break it; nothing otherwise
 function ShortNightNote({ today }: { readonly today: CaffeineToday }) {
   const night = today.short_night
-  if (night.kind === 'fine') return null
   if (night.kind === 'unknown') {
     return <p className="note">La nuit dernière n'est pas encore synchronisée par la montre.</p>
   }
+  if (night.kind === 'fine' || !night.warning) return null
   const slept = hours(night.sleep_h * 3600)
-  if (!night.warning) {
-    return (
-      <p className="note">
-        Nuit courte : {slept} (moins de {hours(SHORT_NIGHT_H * 3600)}).
-      </p>
-    )
-  }
   const noMore = today.cutoff_passed
     ? `plus de café aujourd'hui (le seuil de ${today.cutoff.clock} est passé)`
     : `plus de café après ${today.cutoff.clock}`
