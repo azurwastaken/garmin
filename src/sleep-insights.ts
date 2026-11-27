@@ -720,7 +720,7 @@ export const regularityOf = (nights: ReadonlyArray<SleptNight>): Regularity => (
   weekdays: EVENINGS.map((label, evening) => weekdayRow(nights, evening, label)),
 })
 
-// A meal with its instant (epoch ms), parsed once for every night that reads it
+// A meal with its instant (epoch ms), parsed once and shared by every night
 type TimedMeal = MealTime & { readonly at: number }
 
 // A night's dinner and the fast after it, from the meals by time: its last dinner in the 12 h before
