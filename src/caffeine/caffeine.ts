@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 
-import { gte, sql } from 'drizzle-orm'
+import { eq, gte, sql } from 'drizzle-orm'
 import {
   Clock,
   Config,
@@ -19,7 +19,7 @@ import { addDays, parisInstant, parisToday } from '../days.ts'
 import { Database, type DatabaseError } from '../db.ts'
 import { writeAtomic } from '../files.ts'
 import { Ingest } from '../ingest.ts'
-import { caffeine } from '../schema.ts'
+import { caffeine, daily } from '../schema.ts'
 import { Stats } from '../stats.ts'
 
 import {
@@ -56,7 +56,7 @@ import {
 // resolved, written to its own file in data/caffeine/, then ingested; a mistaken one is deleted by
 // its time, file and row. Its file is never written over another's: two intakes in the same
 // millisecond take the next free one. The views are estimates from caffeine/kinetics.ts, to
-// tonight's bedtime from the sleep analysis (Stats.sleepInsights).
+// tonight's bedtime from the sleep analysis (Stats.sleepInsights), beside last night's sleep.
 
 // An intake the tracker cannot take (its message says why, for the caller)
 export class CaffeineRefused extends Schema.TaggedError<CaffeineRefused>()('CaffeineRefused', {
@@ -178,6 +178,15 @@ export class Caffeine extends Context.Service<
           db.select().from(caffeine).where(gte(caffeine.day, day)).orderBy(caffeine.time).all()
         )
 
+      // Last night's sleep (s): the night ending this morning, null before the watch syncs it
+      const lastNight = (day: string) =>
+        Effect.map(
+          use((db) =>
+            db.select({ sleep_s: daily.sleep_s }).from(daily).where(eq(daily.day, day)).get()
+          ),
+          (row) => row?.sleep_s ?? null
+        )
+
       // Tonight's bedtime: the sleep analysis's over its default span
       const bedtime = Effect.map(stats.sleepInsights(INSIGHT_MIN_DAYS), (insights) =>
         bedtimeFrom(insights.plan)
@@ -192,6 +201,7 @@ export class Caffeine extends Context.Service<
           bedtime: bedtimeOn(day, bed.bed_min),
           source: bed.source,
           recent: yield* rowsSince(addDays(day, -RECENT_DAYS)),
+          night_s: yield* lastNight(day),
         })
       })
 
@@ -212,12 +222,20 @@ export class Caffeine extends Context.Service<
         const bed = yield* bedtime
         const at = bedtimeOn(day, bed.bed_min)
         const rows = yield* rowsSince(addDays(day, -PAGE_DAYS))
+        const nightS = yield* lastNight(day)
         // Midnight always exists in Paris: the clocks change at 02:00 and 03:00
         const midnight = Option.getOrThrow(parisInstant(day, '00:00'))
         // From today's midnight rather than the day before's noon
         const bedtimeMin = bed.bed_min + 720
         return {
-          today: todayView({ today: day, now, bedtime: at, source: bed.source, recent: rows }),
+          today: todayView({
+            today: day,
+            now,
+            bedtime: at,
+            source: bed.source,
+            recent: rows,
+            night_s: nightS,
+          }),
           days: dailyHistory(
             rows,
             Array.from({ length: PAGE_DAYS }, (_, index) => addDays(day, index + 1 - PAGE_DAYS))

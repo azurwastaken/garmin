@@ -93,6 +93,8 @@ layer(TestLayer)('Caffeine', (it) => {
         const today = yield* caffeine.today
         expect(today.total_mg).toBe(260)
         expect(today.intakes.map((intake) => intake.clock)).toEqual(['00:15', '01:00', '01:00'])
+        // No night stored for today: the watch has not synced it
+        expect(today.short_night).toEqual({ kind: 'unknown' })
       })
   )
 
@@ -172,7 +174,31 @@ layer(TestLayer)('Caffeine, with a sleep plan', (it) => {
       const today = yield* caffeine.today
       expect(today.bedtime_source).toEqual({ kind: 'tonight' })
       expect(today.bedtime.clock).toBe(clock(plan.tonight.bed_min))
+      // 7 h 30 asleep last night
+      expect(today.short_night).toEqual({ kind: 'fine', sleep_h: 7.5 })
       expect((yield* caffeine.page).bedtime_min).toBe(plan.tonight.bed_min + 720)
+    })
+  )
+})
+
+layer(TestLayer)('Caffeine, after a short night', (it) => {
+  it.effect('warns on the card, today and on the page, from the second intake', () =>
+    Effect.gen(function* () {
+      // 6 h 04 asleep, the night ending this morning (1970-01-01)
+      yield* rows(sql`
+        INSERT INTO daily (day, sleep_start, sleep_end, sleep_s)
+        VALUES ('1970-01-01', '1969-12-31T23:00:00.000Z', '1970-01-01T05:04:00.000Z', 21840)`)
+      const caffeine = yield* Caffeine
+      yield* caffeine.log({ kind: 'double_espresso', time: '00:10' })
+      expect((yield* caffeine.today).short_night).toEqual({
+        kind: 'short',
+        sleep_h: 6.06,
+        warning: false,
+      })
+      yield* caffeine.log({ kind: 'double_espresso' })
+      const warned = { kind: 'short', sleep_h: 6.06, warning: true }
+      expect((yield* caffeine.today).short_night).toEqual(warned)
+      expect((yield* caffeine.page).today.short_night).toEqual(warned)
     })
   )
 })

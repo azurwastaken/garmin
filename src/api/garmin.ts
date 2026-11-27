@@ -17,6 +17,9 @@ import {
   DOSE_LIMIT_MG,
   HALF_LIFE_H,
   RULE_HOURS,
+  SHORT_NIGHT_H,
+  SHORT_NIGHT_INTAKES,
+  SHORT_SLEEP_EXTRA_KCAL,
   STANDARD_COFFEE_MG,
   DEFAULT_BEDTIME_MIN,
 } from '../caffeine/kinetics.ts'
@@ -29,6 +32,7 @@ import { GarminWorkouts } from '../garmin/workouts.ts'
 import { bodyHistory } from '../journal/history.ts'
 import { Journal } from '../journal/log.ts'
 import { JournalNoteJson, NoteBodyJson } from '../journal/note.ts'
+import { KCAL_TOLERANCE, SCALE } from '../nutrition/ideas.ts'
 import { Nutrition, todayOf } from '../nutrition/nutrition.ts'
 import { NutritionPlanJson } from '../nutrition/plan.ts'
 import { CAUTIONS, SupplementsJson, UPPER_LIMITS } from '../nutrition/supplements.ts'
@@ -434,7 +438,7 @@ const logCaffeine = tool({
 const caffeineToday = tool({
   name: 'caffeine_today',
   title: "Today's caffeine",
-  description: `Today's caffeine (Paris): the intakes (with their Paris clock), total_mg and over_day_limit, strong (intakes over ${DOSE_LIMIT_MG} mg at once), now_mg (left in the body now), bedtime and bedtime_source (where it comes from), bedtime_mg (left at bedtime), cutoff and cutoff_passed, rule_cutoff. ${CAFFEINE_MODEL}`,
+  description: `Today's caffeine (Paris): the intakes (with their Paris clock), total_mg and over_day_limit, strong (intakes over ${DOSE_LIMIT_MG} mg at once), now_mg (left in the body now), bedtime and bedtime_source (where it comes from), bedtime_mg (left at bedtime), cutoff and cutoff_passed, rule_cutoff. short_night: last night's sleep (the daily row of today, the night ending this morning) against ${SHORT_NIGHT_H} h: unknown (not synced by the watch yet), fine (sleep_h), short (sleep_h, and warning: true from ${SHORT_NIGHT_INTAKES} intakes today, when the web card warns that caffeine masks the tiredness without repaying it and pushes bedtime later, and that short sleep raises intake by about ${SHORT_SLEEP_EXTRA_KCAL} kcal a day, Al Khatib et al. 2017). ${CAFFEINE_MODEL}`,
   method: 'GET',
   path: '/caffeine/today',
   tags: ['caffeine'],
@@ -651,7 +655,8 @@ const nutritionToday = tool({
   description: `What the nutrition plan says today (Paris): the day's type and why (from what was done, else planned, else nothing), its target (kcal, protein, carbs per hour during a long run), the current phase, the weight trend (kg_per_week over its window, negative = losing, with the weigh-ins in it; too-few when there are not enough) and its status: on-track (losing within the plan's range), too-fast (losing more than its max: muscle and injury risk), slow (less than its min), stalled (less than stall_kg_per_week once the phase is stall_after_days old), too-few (not enough weigh-ins to say), maintenance, no-phase; and the latest weigh-in.
 Supplements: today's intakes by moment, every supplement not stopped with its schedule (dose or off today with its next dose day, upcoming with its start), and totals: each nutrient's daily average from totals.from (once every supplement not stopped has started) with its upper limit (scope supplements = from supplements alone, total = food included), status over / under / no-limit, and a caution where one applies.
 Peak: the lean mass of the last 14 days' weigh-ins with a fat % (weight × (1 - fat %), the Withings impedance scale: its fat % is ±5 points, bia_kg is the peak range under that error), the peak weight range at 10-13 % body fat assuming the lean mass is kept (10 % is the floor: never aim below it; low energy availability, RED-S, is the risk under it), and the plan's target_kg as the near target; each with its gap and, at the plan's loss per week, the weeks and dates (fastest, slowest) and where they fall against the current deficit phase's end (deficit: within = both dates before it, fastest-only = only the fastest, after = neither; null outside a deficit phase). too-few: fewer than 3 weigh-ins with a fat %; no-weigh-in: none in 14 days.
-Levers, ranked (room, then untracked, then fine, then no-data; the biggest kcal effect first): rest days (days without a session in the 28 before today; meals are not recorded), breakfast (the pastry swap), protein (the plan's g per kg of weight), strength (sessions in the 8 full weeks before this one, 2 a week wanted), running (km a week over those weeks against a first marathon plan's 24 km first week), steps (a day over the 28 days), sleep (hours a night over 28 nights, and bedtimes after 00:30 Paris time); each with its measured value and window, its kcal_per_day effect when it is energy, and a French sentence. ${NUTRITION_MODEL}`,
+Levers, ranked (room, then untracked, then fine, then no-data; the biggest kcal effect first): rest days (days without a session in the 28 before today; meals are not recorded), breakfast (the pastry swap), batch-cooking (one more portion at dinner for the next day's office lunch), frozen-veg (plain frozen vegetables, legumes in place of pasta), snack (a late-afternoon snack out of dinner's share, then a light dinner well before bed), protein (the plan's g per kg of weight), strength (sessions in the 8 full weeks before this one, 2 a week wanted), running (km a week over those weeks against a first marathon plan's 24 km first week), steps (a day over the 28 days), sleep (hours a night over 28 nights, and bedtimes after 00:30 Paris time); each with its measured value and window, its kcal_per_day effect when it is energy, and a French sentence.
+Ideas: a day of breakfast, lunch, snack and dinner for today's day type from a small catalogue (per-100 g kcal and protein from the ANSES CIQUAL table; no oven, lunches boxed for the office microwave), its portions scaled (scale, ${SCALE.min} to ${SCALE.max} of the recipes' own) to within ${KCAL_TOLERANCE * 100} % of the target's kcal with at least its protein: each meal's slot, name, portions (food key and g), kcal and protein_g, the day's kcal and protein_g (the sums of the meals'; a long day's carbs during the run are not in them); kind none when no combination fits. ${NUTRITION_MODEL}`,
   method: 'GET',
   path: '/nutrition/today',
   tags: ['nutrition'],

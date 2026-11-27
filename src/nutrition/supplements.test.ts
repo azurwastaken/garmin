@@ -52,6 +52,23 @@ describe('the supplements file', () => {
     expect(decode({ supplements: [] })._tag).toBe('Success')
   })
 
+  it('takes the Greek mu MCP clients send for µg, and keeps the file’s micro sign', () => {
+    // NFKC folds U+00B5 into U+03BC: the model sends the latter back
+    const sent = {
+      supplements: [
+        { ...everyOther, contents: [{ nutrient: 'vitamin_d', amount: 25, unit: '\u03BCg' }] },
+      ],
+    }
+    const decoded = decode(sent)
+    if (decoded._tag === 'Failure') return expect.fail(String(decoded.failure))
+    expect(decoded.success.supplements[0]?.contents).toEqual([
+      { nutrient: 'vitamin_d', amount: 25, unit: '\u00B5g' },
+    ])
+    expect(
+      Schema.encodeSync(SupplementsJson)(decoded.success).supplements[0]?.contents[0]?.unit
+    ).toBe('\u00B5g')
+  })
+
   it('refuses a stop before its start, a moment twice, no intake, an unknown unit', () => {
     expect(refused(daily({ stop: '2026-10-31' }))).toBe(true)
     expect(refused(daily({ stop: '2026-11-01' }))).toBe(false)

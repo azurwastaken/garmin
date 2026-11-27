@@ -9,6 +9,7 @@ import { Database, type DatabaseError } from '../db.ts'
 import { writeAtomic } from '../files.ts'
 
 import { type Classified, dayType, type DoneSession, type PlannedSession } from './day-type.ts'
+import { type DayIdeas, dayIdeas } from './ideas.ts'
 import { type Lever, type LeverFacts, leversOf, type LeverWindows, leverWindows } from './levers.ts'
 import { type PeakWeight, peakWeight } from './peak.ts'
 import {
@@ -44,9 +45,9 @@ import {
 } from './trend.ts'
 
 // The nutrition page's and the coach's answer: today's target from the day's type, the weight
-// trend against the plan, the phase, today's supplements, the peak weight and its levers. The
-// plan and the supplements are their files in data/ (read on each request, never in SQLite); the
-// weigh-ins, the sessions, the steps and the nights are SQLite's.
+// trend against the plan, the phase, today's supplements, the peak weight and its levers, and a day
+// of meal ideas for the target. The plan and the supplements are their files in data/ (read on each
+// request, never in SQLite); the weigh-ins, the sessions, the steps and the nights are SQLite's.
 
 export type NutritionSpan = (typeof NUTRITION_SPANS)[number]
 
@@ -61,6 +62,7 @@ export interface NutritionToday {
   readonly supplements: SupplementDay
   readonly peak: PeakWeight
   readonly levers: ReadonlyArray<Lever>
+  readonly ideas: DayIdeas
 }
 
 export interface NutritionView extends NutritionToday {
@@ -95,10 +97,11 @@ export const nutritionView = (input: {
   const trend = trendOf(weighIns, today, phase?.from ?? null)
   const latest = weighIns.at(-1) ?? null
   const peak = peakWeight({ plan, phase, weighIns, today })
+  const target = targetFor(plan, day.type)
   return {
     today,
     day,
-    target: targetFor(plan, day.type),
+    target,
     phase,
     trend,
     status: statusOf(plan, phase, trend, today),
@@ -111,6 +114,7 @@ export const nutritionView = (input: {
       plan,
       weight: proteinWeight(peak, latest),
     }),
+    ideas: dayIdeas(target),
     span,
     plan,
     days: weightDays(plan, weighIns, addDays(today, -(span - 1)), today),

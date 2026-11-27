@@ -69,6 +69,24 @@ describe('the levers', () => {
     })
   })
 
+  it('gives the batch cooking, the frozen vegetables and the snack their facts, untracked', () => {
+    const untracked = { status: 'untracked', measured: null, kcal_per_day: null }
+    expect(lever('batch-cooking')).toMatchObject({
+      ...untracked,
+      text: expect.stringMatching(/2 × 45 min.*2 de tes 4 déjeuners au bureau/u),
+    })
+    expect(lever('frozen-veg')).toMatchObject({
+      ...untracked,
+      text: expect.stringMatching(/environ 8 min.*2 à 3 fois par semaine à la place des pâtes/u),
+    })
+    expect(lever('snack')).toMatchObject({
+      ...untracked,
+      text: expect.stringMatching(
+        /vers 17–18 h.*pas en plus des kcal du jour.*au moins 2 h avant/u
+      ),
+    })
+  })
+
   it('judges the plan’s protein per kg: room under 1.8 g/kg, above past 2.2, none without a weight', () => {
     // 130 g: 1.8 g/kg at 72.2 kg, under it a kg heavier
     expect(lever('protein', {}, { kg: 72.2, from: TODAY, to: TODAY })).toMatchObject({
@@ -193,9 +211,12 @@ describe('the levers', () => {
       ['running', 'room'],
       ['steps', 'room'],
       ['strength', 'room'],
-      // breakfast 300 kcal a day, rest days none
+      // breakfast 300 kcal a day, the others none, in the order they are built
       ['breakfast', 'untracked'],
       ['rest-days', 'untracked'],
+      ['batch-cooking', 'untracked'],
+      ['frozen-veg', 'untracked'],
+      ['snack', 'untracked'],
       ['protein', 'no-data'],
       ['sleep', 'no-data'],
     ])

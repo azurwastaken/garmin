@@ -153,7 +153,8 @@ token: `--header "Authorization: Bearer <password>"`.
   caffeine in the body now and at bedtime (an estimate: a 5 h half-life), and the cut-off for the
   last coffee (a 95 mg coffee down to 25 mg by bedtime), beside the 8.8 h rule of Gardiner et al.
   (2023). Bedtime is tonight's from `sleep_insights`, 23:30 while the nights are too few; it says
-  which.
+  which. And last night against 6.5 h: after a short one, from the second drink, the card warns of
+  the short night → coffee → late bedtime loop and how to break it.
 - `caffeine_vs_sleep`: per night, the caffeine left at sleep onset and the last intake, against the
   sleep score, HRV, resting HR and deep sleep; nights over 50 mg against the others once there are
   10 of each. An association, never a cause. `/cafe` shows it with 30 days of history.
@@ -181,8 +182,9 @@ token: `--header "Authorization: Bearer <password>"`.
   track, too fast, slow, stalled or not enough weigh-ins. Then today's supplements by moment and
   each nutrient's daily average against its EFSA upper limit; the peak weight (the last 14 days'
   lean mass at 10–13 % body fat, and the range under the scale's ±5 points of error) and the
-  plan's target, each with its gap and dates at the plan's pace; and the levers, ranked, each
-  with its number and window from your data.
+  plan's target, each with its gap and dates at the plan's pace; the levers, ranked, each with
+  its number and window from your data; and a day of meal ideas for the target (CIQUAL's kcal and
+  protein, the portions scaled to within 5 %, at least the protein).
 - `supplements`, `set_supplements`: the supplements you take, the whole list at once: brand,
   dose and moments (breakfast, lunch, dinner, bedtime, with a run), contents per serving, daily or
   every N days, start and stop.
@@ -426,8 +428,8 @@ src/
                         caffeine.ts (the writer, the views)
   nutrition/            the nutrition plan (plan.ts), the day's type (day-type.ts), the weight
                         trend (trend.ts), the supplements (supplements.ts), the peak weight
-                        (peak.ts) and its levers (levers.ts), all without I/O; nutrition.ts (the
-                        files, the view)
+                        (peak.ts) and its levers (levers.ts), the meal ideas (ideas.ts), all
+                        without I/O; nutrition.ts (the files, the view)
   strength/             the strength programme (program.ts), the week's placement (schedule.ts),
                         the sets from Connect and FIT (sets.ts), the history (history.ts), the
                         pain rule (pain.ts), a session as a workout (workout.ts), all without I/O;
@@ -448,7 +450,7 @@ src/
   journal; a strength session planned today, with its exercises. The last 7 days against the 7 before, the last night, hours per week by sport, and HRV,
   resting HR and sleep over 28 days.
   Under today, the Café card: one tap per usual drink, the day's mg, what is left now and at
-  bedtime, the cut-off for the last coffee.
+  bedtime, the cut-off for the last coffee, and a warning after a short night.
 - `/runs`: running over 26 or 52 weeks, or all of it.
   - Volume: km per week and the time per HR zone.
   - Each run's pace, and the longest run.
@@ -491,6 +493,8 @@ src/
 - `/nutrition`: weight and nutrition, over 90 days or a year.
   - Today's target: the day's type (rest, easy, quality, long) from the planned or done session,
     its kcal, the protein, carbs per hour during a long run.
+  - Ideas for today: a breakfast, a lunch for the office microwave, a snack and a dinner (no oven),
+    each meal's kcal and protein, the day's total against the target.
   - The weight trend against the plan (on track, too fast, slow, stalled, not enough weigh-ins),
     and the phase with its end.
   - Today's supplements by moment, the every-N-days ones with their next dose, and each

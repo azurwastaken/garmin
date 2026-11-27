@@ -11,6 +11,7 @@ import {
   curveOf,
   DEFAULT_BEDTIME_MIN,
   dailyHistory,
+  shortNightOf,
   todayView,
 } from './kinetics.ts'
 
@@ -134,8 +135,15 @@ describe('the curve', () => {
 
 describe('today', () => {
   const bedtime = bedtimeOn('2026-11-24', DEFAULT_BEDTIME_MIN)
-  const view = (now: string, recent: ReadonlyArray<CaffeineRow>) =>
-    todayView({ today: '2026-11-24', now: at(now), bedtime, source: { kind: 'tonight' }, recent })
+  const view = (now: string, recent: ReadonlyArray<CaffeineRow>, night_s: number | null = null) =>
+    todayView({
+      today: '2026-11-24',
+      now: at(now),
+      bedtime,
+      source: { kind: 'tonight' },
+      recent,
+      night_s,
+    })
 
   it('counts today’s intakes, and yesterday’s evening in the body', () => {
     const today = view('2026-11-24T12:00:00.000Z', [
@@ -160,6 +168,24 @@ describe('today', () => {
     expect(today.cutoff_passed).toBe(false)
     expect(today.over_day_limit).toBe(false)
     expect(today.strong).toEqual([])
+    // No night stored for the 24th yet
+    expect(today.short_night).toEqual({ kind: 'unknown' })
+  })
+
+  it('warns of a short night from its second intake of the day, yesterday’s left out', () => {
+    // 6 h 04 asleep
+    const night = 6 * 3600 + 4 * 60
+    const yesterday = row('2026-11-23T17:00:00.000Z', 95)
+    const first = row('2026-11-24T07:00:00.000Z', 126)
+    expect(view('2026-11-24T12:00:00.000Z', [yesterday, first], night).short_night).toEqual({
+      kind: 'short',
+      sleep_h: 6.06,
+      warning: false,
+    })
+    expect(
+      view('2026-11-24T12:00:00.000Z', [first, row('2026-11-24T10:00:00.000Z', 126)], night)
+        .short_night
+    ).toEqual({ kind: 'short', sleep_h: 6.06, warning: true })
   })
 
   it('says when the cut-off is behind, the day is over 400 mg and a dose over 200', () => {
@@ -179,6 +205,21 @@ describe('today', () => {
         row('2026-11-24T09:00:00.000Z', 200),
       ]).over_day_limit
     ).toBe(false)
+  })
+})
+
+describe('the short night', () => {
+  it('is unknown before the watch syncs, short under 6.5 h, fine from it', () => {
+    expect(shortNightOf(null, 3)).toEqual({ kind: 'unknown' })
+    expect(shortNightOf(6.5 * 3600, 5)).toEqual({ kind: 'fine', sleep_h: 6.5 })
+    // A second under 6.5 h reads 6.49, never 6.5
+    expect(shortNightOf(6.5 * 3600 - 1, 0)).toEqual({
+      kind: 'short',
+      sleep_h: 6.49,
+      warning: false,
+    })
+    expect(shortNightOf(4 * 3600, 1)).toMatchObject({ kind: 'short', warning: false })
+    expect(shortNightOf(4 * 3600, 2)).toMatchObject({ kind: 'short', warning: true })
   })
 })
 

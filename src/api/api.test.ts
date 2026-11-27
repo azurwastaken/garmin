@@ -177,6 +177,14 @@ describe('the MCP', () => {
       idempotentHint: true,
     })
     expect(byName['set_supplements']?.inputSchema.required).toEqual(['supplements'])
+    // Both spellings of µg: MCP clients NFKC-normalise the micro sign into a Greek mu
+    expect(JSON.stringify(byName['set_supplements']?.inputSchema)).toContain(
+      JSON.stringify({
+        type: 'string',
+        enum: ['g', 'mg', '\u00B5g', '\u03BCg'],
+        description: 'Vitamin D in µg (1 µg = 40 IU)',
+      })
+    )
     expect(byName['sleep_insights']?.annotations).toMatchObject({ readOnlyHint: true })
     expect(byName['sleep_insights']?.inputSchema.properties?.['days']).toMatchObject({
       anyOf: [
@@ -511,6 +519,14 @@ describe('the nutrition tools', () => {
     expect(data.supplements.totals.nutrients).toMatchObject([
       { nutrient: 'magnesium', per_day: 300, unit: 'mg', status: 'over' },
     ])
+    // The Greek mu a client sends is saved as the file's micro sign
+    const vitaminD = { nutrient: 'vitamin_d', amount: 25, unit: '\u03BCg' }
+    expect(
+      await call('set_supplements', { supplements: [{ ...first, contents: [vitaminD] }] })
+    ).toMatchObject({
+      isError: false,
+      data: { supplements: [{ contents: [{ ...vitaminD, unit: '\u00B5g' }] }] },
+    })
     await call('set_supplements', { supplements: [] })
   })
 
@@ -528,6 +544,7 @@ describe('the nutrition tools', () => {
     })
     expect(Object.keys(data as object).toSorted()).toEqual([
       'day',
+      'ideas',
       'latest',
       'levers',
       'peak',
@@ -538,8 +555,9 @@ describe('the nutrition tools', () => {
       'today',
       'trend',
     ])
-    // No weigh-in, no supplement file: said, not guessed
+    // No weigh-in, no supplement file: said, not guessed; a rest day's meal ideas
     expect(data).toMatchObject({
+      ideas: { kind: 'day', meals: [{ slot: 'breakfast' }, {}, {}, { slot: 'dinner' }] },
       peak: { kind: 'no-weigh-in' },
       supplements: { moments: [], items: [], totals: { nutrients: [] } },
     })

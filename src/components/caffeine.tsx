@@ -10,16 +10,20 @@ import {
   DAY_LIMIT_MG,
   DOSE_LIMIT_MG,
   HALF_LIFE_H,
+  MORNING_LIGHT_MIN,
   RULE_HOURS,
+  SHORT_NIGHT_H,
+  SHORT_SLEEP_EXTRA_KCAL,
   STANDARD_COFFEE_MG,
 } from '#src/caffeine/kinetics.ts'
 
-import { fmt } from './format.ts'
+import { fmt, hours, plural } from './format.ts'
 
 // The Café card (Aujourd'hui and /cafe): one tap per usual drink, any other with its mg and time,
 // today's intakes (each deletable, the last tap undoable), the caffeine in the body now and at
-// bedtime (tonight's from the sleep analysis, and where it comes from), and the cut-off for the
-// last coffee. Every write goes through the API, then the page's data is read again.
+// bedtime (tonight's from the sleep analysis, and where it comes from), the cut-off for the last
+// coffee, and last night against SHORT_NIGHT_H. Every write goes through the API, then the page's
+// data is read again.
 
 const QUICK: ReadonlyArray<DrinkKind> = [
   'espresso',
@@ -34,6 +38,41 @@ const message = (cause: unknown) => (cause instanceof Error ? cause.message : St
 // Where the bedtime comes from, in French
 const bedtimeOrigin = (source: BedtimeSource) =>
   source.kind === 'tonight' ? 'conseil sommeil de ce soir' : 'par défaut, trop peu de nuits'
+
+// Last night against SHORT_NIGHT_H: nothing when fine, a word before the watch syncs it, and on a
+// short night with SHORT_NIGHT_INTAKES intakes today, the loop it starts and how to break it
+function ShortNightNote({ today }: { readonly today: CaffeineToday }) {
+  const night = today.short_night
+  if (night.kind === 'fine') return null
+  if (night.kind === 'unknown') {
+    return <p className="note">La nuit dernière n'est pas encore synchronisée par la montre.</p>
+  }
+  const slept = hours(night.sleep_h * 3600)
+  if (!night.warning) {
+    return (
+      <p className="note">
+        Nuit courte : {slept} (moins de {hours(SHORT_NIGHT_H * 3600)}).
+      </p>
+    )
+  }
+  const noMore = today.cutoff_passed
+    ? `plus de café aujourd'hui (le seuil de ${today.cutoff.clock} est passé)`
+    : `plus de café après ${today.cutoff.clock}`
+  return (
+    <>
+      <p className="status wait">
+        Nuit courte ({slept}) et déjà {plural(today.intakes.length, 'boisson')}
+      </p>
+      <p className="note">
+        La caféine masque la fatigue sans la rembourser, et elle repousse l'endormissement. Le mieux
+        : {noMore}, {MORNING_LIGHT_MIN.min} à {MORNING_LIGHT_MIN.max} min dehors à la lumière du
+        jour dans l'heure qui suit le réveil (la lumière du matin avance l'horloge interne), et
+        viser le coucher de {today.bedtime.clock} ce soir. Dormir trop peu fait manger environ{' '}
+        {SHORT_SLEEP_EXTRA_KCAL} kcal de plus par jour (Al Khatib et al. 2017).
+      </p>
+    </>
+  )
+}
 
 // A form's optional field: empty is absent
 const optional = (form: FormData, name: string) => {
@@ -93,6 +132,7 @@ export function CafeCard({ today }: { readonly today: CaffeineToday }) {
         {today.intakes.length === 1 ? '1 boisson' : `${today.intakes.length} boissons`} · limite{' '}
         {DAY_LIMIT_MG} mg / jour (EFSA)
       </p>
+      <ShortNightNote today={today} />
       {today.over_day_limit ? (
         <p className="status bad">Plus de {DAY_LIMIT_MG} mg aujourd'hui</p>
       ) : null}

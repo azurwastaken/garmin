@@ -36,6 +36,18 @@ export const MAX_WEEKLY_INCREASE = 0.1
 // CIQUAL (ANSES): a croissant about 240 kcal, a pain au chocolat about 290; a 150 g skyr, a fruit
 // and 30 g of oats about 290: swapping a two-pastry breakfast saves about 200 to 300 kcal a day
 export const BREAKFAST_SWAP_KCAL = { min: 200, max: 300 }
+// The user's week: lunch at the office 4 days, with a microwave and a fridge; cooking twice, 45 min
+// each, Sunday and Wednesday evening
+export const OFFICE_DAYS_PER_WEEK = 4
+export const COOKING_SESSIONS = { count: 2, minutes: 45 }
+// The coach's: plain frozen vegetables in the pan, a little olive oil, about 8 min; legumes 2 to 3
+// times a week in place of pasta
+export const FROZEN_VEG_PAN_MIN = 8
+export const LEGUMES_PER_WEEK = { min: 2, max: 3 }
+// The coach's: a snack between 17 and 18 h, out of dinner's share; a light dinner at least 2 h
+// before bed
+export const SNACK_WINDOW_H = { from: 17, to: 18 }
+export const DINNER_BEFORE_BED_H = 2
 
 interface Window {
   readonly from: string
@@ -71,6 +83,9 @@ export interface LeverFacts {
 export const LEVER_KEYS = [
   'rest-days',
   'breakfast',
+  'batch-cooking',
+  'frozen-veg',
+  'snack',
   'protein',
   'strength',
   'running',
@@ -138,6 +153,33 @@ const BREAKFAST_LEVER: Lever = {
   measured: null,
   kcal_per_day: BREAKFAST_SWAP_KCAL,
   text: `Viennoiseries au petit-déjeuner, et l’alcool : un skyr, un fruit et des flocons d’avoine à la place font environ ${BREAKFAST_SWAP_KCAL.min} à ${BREAKFAST_SWAP_KCAL.max} kcal de moins par jour, avec plus de protéines.`,
+}
+
+// Cooking for one more at dinner, the next day's office lunch: untracked
+const BATCH_COOKING_LEVER: Lever = {
+  key: 'batch-cooking',
+  status: 'untracked',
+  measured: null,
+  kcal_per_day: null,
+  text: `L’invité mystère : les soirs où tu cuisines (${COOKING_SESSIONS.count} × ${COOKING_SESSIONS.minutes} min, le dimanche et le mercredi), fais une portion de plus, mise en boîte au frigo pour le déjeuner du lendemain au bureau, au micro-ondes. Ce sont ${COOKING_SESSIONS.count} de tes ${OFFICE_DAYS_PER_WEEK} déjeuners au bureau déjà prêts et dosés, sans cuisiner plus.`,
+}
+
+// Plain frozen vegetables, and legumes in place of pasta: untracked
+const FROZEN_VEG_LEVER: Lever = {
+  key: 'frozen-veg',
+  status: 'untracked',
+  measured: null,
+  kcal_per_day: null,
+  text: `Des légumes surgelés nature, un seul légume par sachet (haricots verts, petits pois, épinards, carottes, courgettes), pas les « poêlées » précuisinées liées à l’huile : à la poêle avec un filet d’huile d’olive, environ ${FROZEN_VEG_PAN_MIN} min. Et des légumineuses (lentilles, pois chiches) ${LEGUMES_PER_WEEK.min} à ${LEGUMES_PER_WEEK.max} fois par semaine à la place des pâtes.`,
+}
+
+// The late-afternoon snack out of dinner's share, then a light dinner: untracked
+const SNACK_LEVER: Lever = {
+  key: 'snack',
+  status: 'untracked',
+  measured: null,
+  kcal_per_day: null,
+  text: `Une collation vers ${SNACK_WINDOW_H.from}–${SNACK_WINDOW_H.to} h (un fruit, un skyr, 2 carrés de chocolat noir), prise sur la part du dîner et pas en plus des kcal du jour : elle coupe la fringale du soir. Puis un dîner léger, au moins ${DINNER_BEFORE_BED_H} h avant le coucher conseillé ce soir (carte Café).`,
 }
 
 // The plan's protein per kg of the weight (intake is not recorded: it judges the plan's target);
@@ -286,7 +328,7 @@ const STATUS_RANK: Record<Lever['status'], number> = {
   'no-data': 3,
 }
 
-// The seven levers, ranked by status (room, untracked, fine, no-data), then by their effect's max
+// The ten levers, ranked by status (room, untracked, fine, no-data), then by their effect's max
 // (none counts 0), then in LEVER_KEYS order (the order they are built in: the sort is stable)
 export const leversOf = (input: {
   readonly facts: LeverFacts
@@ -299,6 +341,9 @@ export const leversOf = (input: {
   return [
     restDaysLever(facts.active_days, windows.days, plan.kcal.rest),
     BREAKFAST_LEVER,
+    BATCH_COOKING_LEVER,
+    FROZEN_VEG_LEVER,
+    SNACK_LEVER,
     proteinLever(input.weight, plan.protein_g),
     strengthLever(facts.strength_sessions, windows.weeks),
     runningLever(facts.running_km, windows.weeks),

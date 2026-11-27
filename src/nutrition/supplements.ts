@@ -1,4 +1,4 @@
-import { Schema } from 'effect'
+import { Schema, SchemaTransformation } from 'effect'
 
 import { addDays, daysBetween } from '../days.ts'
 import { round } from '../numbers.ts'
@@ -12,8 +12,26 @@ import { Between, Day, Text } from './plan.ts'
 export const MOMENTS = ['breakfast', 'lunch', 'dinner', 'bedtime', 'run'] as const
 export type Moment = (typeof MOMENTS)[number]
 
-export const UNITS = ['g', 'mg', 'µg'] as const
+export const UNITS = ['g', 'mg', '\u00B5g'] as const
 export type Unit = (typeof UNITS)[number]
+
+// MCP clients NFKC-normalise the tool descriptions, which turns the file's micro sign (U+00B5)
+// into a Greek mu (U+03BC): the model sends that spelling back. Escapes: the glyphs look the same
+const GREEK_MICRO = '\u03BCg'
+
+// Either spelling in, the file's one out; the description on the encoded side, which the tool's
+// input JSON Schema is built from
+const UnitJson = Schema.Literals([...UNITS, GREEK_MICRO])
+  .annotate({ description: 'Vitamin D in µg (1 µg = 40 IU)' })
+  .pipe(
+    Schema.decodeTo(
+      Schema.Literals(UNITS),
+      SchemaTransformation.transform({
+        decode: (unit) => (unit === GREEK_MICRO ? '\u00B5g' : unit),
+        encode: (unit) => unit,
+      })
+    )
+  )
 
 export const SUPPLEMENTS_PATH = 'nutrition/supplements.json'
 
@@ -27,7 +45,7 @@ const Content = Schema.Struct({
       'A slug; these carry an upper limit or a caution: vitamin_d, magnesium, zinc, vitamin_b6, ashwagandha',
   }),
   amount: Between(0, 1_000_000),
-  unit: Schema.Literals(UNITS).annotate({ description: 'Vitamin D in µg (1 µg = 40 IU)' }),
+  unit: UnitJson,
   // The salt or the extract: bisglycinate, KSM-66, MK-7
   form: Schema.optionalKey(Text(60)),
 })

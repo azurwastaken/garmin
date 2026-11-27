@@ -80,6 +80,8 @@ describe('nutritionView', () => {
       items: [],
       totals: { from: '2026-11-24', nutrients: [] },
     })
+    // A rest day's ideas, at its 1 900 kcal
+    expect(view.ideas).toMatchObject({ kind: 'day', meals: { length: 4 } })
   })
 
   it('weighs protein against the latest weigh-in when none is in the last 14 days', () => {

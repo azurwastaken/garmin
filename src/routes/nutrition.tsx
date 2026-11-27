@@ -6,7 +6,8 @@ import { LineChart, shortDay } from '#src/components/charts.tsx'
 import { dayLabel, fmt, numericDay, plural } from '#src/components/format.ts'
 import { daysBetween } from '#src/days.ts'
 import type { Classified } from '#src/nutrition/day-type.ts'
-import type { Lever, LeverKey } from '#src/nutrition/levers.ts'
+import { type DayIdeas, FOODS, type Slot } from '#src/nutrition/ideas.ts'
+import { type Lever, type LeverKey, SNACK_WINDOW_H } from '#src/nutrition/levers.ts'
 import type { NutritionView } from '#src/nutrition/nutrition.ts'
 import {
   BIA_ERROR_POINTS,
@@ -16,7 +17,7 @@ import {
   type PeakWeight,
   RUNNER_BODY_FAT_PCT,
 } from '#src/nutrition/peak.ts'
-import type { DayType, NutritionPlan, Phase } from '#src/nutrition/plan.ts'
+import type { DayTarget, DayType, NutritionPlan, Phase } from '#src/nutrition/plan.ts'
 import type { Moment, NutrientTotal, SupplementDay } from '#src/nutrition/supplements.ts'
 import {
   MIN_SLOPE_SPAN_DAYS,
@@ -26,10 +27,11 @@ import {
 } from '#src/nutrition/trend.ts'
 
 // Weight and nutrition: today's target from the day's type, the weight trend against the plan
-// agreed with the coach and the phase; today's supplements and their nutrients against their
-// upper limits; the weigh-ins with their 7-day mean and the deficit's corridor; the peak weight
-// and its levers; then fat and muscle. The plan is data/nutrition/plan.json (the MCP's
-// set_nutrition_plan), the supplements data/nutrition/supplements.json (set_supplements)
+// agreed with the coach and the phase; a day of meal ideas for the target; today's supplements and
+// their nutrients against their upper limits; the weigh-ins with their 7-day mean and the deficit's
+// corridor; the peak weight and its levers; then fat and muscle. The plan is
+// data/nutrition/plan.json (the MCP's set_nutrition_plan), the supplements
+// data/nutrition/supplements.json (set_supplements)
 type Span = (typeof NUTRITION_SPANS)[number]
 
 export const Route = createFileRoute('/nutrition')({
@@ -200,6 +202,74 @@ function PhaseCard({ view }: { view: NutritionView }) {
       {next === undefined ? null : <p className="note muted">Ensuite : {phaseLine(next)}</p>}
       <p className="note muted">Plan convenu le {numericDay(plan.agreed)} avec le coach.</p>
     </div>
+  )
+}
+
+// --- Today's meal ideas
+
+const SLOT_LABEL: Record<Slot, string> = {
+  breakfast: 'Petit-déjeuner',
+  lunch: 'Déjeuner au bureau',
+  snack: `Collation ${SNACK_WINDOW_H.from}–${SNACK_WINDOW_H.to} h`,
+  dinner: 'Dîner',
+}
+
+// A day of breakfast, lunch, snack and dinner for today's target: each meal's portions, kcal and
+// protein, the day's against the target
+function IdeasSection({
+  ideas,
+  target,
+  type,
+}: {
+  ideas: DayIdeas
+  target: DayTarget
+  type: DayType
+}) {
+  const aim = `${fmt(target.kcal)} kcal et ${fmt(target.protein_g)} g de protéines`
+  return (
+    <section>
+      <h2>Idées pour aujourd’hui</h2>
+      <p className="sub">
+        Une journée type pour la cible ({DAY_LABEL[type]}) : sans four, le déjeuner en boîte pour le
+        micro-ondes du bureau ; kcal et protéines d’après la table CIQUAL de l’ANSES
+      </p>
+      {ideas.kind === 'none' ? (
+        <div className="card">
+          <p className="note">Aucune combinaison du catalogue ne tient {aim}.</p>
+        </div>
+      ) : (
+        <>
+          <div className="grid cols-2">
+            {ideas.meals.map((meal) => (
+              <div key={meal.slot} className="card tile">
+                <div className="label">{SLOT_LABEL[meal.slot]}</div>
+                <h3>{meal.name}</h3>
+                <p className="note">
+                  {meal.portions
+                    .map(({ food, g }) => `${fmt(g)}\u00A0g ${FOODS[food].name.toLowerCase()}`)
+                    .join(' · ')}
+                </p>
+                <p className="note muted">
+                  {fmt(meal.kcal)} kcal · {fmt(meal.protein_g)} g de protéines
+                </p>
+              </div>
+            ))}
+          </div>
+          <p className="note">
+            <b>
+              Total : {fmt(ideas.kcal)} kcal · {fmt(ideas.protein_g)} g de protéines
+            </b>
+            , pour {aim}
+            {ideas.scale === 1
+              ? '.'
+              : ` (portions ×\u00A0${fmt(ideas.scale, 2)} par rapport aux recettes).`}
+            {target.run_carbs_g_per_h === null
+              ? null
+              : ` Hors glucides pendant la sortie (${fmt(target.run_carbs_g_per_h.min)} à ${fmt(target.run_carbs_g_per_h.max)} g par heure).`}
+          </p>
+        </>
+      )}
+    </section>
   )
 }
 
@@ -484,6 +554,9 @@ function PeakCard({ peak, view }: { peak: PeakWeight; view: NutritionView }) {
 const LEVER_TITLE: Record<LeverKey, string> = {
   'rest-days': 'Jours de repos',
   breakfast: 'Petit-déjeuner et alcool',
+  'batch-cooking': 'L’invité mystère',
+  'frozen-veg': 'Surgelés et légumineuses',
+  snack: 'Collation de fin d’après-midi',
   protein: 'Protéines',
   strength: 'Renforcement',
   running: 'Volume de course',
@@ -594,6 +667,8 @@ function Nutrition() {
         <TrendCard view={view} />
         <PhaseCard view={view} />
       </div>
+
+      <IdeasSection ideas={view.ideas} target={view.target} type={view.day.type} />
 
       <SupplementsSection day={view.supplements} />
 

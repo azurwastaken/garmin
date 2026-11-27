@@ -27,6 +27,18 @@ export const RULE_HOURS = 8.8
 // The bedtime without enough nights for the sleep analysis: 23:30, on the noon axis
 export const DEFAULT_BEDTIME_MIN = 690
 
+// The coach's line for one night (not a study's): under 6.5 h, last night was short. Not the
+// levers' SLEEP_MIN_H (7 h, a 28-night average) nor the sleep analysis's SHORT_NIGHT_S (an hour
+// under the user's own window): this one judges the single night ending this morning
+export const SHORT_NIGHT_H = 6.5
+// From this many intakes today a short night warns: short night, more coffee, later bedtime
+export const SHORT_NIGHT_INTAKES = 2
+// Al Khatib et al. 2017 (Eur J Clin Nutr 71:614–624, a meta-analysis): partial sleep restriction
+// raises energy intake by about 385 kcal a day
+export const SHORT_SLEEP_EXTRA_KCAL = 385
+// Daylight within the hour after waking advances the body clock: the coach's dose, minutes outside
+export const MORNING_LIGHT_MIN = { min: 10, max: 20 }
+
 const HOUR_MS = 3_600_000
 
 export interface Dose {
@@ -89,6 +101,23 @@ export interface Moment {
 
 export const momentOf = (ms: number): Moment => ({ at: instantOf(ms), clock: parisWall(ms).clock })
 
+// Last night (daily.day is today: the night ending this morning) against SHORT_NIGHT_H; unknown
+// before the watch has synced it
+export type ShortNight =
+  | { readonly kind: 'unknown' }
+  | { readonly kind: 'fine'; readonly sleep_h: number }
+  | { readonly kind: 'short'; readonly sleep_h: number; readonly warning: boolean }
+
+// Last night's sleep and today's intakes: the warning from SHORT_NIGHT_INTAKES on a short night.
+// sleep_h is floored to the hundredth, so a short night never reads 6.5
+export const shortNightOf = (sleepS: number | null, intakes: number): ShortNight => {
+  if (sleepS === null) return { kind: 'unknown' }
+  const sleepH = Math.floor(sleepS / 36) / 100
+  return sleepS < SHORT_NIGHT_H * 3600
+    ? { kind: 'short', sleep_h: sleepH, warning: intakes >= SHORT_NIGHT_INTAKES }
+    : { kind: 'fine', sleep_h: sleepH }
+}
+
 export interface TodayIntake extends CaffeineRow {
   // HH:MM in Paris
   readonly clock: string
@@ -112,6 +141,7 @@ export interface CaffeineToday {
   readonly cutoff: Moment
   readonly cutoff_passed: boolean
   readonly rule_cutoff: Moment
+  readonly short_night: ShortNight
 }
 
 // Today from the recent rows, by time (the days before still count in the body)
@@ -121,6 +151,8 @@ export const todayView = (input: {
   readonly bedtime: number
   readonly source: BedtimeSource
   readonly recent: ReadonlyArray<CaffeineRow>
+  // Last night's sleep (daily.sleep_s), null before the watch syncs it
+  readonly night_s: number | null
 }): CaffeineToday => {
   const doses = input.recent.map(doseFrom)
   const intakes = input.recent
@@ -141,6 +173,7 @@ export const todayView = (input: {
     cutoff: momentOf(cutoff),
     cutoff_passed: input.now > cutoff,
     rule_cutoff: momentOf(input.bedtime - RULE_HOURS * HOUR_MS),
+    short_night: shortNightOf(input.night_s, intakes.length),
   }
 }
 
