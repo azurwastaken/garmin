@@ -17,6 +17,8 @@ import { clock, numericDay } from './format.ts'
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause))
 
 // A form's optional field: empty is absent
+// shortcut: caffeine.tsx's own, not shared while that file is changed on another branch; fold both
+// into one export once it is merged
 const optional = (form: FormData, name: string) => {
   const value = form.get(name)
   return typeof value === 'string' && value !== '' ? value : undefined

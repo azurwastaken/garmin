@@ -193,3 +193,22 @@ layer(TestLayer)('Meals, with a sleep plan', (it) => {
     })
   )
 })
+
+layer(TestLayer)('Meals, on the analysis’s first night', (it) => {
+  it.effect('keeps the dinner of the evening before the first morning it reads', () =>
+    Effect.gen(function* () {
+      // The 90 days' first morning, asleep 23:00 Paris the evening before, the dinner at 20:00
+      const first = addDays('1970-01-01', 1 - INSIGHT_MIN_DAYS)
+      yield* rows(sql`
+        INSERT INTO daily (day, sleep_start, sleep_end, sleep_s, awake_s, sleep_score)
+        VALUES (${first}, ${`${addDays(first, -1)}T22:00:00.000Z`}, ${`${first}T06:00:00.000Z`},
+          27000, 1800, 80)`)
+      yield* Meals.use((meals) =>
+        meals.log({ kind: 'dinner', day: addDays(first, -1), time: '20:00' })
+      )
+      const insights = yield* Stats.use((stats) => stats.sleepInsights(INSIGHT_MIN_DAYS))
+      expect(insights.from).toBe(first)
+      expect(insights.dinner.nights).toMatchObject([{ night: first, gap_s: 3 * 3600 }])
+    })
+  )
+})
